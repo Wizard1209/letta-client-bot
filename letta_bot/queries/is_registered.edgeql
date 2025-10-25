@@ -1,0 +1,1 @@
+select User {telegram_id} filter User.telegram_id = <int64>$telegram_id;

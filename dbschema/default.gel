@@ -1,0 +1,68 @@
+module default {
+    # Enums
+    scalar type AuthStatus extending enum<pending, authorized, denied>;
+
+    # User record based on Telegram User model
+    # https://core.telegram.org/bots/api#user
+    type User {
+        # Telegram fields
+        required telegram_id: int64 {
+            constraint exclusive;
+        }
+        required is_bot: bool {
+            default := false;
+        }
+        required first_name: str;
+        last_name: str;
+        username: str;
+        language_code: str;
+
+        # Tracking fields
+        required first_seen: datetime {
+            default := datetime_current();
+        }
+        required last_seen: datetime {
+            default := datetime_current();
+        }
+
+        # Computed property for display name
+        property full_name := .first_name ++ ((' ' ++ .last_name) if exists .last_name else '');
+
+        # Indexes for common queries
+        index on (.telegram_id);
+        index on (.username);
+    }
+
+    # Authorization record - separate from User for clean separation of concerns
+    type AuthRecord {
+        required user: User {
+            constraint exclusive;
+        }
+        required status: AuthStatus {
+            default := AuthStatus.pending;
+        }
+
+        # Letta identity reference (UUID string)
+        letta_identity_id: str;
+
+        # Approval tracking
+        approved_by: int64;  # Telegram user ID of admin who approved
+        approved_at: datetime;
+
+        # Denial tracking
+        denied_by: int64;  # Telegram user ID of admin who denied
+        denied_at: datetime;
+
+        # Audit timestamps
+        required created_at: datetime {
+            default := datetime_current();
+        }
+        required updated_at: datetime {
+            default := datetime_current();
+        }
+
+        # Indexes
+        index on (.status);
+        index on (.letta_identity_id);
+    }
+}

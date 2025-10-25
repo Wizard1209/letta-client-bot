@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Bot: Polling Mode",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "letta_bot.main",
+            "args": [
+                "-p"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false,
+            "python": "${workspaceFolder}/.venv/bin/python"
+        }
+    ]
+}

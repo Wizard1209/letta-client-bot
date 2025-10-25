@@ -1,0 +1,9 @@
+# This file contains Gel extensions used by the project.
+# Uncomment the `using extension ...` below to enable them.
+
+# Gel AI is a set of tools designed to enable you to ship
+# AI-enabled apps with practically no effort.
+#
+# See: https://docs.geldata.com/reference/ai
+#
+#using extension ai;
