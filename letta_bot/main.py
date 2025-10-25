@@ -11,6 +11,7 @@ from aiogram.utils.markdown import bold
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 from gel import create_async_client
+from gel import AsyncIOExecutor as GelClient
 
 from letta_bot.config import Config
 from letta_bot.queries.is_registered_async_edgeql import (
@@ -23,10 +24,9 @@ from letta_bot.queries.register_user_async_edgeql import (
 LOGGER = logging.getLogger('application')
 CONFIG = Config()  # type: ignore
 
-gel_client = create_async_client()
 
+def init_common_handlers(dp: Dispatcher, bot: Bot, gel_client: GelClient, args: argparse.Namespace) -> None:
 
-def init_common_handlers(dp: Dispatcher, bot: Bot, args: argparse.Namespace) -> None:
     @dp.message(CommandStart())
     async def command_start_handler(message: Message) -> None:
         user = message.from_user
@@ -35,7 +35,7 @@ def init_common_handlers(dp: Dispatcher, bot: Bot, args: argparse.Namespace) -> 
             return
 
         is_registered = await is_registered_query(gel_client, telegram_id=user.id)
-        LOGGER.info(f'User is registered: {is_registered.telegram_id}')
+        LOGGER.info(f'User is registered: {not is_registered or is_registered.telegram_id}')
         if not is_registered:
             user_model = {
                 'telegram_id': user.id,
@@ -64,7 +64,10 @@ async def on_startup(bot: Bot) -> None:
 
 def main(bot: Bot, args: argparse.Namespace) -> None:
     dp = Dispatcher()
-    init_common_handlers(dp, bot, args)
+
+    gel_client = create_async_client()
+
+    init_common_handlers(dp, bot, gel_client, args)
     dp.startup.register(on_startup)  # register webhook
     dp.shutdown.register(bot.delete_webhook)
 
@@ -83,7 +86,8 @@ def main(bot: Bot, args: argparse.Namespace) -> None:
 
 async def polling(bot: Bot, args: argparse.Namespace) -> None:
     dp = Dispatcher()
-    init_common_handlers(dp, bot, args)
+    gel_client = create_async_client()
+    init_common_handlers(dp, bot, gel_client, args)
 
     await dp.start_polling(bot)
 

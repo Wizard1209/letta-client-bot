@@ -20,6 +20,10 @@ class Config(BaseSettings):
 
     admin_ids: list[int] | None = None
 
+    # Gel/EdgeDB configuration
+    gel_instance: str | None = None
+    gel_secret_key: str | None = None
+
     @field_validator('admin_ids', mode='before')
     def split_ids(cls, ids: int | str | None) -> list[int]:
         if not ids:

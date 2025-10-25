@@ -1,0 +1,29 @@
+
+services:
+  letta-bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: letta-client-bot:latest
+    container_name: letta-telegram-bot
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    expose:
+      - 80
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.letta-bot.rule=Host(`${WEBHOOK_HOST}`) && PathPrefix(`${WEBHOOK_PATH}`)"
+      - "traefik.http.routers.letta-bot.tls=true"
+      - "traefik.http.routers.letta-bot.tls.certResolver=lets-encrypt-ssl"
+    networks:
+      - monitoring
+
+volumes:
+  bot-storage:
+    driver: local
+
+networks:
+  monitoring:
+    name: monitoring_monitoring
+    external: true
