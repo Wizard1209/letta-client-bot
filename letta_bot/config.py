@@ -24,6 +24,9 @@ class Config(BaseSettings):
     gel_instance: str | None = None
     gel_secret_key: str | None = None
 
+    # Info notes directory (optional)
+    info_dir: str | None = None
+
     @field_validator('admin_ids', mode='before')
     def split_ids(cls, ids: int | str | None) -> list[int]:
         if not ids:
