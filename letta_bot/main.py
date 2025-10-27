@@ -13,6 +13,9 @@ from aiohttp import web
 from gel import AsyncIOExecutor as GelClient, create_async_client
 
 from letta_bot.config import Config
+from letta_bot.agent import init_agent_handlers
+from letta_bot.auth import init_auth_handlers
+from letta_bot.info import init_info_handlers
 from letta_bot.queries.is_registered_async_edgeql import (
     is_registered as is_registered_query,
 )
@@ -67,9 +70,9 @@ def main(bot: Bot, args: argparse.Namespace) -> None:
     gel_client = create_async_client()
 
     init_common_handlers(dp, bot, gel_client, args)
-    init_auth_handlers()
+    init_auth_handlers(dp, bot, gel_client, args)
     # agent messages and management commands
-    init_agent_logic_handlers()
+    init_agent_handlers(dp, bot, gel_client, args)
     # privacy'n'security note, contacts'n'author note, help
     init_info_handlers(dp, bot, args)
 
@@ -87,8 +90,8 @@ async def polling(bot: Bot, args: argparse.Namespace) -> None:
     gel_client = create_async_client()
 
     init_common_handlers(dp, bot, gel_client, args)
-    init_auth_handlers()
-    init_agent_logic_handlers()
+    init_auth_handlers(dp, bot, gel_client, args)
+    init_agent_handlers(dp, bot, gel_client, args)
     init_info_handlers(dp, bot, args)
 
     await dp.start_polling(bot)
