@@ -20,5 +20,5 @@ USER app
 # Copy application code
 COPY --chown=app:app . .
 
-# Run the bot
-CMD ["python", "letta_bot/main.py"]
+# Run the bot using uv to activate the virtual environment
+CMD ["uv", "run", "python", "-m", "letta_bot.main"]
