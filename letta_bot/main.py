@@ -67,6 +67,7 @@ def setup_bot_handlers(
     # Admin authorization handlers
     dp.include_router(get_auth_router(bot, gel_client))
     # Agent messages and management commands
+    # NOTE: all other messages fall to the agent
     dp.include_router(get_general_agent_router(bot, gel_client))
 
 

@@ -14,6 +14,7 @@ Telegram can't parse '.' without escaping and other characters so I had to wrap 
 - `/status` command (identity and agent info)
 - Agent selection per chat
 - Add typing status when agent producing message
+- Fix agent formating to be compatible with telegram rendering
 
 ### Medium Priority
 

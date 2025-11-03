@@ -5,14 +5,19 @@ from aiogram import Bot, Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, Message
+from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.formatting import BlockQuote, Bold, Code, Italic, Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor as GelClient
 from letta_client import AsyncLetta as LettaClient
+from letta_client.agents.messages.types.letta_streaming_response import (
+    LettaStreamingResponse,
+)
 from letta_client.core.api_error import ApiError
 from letta_client.types.identity import Identity
 
 from letta_bot.config import CONFIG
+from letta_bot.message_splitter import send_long_message
 from letta_bot.queries.create_auth_request_async_edgeql import (
     ResourceType,
     create_auth_request as create_auth_request_query,
@@ -43,9 +48,8 @@ class RequestNewAgentCallback(CallbackData, prefix='from_template'):
 
 def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     """Create and return agent router with message and command handlers."""
-    agent_router = Router(name=__name__)
     agent_commands_router = Router(name=f'{__name__}.commands')
-    agent_messaging_router = get_agent_messaging_router(gel_client)
+    agent_messaging_router = get_agent_messaging_router(bot, gel_client)
 
     @agent_commands_router.message(Command('request_resource'))
     async def request_resource(message: Message) -> None:
@@ -110,13 +114,109 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
             await bot.send_message(tg_id, Text('New agent request').as_markdown())
 
     # Include nested routers
-    agent_router.include_routers(agent_commands_router, agent_messaging_router)
+    agent_commands_router.include_router(agent_messaging_router)
 
     LOGGER.info('Agent handlers initialized')
-    return agent_router
+    return agent_commands_router
 
 
-def get_agent_messaging_router(gel_client: GelClient) -> Router:
+async def process_stream_event(event: LettaStreamingResponse) -> Text | None:
+    """Process a single stream event and return formatted Text content.
+
+    Args:
+        event: Stream event from Letta API
+
+    Returns:
+        Formatted Text object for display, or None if event should be skipped.
+    """
+    if not hasattr(event, 'message_type'):
+        return None
+
+    message_type = event.message_type
+
+    if message_type == 'assistant_message':
+        content = getattr(event, 'content', '')
+        if content and content.strip():
+            return Text(Bold('Agent response:'), '\n\n', content)
+
+    elif message_type == 'reasoning_message':
+        reasoning_text = getattr(event, 'reasoning', '')
+        return Text(Italic('Agent reasoning:'), '\n', BlockQuote(reasoning_text))
+
+    elif message_type == 'tool_call_message':
+        tool_call = event.tool_call  # type: ignore
+        tool_name = tool_call.name
+        arguments = tool_call.arguments
+
+        if not arguments or not arguments.strip():
+            return None
+
+        try:
+            args_obj = json.loads(arguments)
+
+            # Memory operations
+            if tool_name == 'archival_memory_insert':
+                content_text = args_obj.get('content', '')
+                return Text(
+                    Bold('Agent remembered:'),
+                    '\n\n',
+                    BlockQuote(content_text),
+                )
+
+            elif tool_name == 'archival_memory_search':
+                query = args_obj.get('query', '')
+                return Text(Bold('Agent searching:'), ' ', query)
+
+            elif tool_name == 'memory_insert':
+                new_str = args_obj.get('new_str', '')
+                return Text(
+                    Bold('Agent updating memory:'),
+                    '\n\n',
+                    BlockQuote(new_str),
+                )
+
+            elif tool_name == 'memory_replace':
+                old_str = args_obj.get('old_str', '')
+                new_str = args_obj.get('new_str', '')
+                return Text(
+                    Bold('Agent modifying memory:'),
+                    '\n\n',
+                    'New:\n',
+                    BlockQuote(new_str),
+                    '\n\nOld:\n',
+                    BlockQuote(old_str),
+                )
+
+            elif tool_name == 'run_code':
+                code = args_obj.get('code', '')
+                language = args_obj.get('language', 'python')
+                return Text(
+                    Bold('Agent ran code:'),
+                    '\n\n',
+                    Code(language, code),
+                )
+
+            else:
+                # Generic tool call display
+                formatted_args = json.dumps(args_obj, indent=2)
+                return Text(
+                    Bold('Agent using tool:'),
+                    f' {tool_name}\n\n',
+                    Code('json', formatted_args),
+                )
+
+        except json.JSONDecodeError as e:
+            LOGGER.warning(f'Error parsing tool arguments: {e}')
+            return Text(
+                Bold('Agent using tool:'),
+                f' {tool_name}\n\n',
+                Code('', arguments),
+            )
+
+    return None
+
+
+def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
     agent_router = Router(name=f'{__name__}.messaging')
 
     @agent_router.message()
@@ -172,111 +272,20 @@ def get_agent_messaging_router(gel_client: GelClient) -> Router:
                 messages=[{'role': 'user', 'content': request}],  # type: ignore
                 include_pings=True,
                 request_options={
-                    'timeout_in_seconds': 60,
+                    'timeout_in_seconds': 300,
                 },
             )
 
-            async for event in response_stream:
-                try:
-                    if hasattr(event, 'message_type'):
-                        message_type = event.message_type
+            async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+                async for event in response_stream:
+                    try:
+                        formatted_content = await process_stream_event(event)
+                        if formatted_content:
+                            await send_long_message(message, formatted_content)
 
-                        if message_type == 'assistant_message':
-                            content = getattr(event, 'content', '')
-                            if content and content.strip():
-                                prefixed_content = Text(
-                                    Bold('Agent response:'), '\n\n', content
-                                )
-                                await message.answer(prefixed_content.as_markdown())
-
-                        elif message_type == 'reasoning_message':
-                            # TODO: add ability to disable reasoning in Identity table
-                            reasoning_text = getattr(event, 'reasoning', '')
-                            content = Text(
-                                Italic('Agent reasoning:'), '\n', BlockQuote(reasoning_text)
-                            )
-                            await message.answer(content.as_markdown())
-
-                        elif message_type == 'tool_call_message':
-                            tool_call = event.tool_call  # type: ignore
-                            tool_name = tool_call.name
-                            arguments = tool_call.arguments
-
-                            if arguments and arguments.strip():
-                                try:
-                                    args_obj = json.loads(arguments)
-
-                                    # Memory operations
-                                    if tool_name == 'archival_memory_insert':
-                                        content_text = args_obj.get('content', '')
-                                        formatted = Text(
-                                            Bold('Agent remembered:'),
-                                            '\n\n',
-                                            BlockQuote(content_text),
-                                        )
-                                        await message.answer(formatted.as_markdown())
-
-                                    elif tool_name == 'archival_memory_search':
-                                        query = args_obj.get('query', '')
-                                        formatted = Text(
-                                            Bold('Agent searching:'), ' ', query
-                                        )
-                                        await message.answer(formatted.as_markdown())
-
-                                    elif tool_name == 'memory_insert':
-                                        new_str = args_obj.get('new_str', '')
-                                        formatted = Text(
-                                            Bold('Agent updating memory:'),
-                                            '\n\n',
-                                            BlockQuote(new_str),
-                                        )
-                                        await message.answer(formatted.as_markdown())
-
-                                    elif tool_name == 'memory_replace':
-                                        old_str = args_obj.get('old_str', '')
-                                        new_str = args_obj.get('new_str', '')
-                                        formatted = Text(
-                                            Bold('Agent modifying memory:'),
-                                            '\n\n',
-                                            'New:\n',
-                                            BlockQuote(new_str),
-                                            '\n\nOld:\n',
-                                            BlockQuote(old_str),
-                                        )
-                                        await message.answer(formatted.as_markdown())
-
-                                    elif tool_name == 'run_code':
-                                        code = args_obj.get('code', '')
-                                        language = args_obj.get('language', 'python')
-                                        formatted = Text(
-                                            Bold('Agent ran code:'),
-                                            '\n\n',
-                                            Code(language, code),
-                                        )
-                                        await message.answer(formatted.as_markdown())
-
-                                    else:
-                                        # Generic tool call display
-                                        formatted_args = json.dumps(args_obj, indent=2)
-                                        formatted = Text(
-                                            Bold('Agent using tool:'),
-                                            f' {tool_name}\n\n',
-                                            Code('json', formatted_args),
-                                        )
-                                        await message.answer(formatted.as_markdown())
-
-                                except json.JSONDecodeError as e:
-                                    LOGGER.warning(f'Error parsing tool arguments: {e}')
-                                    formatted = Text(
-                                        Bold('Agent using tool:'),
-                                        f' {tool_name}\n\n',
-                                        Code('', arguments),
-                                    )
-                                    await message.answer(formatted.as_markdown())
-
-                except Exception as e:
-                    LOGGER.warning(f'Error processing stream event: {e}')
-                    continue
+                    except Exception as e:
+                        LOGGER.warning(f'Error processing stream event: {e}')
+                        continue
 
         except ApiError as e:
             LOGGER.error(
