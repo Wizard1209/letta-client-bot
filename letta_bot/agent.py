@@ -5,7 +5,7 @@ from aiogram import Bot, Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, Message
-from aiogram.utils.formatting import BlockQuote, Code, Text
+from aiogram.utils.formatting import BlockQuote, Bold, Code, Italic, Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor as GelClient
 from letta_client import AsyncLetta as LettaClient
@@ -51,6 +51,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         templates_response = await client.templates.list(project_slug=CONFIG.letta_project)
         templates = templates_response.templates
 
+        # TODO: Maybe adjust builder for vertical buttons layout
         builder = InlineKeyboardBuilder()
         for t in templates:
             data = RequestNewAgentCallback(template_name=t.name, version=t.latest_version)
@@ -162,14 +163,16 @@ def get_agent_messaging_router(gel_client: GelClient) -> Router:
                         if message_type == 'assistant_message':
                             content = getattr(event, 'content', '')
                             if content and content.strip():
-                                prefixed_content = Text(f'**Agent response:**\n\n{content}')
+                                prefixed_content = Text(
+                                    Bold('Agent response:'), '\n\n', content
+                                )
                                 await message.answer(prefixed_content.as_markdown())
 
                         elif message_type == 'reasoning_message':
                             # TODO: add ability to disable reasoning in Identity table
                             reasoning_text = getattr(event, 'reasoning', '')
                             content = Text(
-                                'Agent reasoning\n\n', BlockQuote(reasoning_text)
+                                Italic('Agent reasoning:'), '\n', BlockQuote(reasoning_text)
                             )
                             await message.answer(content.as_markdown())
 
@@ -186,20 +189,24 @@ def get_agent_messaging_router(gel_client: GelClient) -> Router:
                                     if tool_name == 'archival_memory_insert':
                                         content_text = args_obj.get('content', '')
                                         formatted = Text(
-                                            '**Agent remembered:**\n\n',
+                                            Bold('Agent remembered:'),
+                                            '\n\n',
                                             BlockQuote(content_text),
                                         )
                                         await message.answer(formatted.as_markdown())
 
                                     elif tool_name == 'archival_memory_search':
                                         query = args_obj.get('query', '')
-                                        formatted = Text('**Agent searching:** ', query)
+                                        formatted = Text(
+                                            Bold('Agent searching:'), ' ', query
+                                        )
                                         await message.answer(formatted.as_markdown())
 
                                     elif tool_name == 'memory_insert':
                                         new_str = args_obj.get('new_str', '')
                                         formatted = Text(
-                                            '**Agent updating memory:**\n\n',
+                                            Bold('Agent updating memory:'),
+                                            '\n\n',
                                             BlockQuote(new_str),
                                         )
                                         await message.answer(formatted.as_markdown())
@@ -208,7 +215,8 @@ def get_agent_messaging_router(gel_client: GelClient) -> Router:
                                         old_str = args_obj.get('old_str', '')
                                         new_str = args_obj.get('new_str', '')
                                         formatted = Text(
-                                            '**Agent modifying memory:**\n\n',
+                                            Bold('Agent modifying memory:'),
+                                            '\n\n',
                                             'New:\n',
                                             BlockQuote(new_str),
                                             '\n\nOld:\n',
@@ -220,7 +228,9 @@ def get_agent_messaging_router(gel_client: GelClient) -> Router:
                                         code = args_obj.get('code', '')
                                         language = args_obj.get('language', 'python')
                                         formatted = Text(
-                                            '**Agent ran code:**\n\n', Code(language, code)
+                                            Bold('Agent ran code:'),
+                                            '\n\n',
+                                            Code(language, code),
                                         )
                                         await message.answer(formatted.as_markdown())
 
@@ -228,7 +238,8 @@ def get_agent_messaging_router(gel_client: GelClient) -> Router:
                                         # Generic tool call display
                                         formatted_args = json.dumps(args_obj, indent=2)
                                         formatted = Text(
-                                            f'**Agent using tool:** {tool_name}\n\n',
+                                            Bold('Agent using tool:'),
+                                            f' {tool_name}\n\n',
                                             Code('json', formatted_args),
                                         )
                                         await message.answer(formatted.as_markdown())
@@ -236,7 +247,8 @@ def get_agent_messaging_router(gel_client: GelClient) -> Router:
                                 except json.JSONDecodeError as e:
                                     LOGGER.warning(f'Error parsing tool arguments: {e}')
                                     formatted = Text(
-                                        f'**Agent using tool:** {tool_name}\n\n',
+                                        Bold('Agent using tool:'),
+                                        f' {tool_name}\n\n',
                                         Code('', arguments),
                                     )
                                     await message.answer(formatted.as_markdown())

@@ -1,25 +1,25 @@
-**Available Commands**
+Available Commands
 
-**Information**
+Information
 /help - Display this help message
 /privacy - View privacy policy and data handling practices
 /security - Learn about security measures
 /about - Information about this bot
 /contact - Get support and contact information
 
-**Agent Access**
+Agent Access
 /request_resource - Request access to an AI agent from available templates
 
-**Admin Commands**
+Admin Commands
 /admin pending - View all pending authorization requests
 /admin allow - Approve a user's authorization request
 /admin deny - Deny a user's authorization request
 /admin list - List all active users with granted access
 /admin revoke - Revoke a user's access to the system
 
----
+──────────────────────────────
 
-**How to Use**
+How to Use
 
 Use /request_resource to browse available AI agent templates and request access. An administrator will review and approve your request.
 
