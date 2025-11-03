@@ -6,7 +6,7 @@ WORKDIR /app
 RUN adduser --disabled-password --gecos '' app && chown -R app:app /app
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
@@ -21,4 +21,4 @@ USER app
 COPY --chown=app:app . .
 
 # Run the bot
-CMD ["uv", "run", "python", "letta_bot/main.py"]
+CMD ["python", "letta_bot/main.py"]
