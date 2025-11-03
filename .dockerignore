@@ -1,0 +1,25 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Development
+.git/
+.gitignore
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Environment files (should be mounted/injected)
+.env
+.env.*
+
+# Documentation
+README.md
+*.md

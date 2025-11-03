@@ -139,6 +139,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                 if not identity_result:
                     # if identity doesn't exist create identity with letta
                     name, id_ = resource_id.rsplit(':', 1)
+                    # TODO: change identity prefix based on local or prod env
                     letta_identity = await create_letta_identity(
                         identifier_key=f'tg1-{id_}', name=name
                     )
