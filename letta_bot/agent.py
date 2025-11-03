@@ -48,14 +48,12 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     async def request_resource(message: Message) -> None:
         # TODO: if no pending requests
 
-        templates = (await client.templates.list(project_slug=CONFIG.letta_project))
-        templates = templates.templates
+        templates_response = await client.templates.list(project_slug=CONFIG.letta_project)
+        templates = templates_response.templates
 
         builder = InlineKeyboardBuilder()
         for t in templates:
-            data = RequestNewAgentCallback(
-                template_name=t.name, version=t.latest_version
-            )
+            data = RequestNewAgentCallback(template_name=t.name, version=t.latest_version)
             builder.button(text=f'{t.name}', callback_data=data.pack())
         await message.answer(
             Text('Choose template').as_markdown(), reply_markup=builder.as_markup()
