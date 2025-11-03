@@ -7,7 +7,7 @@ from uuid import UUID
 from aiogram import Bot, Router
 from aiogram.filters.command import Command
 from aiogram.types import Message
-from aiogram.utils.formatting import Text, Code, as_list
+from aiogram.utils.formatting import Code, Text, as_list
 from gel import AsyncIOExecutor as GelClient
 
 from letta_bot.agent import create_agent_from_template, create_letta_identity

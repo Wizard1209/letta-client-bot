@@ -10,6 +10,7 @@ Telegram can't parse '.' without escaping and other characters so I had to wrap 
 
 ### High Priority
 
+- Implement gel schema migrations automatically
 - `/status` command (identity and agent info)
 - Agent selection per chat
 - Add typing status when agent producing message
@@ -33,7 +34,7 @@ Telegram can't parse '.' without escaping and other characters so I had to wrap 
 
 ## TODO
 
-Local TODOs kept in code
+Local TODOs are still in code
 
 - Notify end user on: waiting for approval, approved, the rest
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>

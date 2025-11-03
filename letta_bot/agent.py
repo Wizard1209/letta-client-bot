@@ -24,6 +24,9 @@ from letta_bot.queries.get_identity_async_edgeql import (
     GetIdentityResult,
     get_identity as get_identity_query,
 )
+from letta_bot.queries.is_registered_async_edgeql import (
+    is_registered as is_registered_query,
+)
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
 )
@@ -64,6 +67,17 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     async def register_request_resource(
         callback: CallbackQuery, callback_data: RequestNewAgentCallback
     ) -> None:
+        # Check if user is registered
+        if not await is_registered_query(gel_client, telegram_id=callback.from_user.id):
+            LOGGER.error(
+                f'User {callback.from_user.id} attempted '
+                'to request resource without being registered'
+            )
+            await callback.answer(
+                Text('You must use /start command first to register').as_markdown(),
+            )
+            return
+
         if not await get_allowed_identity_query(
             gel_client, telegram_id=callback.from_user.id
         ):
@@ -80,6 +94,13 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
             telegram_id=callback.from_user.id,
             resource_type=ResourceType.CREATE_AGENT_FROM_TEMPLATE,
             resource_id=callback_data.pack(),
+        )
+
+        # Notify user that request was submitted
+        await callback.answer(
+            Text(
+                '✅ Your request has been submitted and is pending admin approval'
+            ).as_markdown(),
         )
 
         # notify admins
