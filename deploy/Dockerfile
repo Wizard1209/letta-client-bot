@@ -21,4 +21,4 @@ RUN uv sync --frozen --no-dev
 COPY --chown=app:app . .
 
 # Run the bot using uv to activate the virtual environment
-CMD ["uv", "run", "python", "-m", "letta_bot.main"]
+CMD ["uv", "run", "--no-dev", "python", "-m", "letta_bot.main"]

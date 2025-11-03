@@ -302,6 +302,7 @@ async def create_letta_identity(identifier_key: str, name: str) -> Identity:
 
         try:
             # List identities by identifier_key (same pattern as delete_identity.py)
+            # TODO: Now list works properly only with project_id specified
             identities = await client.identities.list(identifier_key=identifier_key)
 
             if not identities:
