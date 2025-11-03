@@ -7,7 +7,7 @@ from uuid import UUID
 from aiogram import Bot, Router
 from aiogram.filters.command import Command
 from aiogram.types import Message
-from aiogram.utils.formatting import Text, Code
+from aiogram.utils.formatting import Text, Code, as_list
 from gel import AsyncIOExecutor as GelClient
 
 from letta_bot.agent import create_agent_from_template, create_letta_identity
@@ -88,20 +88,24 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             await message.answer(Text('No pending authorization requests.').as_markdown())
             return
 
-        response_lines = ['📋 Pending Authorization Requests:\n']
+        response_lines = [Text('📋 Pending Authorization Requests:\n\n')]
         for req in pending_requests:
             user = req.user
             username_str = f'@{user.username}' if user.username else 'no username'
             response_lines.append(
-                f'• User: {user.full_name or user.first_name} ({username_str})\n'
-                f'  Telegram ID: {user.telegram_id}\n'
-                f'  Request ID: ' + Code(req.id) + '\n'
-                f'  Resource: {req.resource_type.value}\n'
-                f'  Resource ID: {req.resource_id}\n'
-                # TODO: Add approve and revoke command?
+                Text(
+                    f'• User: {user.full_name or user.first_name} ({username_str})\n',
+                    f'  Telegram ID: {user.telegram_id}\n',
+                    '  Request ID: ',
+                    Code(req.id),
+                    '\n',
+                    f'  Resource: {req.resource_type.value}\n',
+                    f'  Resource ID: {req.resource_id}\n\n',
+                    # TODO: Add approve and revoke command?
+                )
             )
 
-        await message.answer(Text('\n'.join(response_lines)).as_markdown())
+        await message.answer(as_list(*response_lines).as_markdown())
 
     async def handle_allow(
         message: Message, gel_client: GelClient, bot: Bot, parts: list[str]
@@ -141,7 +145,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                     name, id_ = resource_id.rsplit(':', 1)
                     # TODO: change identity prefix based on local or prod env
                     letta_identity = await create_letta_identity(
-                        identifier_key=f'tg1-{id_}', name=name
+                        identifier_key=f'tg-{id_}', name=name
                     )
                     await create_identity_query(
                         gel_client,
