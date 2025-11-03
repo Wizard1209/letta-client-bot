@@ -88,4 +88,7 @@ gel.local.toml
 # local reference folders
 letta-telegram-reference
 
+# Cringe, might be added to repository later
+development_scripts
+
 CLAUDE.md

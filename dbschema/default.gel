@@ -1,7 +1,9 @@
 module default {
     # Enums
-    scalar type AuthStatus extending enum<pending, authorized, denied>;
-    scalar type ResourceType extending enum<agent_from_template>;
+    # NOTE: Revoked is necessary to maintain data for users without access
+    scalar type AuthStatus extending enum<pending, allowed, denied, revoked>;
+    # NOTE: access_agent is not used now
+    scalar type ResourceType extending enum<access_identity, create_agent_from_template, access_agent>;
 
     # User record based on Telegram User model
     # https://core.telegram.org/bots/api#user
@@ -20,10 +22,7 @@ module default {
 
         # Tracking fields
         required first_seen: datetime {
-            default := datetime_current();
-        }
-        required last_seen: datetime {
-            default := datetime_current();
+            default := datetime_of_transaction();
         }
 
         # Computed property for display name
@@ -41,18 +40,18 @@ module default {
         }
 
         # Letta identity reference (UUID string)
-        letta_identity_id: str;
+        required identifier_key: str {
+            constraint exclusive;
+        }
+        required identity_id: str {
+            constraint exclusive;
+        }
 
-        # Approval tracking
-        approved_by: int64;  # Telegram user ID of admin who approved
-        approved_at: datetime;
+        selected_agent: str;
 
         # Audit timestamps
         required created_at: datetime {
-            default := datetime_current();
-        }
-        required updated_at: datetime {
-            default := datetime_current();
+            default := datetime_of_transaction();
         }
     }
 
@@ -66,7 +65,18 @@ module default {
             default := AuthStatus.pending;
         }
 
+        # request message
         message: str;
+        # admin message
+        response: str;
+
+        # TODO: updated_by not implemented
+        updated_by: int64;
+
+        # Audit timestamps
+        required created_at: datetime {
+            default := datetime_of_transaction();
+        }
 
         index on (.status);
     }

@@ -76,6 +76,7 @@ exclude = [
     "letta-telegram-reference/",
     "letta_bot/queries/.*_async_edgeql\\.py$",
 ]
+plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
 module = "tests.*"
