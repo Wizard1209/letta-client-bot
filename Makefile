@@ -44,19 +44,19 @@ poll:
 
 # Docker deployment
 build:
-	docker compose -f deploy/docker-compose.yaml build
+	docker compose -f deploy/docker-compose.yaml --env-file .env build
 
 up:
-	docker compose -f deploy/docker-compose.yaml up -d
+	docker compose -f deploy/docker-compose.yaml --env-file .env up -d
 
 down:
-	docker compose -f deploy/docker-compose.yaml down
+	docker compose -f deploy/docker-compose.yaml --env-file .env down
 
 logs:
-	docker compose -f deploy/docker-compose.yaml logs -f
+	docker compose -f deploy/docker-compose.yaml --env-file .env logs -f
 
 restart: down build up
 	@echo "Bot restarted successfully"
 
 clean:
-	docker compose -f deploy/docker-compose.yaml down -v
+	docker compose -f deploy/docker-compose.yaml --env-file .env down -v
