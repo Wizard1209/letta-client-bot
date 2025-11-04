@@ -3,12 +3,12 @@ Available Commands
 Information
 /help - Display this help message
 /privacy - View privacy policy and data handling practices
-/security - Learn about security measures
 /about - Information about this bot
 /contact - Get support and contact information
+/changelog - View project changelog and version history
 
 Agent Access
-/request_resource - Request access to an AI agent from available templates
+/agent_from_template - Request access to an AI agent from available templates
 
 Admin Commands
 /admin pending - View all pending authorization requests
@@ -21,10 +21,8 @@ Admin Commands
 
 How to Use
 
-Use /request_resource to browse available AI agent templates and request access. An administrator will review and approve your request.
+Use /agent_from_template to browse available AI agent templates and request access. An administrator will review and approve your request.
 
 Once approved, simply send messages to chat with your personal AI agent.
-
-For more information about privacy and security, use /privacy and /security commands.
 
 Need help? Use /contact to reach support.

@@ -1,12 +1,11 @@
 # Bot Info Notes
 
-Place markdown files here to be served by the info command handlers (`/welcome`, `/privacy`, `/security`, `/help`, `/about`, `/contact`).
+Place markdown files here to be served by the info command handlers (`/welcome`, `/privacy`, `/help`, `/about`, `/contact`).
 
 ## Available files
 
 - `welcome.md` - First information the user sees
 - `privacy.md` - Privacy policy and data handling information
-- `security.md` - Security practices and information
 - `help.md` - Help documentation and available commands
 - `about.md` - Information about the bot
 - `contact.md` - Contact and support information

@@ -173,6 +173,25 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             Text(f'✅ Authorization request approved: {request_id}\n').as_markdown()
         )
 
+        # Notify user of approval
+        try:
+            resource_description = (
+                'identity access'
+                if resource_type == ResourceType.ACCESS_IDENTITY
+                else f'agent from template {resource_id}'
+            )
+            await bot.send_message(
+                chat_id=result.user.telegram_id,
+                text=Text(
+                    f'✅ Your request for {resource_description} has been approved!\n\n'
+                    'You can now use the bot.'
+                ).as_markdown(),
+            )
+        except Exception as e:
+            LOGGER.error(
+                f'Failed to notify user {result.user.telegram_id} about approval: {e}'
+            )
+
     async def handle_deny(
         message: Message, gel_client: GelClient, bot: Bot, parts: list[str]
     ) -> None:
@@ -203,7 +222,6 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             return
 
         # TODO: Store denial reason in database (update AuthorizationRequest.response field)
-        # TODO: Notify user of denial with reason via bot.send_message()
 
         reason_msg = f' Reason: {reason}' if reason else ''
         await message.answer(
@@ -211,6 +229,24 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                 f'❌ Authorization request denied: {request_id}{reason_msg}\n'
             ).as_markdown()
         )
+
+        # Notify user of denial with reason
+        try:
+            user_message_parts = ['❌ Your authorization request has been denied.']
+            if reason:
+                user_message_parts.append(f'\n\nReason: {reason}')
+            user_message_parts.append(
+                '\n\nYou can submit a new request using /agent_from_template if needed.'
+            )
+
+            await bot.send_message(
+                chat_id=result.user.telegram_id,
+                text=Text(''.join(user_message_parts)).as_markdown(),
+            )
+        except Exception as e:
+            LOGGER.error(
+                f'Failed to notify user {result.user.telegram_id} about denial: {e}'
+            )
 
     async def handle_revoke(
         message: Message, gel_client: GelClient, bot: Bot, parts: list[str]
@@ -241,14 +277,27 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             )
             return
 
-        # TODO: Notify user of revocation via bot.send_message()
-
         await message.answer(
             Text(
                 f'🚫 Access revoked for user {telegram_id} '
                 f'({len(result)} request(s) updated)\n'
             ).as_markdown()
         )
+
+        # Notify user of revocation
+        try:
+            await bot.send_message(
+                chat_id=telegram_id,
+                text=Text(
+                    '🚫 Your access to the bot has been revoked.\n\n'
+                    'If you believe this was done in error, '
+                    'please contact the administrator.\n'
+                    'You can submit a new request using /agent_from_template '
+                    'if you wish to regain access.'
+                ).as_markdown(),
+            )
+        except Exception as e:
+            LOGGER.error(f'Failed to notify user {telegram_id} about revocation: {e}')
 
     async def handle_list(message: Message, gel_client: GelClient) -> None:
         """List active users"""

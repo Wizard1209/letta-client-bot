@@ -8,7 +8,7 @@ This bot connects you with a modern stateful AI assistant that:
 Get Started
 
 Request your personal agent:
-/request_resource
+/agent_from_template
 
 Once approved, simply send messages to interact with your assistant!
 

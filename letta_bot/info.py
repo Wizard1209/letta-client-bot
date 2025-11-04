@@ -1,5 +1,5 @@
 """
-Info handlers for serving markdown notes (privacy, security, help, contact, about).
+Info handlers for commands serving information
 """
 
 import logging
@@ -7,7 +7,6 @@ import logging
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
-from aiogram.utils.formatting import Text
 
 from letta_bot.config import CONFIG
 
@@ -16,13 +15,17 @@ LOGGER = logging.getLogger(__name__)
 
 def load_info_command_content(note_name: str) -> str:
     """
-    Load markdown note from specified directory.
+    Load markdown note from specified directory as raw MarkdownV2 text.
+
+    Note files must be manually formatted with proper MarkdownV2 escaping.
+    Content is NOT processed through aiogram formatting utilities - it's sent
+    directly to Telegram as raw MarkdownV2.
 
     Args:
         note_name: Name of the note file (without .md extension)
 
     Returns:
-        Content of the markdown file, or error message if not found
+        Raw MarkdownV2 content, or error message if not found
     """
     notes_dir = CONFIG.info_dir
 
@@ -36,14 +39,14 @@ def load_info_command_content(note_name: str) -> str:
 
     if not note_path.exists():
         LOGGER.warning(f'Note file not found: {note_path}')
-        return Text(f"ℹ️ Note '{note_name}' is not available.").as_markdown()
+        return f"ℹ️ Note '{note_name}' is not available\\."
 
     try:
-        content = note_path.read_text(encoding='utf-8')
-        return Text(content).as_markdown()
+        content = note_path.read_text(encoding='utf-8').strip()
+        return content
     except Exception as e:
         LOGGER.error(f'Error reading note {note_path}: {e}')
-        return Text(f'❌ Error loading note: {e}').as_markdown()
+        return f'❌ Error loading note: {str(e)}'
 
 
 def get_info_router() -> Router:
@@ -64,12 +67,6 @@ def get_info_router() -> Router:
         content = load_info_command_content('privacy')
         await message.answer(content)
 
-    @info_router.message(Command('security'))
-    async def security_handler(message: Message) -> None:
-        """Display security practices and information."""
-        content = load_info_command_content('security')
-        await message.answer(content)
-
     @info_router.message(Command('help'))
     async def help_handler(message: Message) -> None:
         """Display help documentation and available commands."""
@@ -86,6 +83,12 @@ def get_info_router() -> Router:
     async def contact_handler(message: Message) -> None:
         """Display contact and support information."""
         content = load_info_command_content('contact')
+        await message.answer(content)
+
+    @info_router.message(Command('changelog'))
+    async def changelog_handler(message: Message) -> None:
+        """Display project changelog and version history."""
+        content = load_info_command_content('changelog')
         await message.answer(content)
 
     LOGGER.info('Info handlers initialized')

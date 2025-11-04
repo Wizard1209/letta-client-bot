@@ -51,8 +51,8 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     agent_commands_router = Router(name=f'{__name__}.commands')
     agent_messaging_router = get_agent_messaging_router(bot, gel_client)
 
-    @agent_commands_router.message(Command('request_resource'))
-    async def request_resource(message: Message) -> None:
+    @agent_commands_router.message(Command('agent_from_template'))
+    async def agent_from_template(message: Message) -> None:
         # TODO: if no pending requests
 
         templates_response = await client.templates.list(project_slug=CONFIG.letta_project)
@@ -68,7 +68,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         )
 
     @agent_commands_router.callback_query(RequestNewAgentCallback.filter())
-    async def register_request_resource(
+    async def register_agent_request(
         callback: CallbackQuery, callback_data: RequestNewAgentCallback
     ) -> None:
         # Check if user is registered

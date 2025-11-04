@@ -62,7 +62,7 @@ def setup_bot_handlers(
     """Register all common bot handlers (commands, routers, etc.)."""
     # Register /start command
     register_start_command(dp, gel_client)
-    # Privacy, security, help, about, contact commands
+    # Privacy, help, about, contact commands
     dp.include_router(get_info_router())
     # Admin authorization handlers
     dp.include_router(get_auth_router(bot, gel_client))

@@ -4,16 +4,15 @@
 
 ### Message sending
 
-Telegram can't parse '.' without escaping and other characters so I had to wrap everything inside aiogram formating
+Telegram can't parse '.' and other characters without escaping, so I had to wrap everything inside aiogram formating
 
 ## Planned features
 
 ### High Priority
 
-- Implement gel schema migrations automatically
+- Run gel schema migrations automatically
 - `/status` command (identity and agent info)
 - Agent selection per chat
-- Add typing status when agent producing message
 - Fix agent formating to be compatible with telegram rendering
 
 ### Medium Priority
@@ -33,11 +32,11 @@ Telegram can't parse '.' without escaping and other characters so I had to wrap 
 - Bulk admin operations
 - Add message editing support
 
-## TODO
+## Technical TODOs
 
 Local TODOs are still in code
 
-- Notify end user on: waiting for approval, approved, the rest
+- Rewrite agent response formating from aiogram to custom based on Cameron advice
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>
 - Wrap auth logic with multiple db queries into transactions <https://docs.geldata.com/reference/using/python#transactions>
 
