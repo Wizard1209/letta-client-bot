@@ -30,7 +30,3 @@ All notable changes to this project will be documented in this file\.
 • Message length handling for Telegram 4096 character limit
 • MarkdownV2 escaping via aiogram formatting
 • Callback query error handling
-
-──────────────────────────────
-
-For full changelog, see CHANGELOG\.md in the repository root\.
