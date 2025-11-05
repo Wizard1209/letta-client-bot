@@ -1,4 +1,3 @@
-import json
 import logging
 
 from aiogram import Bot, Router
@@ -6,18 +5,18 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.chat_action import ChatActionSender
-from aiogram.utils.formatting import BlockQuote, Bold, Code, Italic, Text
+from aiogram.utils.formatting import Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor as GelClient
 from letta_client import AsyncLetta as LettaClient
-from letta_client.agents.messages.types.letta_streaming_response import (
-    LettaStreamingResponse,
-)
 from letta_client.core.api_error import ApiError
-from letta_client.types.identity import Identity
 
+from letta_bot.auth import require_identity
 from letta_bot.config import CONFIG
 from letta_bot.message_splitter import send_long_message
+from letta_bot.queries.check_pending_request_async_edgeql import (
+    check_pending_request as check_pending_request_query,
+)
 from letta_bot.queries.create_auth_request_async_edgeql import (
     ResourceType,
     create_auth_request as create_auth_request_query,
@@ -25,16 +24,14 @@ from letta_bot.queries.create_auth_request_async_edgeql import (
 from letta_bot.queries.get_allowed_identity_async_edgeql import (
     get_allowed_identity as get_allowed_identity_query,
 )
-from letta_bot.queries.get_identity_async_edgeql import (
-    GetIdentityResult,
-    get_identity as get_identity_query,
-)
+from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
 from letta_bot.queries.is_registered_async_edgeql import (
     is_registered as is_registered_query,
 )
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
 )
+from letta_bot.response_parser import process_stream_event
 
 client = LettaClient(project=CONFIG.letta_project, token=CONFIG.letta_api_key)
 LOGGER = logging.getLogger(__name__)
@@ -46,13 +43,66 @@ class RequestNewAgentCallback(CallbackData, prefix='from_template'):
     version: str = 'latest'
 
 
+class SwitchAgentCallback(CallbackData, prefix='switch_agent'):
+    agent_id: str
+
+
 def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     """Create and return agent router with message and command handlers."""
     agent_commands_router = Router(name=f'{__name__}.commands')
     agent_messaging_router = get_agent_messaging_router(bot, gel_client)
 
-    @agent_commands_router.message(Command('agent_from_template'))
-    async def agent_from_template(message: Message) -> None:
+    @agent_commands_router.message(Command('request_identity'))
+    async def request_identity(message: Message) -> None:
+        """Request identity access without requesting an agent."""
+        if not message.from_user:
+            return
+
+        # Check if user already has identity access
+        if await get_allowed_identity_query(gel_client, telegram_id=message.from_user.id):
+            await message.answer(Text('✅ You already have identity access').as_markdown())
+            return
+
+        # Check if user already has a pending identity request
+        has_pending = await check_pending_request_query(
+            gel_client,
+            telegram_id=message.from_user.id,
+            resource_type=ResourceType.ACCESS_IDENTITY,
+        )
+        if has_pending:
+            await message.answer(
+                Text(
+                    '⏳ You already have a pending identity access request. '
+                    'Please wait for admin approval.'
+                ).as_markdown()
+            )
+            return
+
+        # Create identity access request
+        await create_auth_request_query(
+            gel_client,
+            telegram_id=message.from_user.id,
+            resource_type=ResourceType.ACCESS_IDENTITY,
+            resource_id=f'{message.from_user.first_name}:{message.from_user.id}',
+        )
+
+        # Notify user
+        await message.answer(
+            Text(
+                '✅ Your identity access request has been submitted '
+                'and is pending admin approval'
+            ).as_markdown()
+        )
+
+        # Notify admins
+        if CONFIG.admin_ids is not None:
+            for tg_id in CONFIG.admin_ids:
+                await bot.send_message(
+                    tg_id, Text('New identity access request').as_markdown()
+                )
+
+    @agent_commands_router.message(Command('new_agent_from_template'))
+    async def new_agent_from_template(message: Message) -> None:
         # TODO: if no pending requests
 
         templates_response = await client.templates.list(project_slug=CONFIG.letta_project)
@@ -82,10 +132,38 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
             )
             return
 
-        if not await get_allowed_identity_query(
-            gel_client, telegram_id=callback.from_user.id
-        ):
+        # Check if user already has a pending identity request
+        has_pending = await check_pending_request_query(
+            gel_client,
+            telegram_id=callback.from_user.id,
+            resource_type=ResourceType.CREATE_AGENT_FROM_TEMPLATE,
+        )
+        if has_pending:
+            await callback.answer(
+                Text(
+                    '⏳ You already have a pending identity access request. '
+                    'Please wait for admin approval.'
+                ).as_markdown()
+            )
+            return
+
+        if not await get_allowed_identity_query(gel_client, telegram_id=callback.from_user.id):
             # TODO: maybe identity name could be customed
+            # Check if user already has a pending identity request
+            has_pending = await check_pending_request_query(
+                gel_client,
+                telegram_id=callback.from_user.id,
+                resource_type=ResourceType.ACCESS_IDENTITY,
+            )
+            if has_pending:
+                await callback.answer(
+                    Text(
+                        '⏳ You already have a pending identity access request. '
+                        'Please wait for admin approval.'
+                    ).as_markdown()
+                )
+                return
+
             await create_auth_request_query(
                 gel_client,
                 telegram_id=callback.from_user.id,
@@ -113,6 +191,67 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         for tg_id in CONFIG.admin_ids:
             await bot.send_message(tg_id, Text('New agent request').as_markdown())
 
+    @agent_commands_router.message(Command('switch_agent'))
+    @require_identity(gel_client)
+    async def switch_agent(message: Message, identity: GetIdentityResult) -> None:
+        """List user's agents and allow switching between them."""
+        if not message.from_user:
+            return
+
+        # List all agents for this identity
+        try:
+            agents = await client.identities.agents.list(identity_id=identity.identity_id)
+
+            if not agents:
+                await message.answer(
+                    Text(
+                        "You don't have any agents yet. "
+                        'Use /agent_from_template to request one.'
+                    ).as_markdown()
+                )
+                return
+
+            # Build inline keyboard with agents
+            builder = InlineKeyboardBuilder()
+            for agent in agents:
+                # Mark currently selected agent
+                is_selected = agent.id == identity.selected_agent
+                button_text = f'{"✅ " if is_selected else ""}{agent.name}'
+                callback_data = SwitchAgentCallback(agent_id=agent.id)
+                builder.button(text=button_text, callback_data=callback_data.pack())
+
+            # Adjust layout for vertical buttons
+            builder.adjust(1)
+
+            await message.answer(
+                Text('Select an agent:').as_markdown(), reply_markup=builder.as_markup()
+            )
+
+        except ApiError as e:
+            LOGGER.error(f'Error listing agents for identity {identity.identity_id}: {e}')
+            await message.answer(Text('Error retrieving your agents').as_markdown())
+
+    @agent_commands_router.callback_query(SwitchAgentCallback.filter())
+    @require_identity(gel_client)
+    async def handle_switch_agent(
+        callback: CallbackQuery,
+        callback_data: SwitchAgentCallback,
+        identity: GetIdentityResult,
+    ) -> None:
+        """Handle agent selection callback."""
+        if not callback.from_user:
+            return
+
+        # Update selected agent in database
+        await set_selected_agent_query(
+            gel_client, identity_id=identity.identity_id, agent_id=callback_data.agent_id
+        )
+
+        await bot.send_message(
+            chat_id=callback.from_user.id,
+            text=Text('✅ Agent switched successfully').as_markdown(),
+        )
+
     # Include nested routers
     agent_commands_router.include_router(agent_messaging_router)
 
@@ -120,115 +259,13 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     return agent_commands_router
 
 
-async def process_stream_event(event: LettaStreamingResponse) -> Text | None:
-    """Process a single stream event and return formatted Text content.
-
-    Args:
-        event: Stream event from Letta API
-
-    Returns:
-        Formatted Text object for display, or None if event should be skipped.
-    """
-    if not hasattr(event, 'message_type'):
-        return None
-
-    message_type = event.message_type
-
-    if message_type == 'assistant_message':
-        content = getattr(event, 'content', '')
-        if content and content.strip():
-            return Text(Bold('Agent response:'), '\n\n', content)
-
-    elif message_type == 'reasoning_message':
-        reasoning_text = getattr(event, 'reasoning', '')
-        return Text(Italic('Agent reasoning:'), '\n', BlockQuote(reasoning_text))
-
-    elif message_type == 'tool_call_message':
-        tool_call = event.tool_call  # type: ignore
-        tool_name = tool_call.name
-        arguments = tool_call.arguments
-
-        if not arguments or not arguments.strip():
-            return None
-
-        try:
-            args_obj = json.loads(arguments)
-
-            # Memory operations
-            if tool_name == 'archival_memory_insert':
-                content_text = args_obj.get('content', '')
-                return Text(
-                    Bold('Agent remembered:'),
-                    '\n\n',
-                    BlockQuote(content_text),
-                )
-
-            elif tool_name == 'archival_memory_search':
-                query = args_obj.get('query', '')
-                return Text(Bold('Agent searching:'), ' ', query)
-
-            elif tool_name == 'memory_insert':
-                new_str = args_obj.get('new_str', '')
-                return Text(
-                    Bold('Agent updating memory:'),
-                    '\n\n',
-                    BlockQuote(new_str),
-                )
-
-            elif tool_name == 'memory_replace':
-                old_str = args_obj.get('old_str', '')
-                new_str = args_obj.get('new_str', '')
-                return Text(
-                    Bold('Agent modifying memory:'),
-                    '\n\n',
-                    'New:\n',
-                    BlockQuote(new_str),
-                    '\n\nOld:\n',
-                    BlockQuote(old_str),
-                )
-
-            elif tool_name == 'run_code':
-                code = args_obj.get('code', '')
-                language = args_obj.get('language', 'python')
-                return Text(
-                    Bold('Agent ran code:'),
-                    '\n\n',
-                    Code(language, code),
-                )
-
-            else:
-                # Generic tool call display
-                formatted_args = json.dumps(args_obj, indent=2)
-                return Text(
-                    Bold('Agent using tool:'),
-                    f' {tool_name}\n\n',
-                    Code('json', formatted_args),
-                )
-
-        except json.JSONDecodeError as e:
-            LOGGER.warning(f'Error parsing tool arguments: {e}')
-            return Text(
-                Bold('Agent using tool:'),
-                f' {tool_name}\n\n',
-                Code('', arguments),
-            )
-
-    return None
-
-
 def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
     agent_router = Router(name=f'{__name__}.messaging')
 
     @agent_router.message()
-    async def message_handler(message: Message) -> None:
+    @require_identity(gel_client)
+    async def message_handler(message: Message, identity: GetIdentityResult) -> None:
         if not message.from_user:
-            return
-
-        if not await get_allowed_identity_query(
-            gel_client, telegram_id=message.from_user.id
-        ):
-            # TODO: mb redirect to concrete command
-            await message.answer(Text('No access').as_markdown())
             return
 
         if message.audio or message.voice:
@@ -249,10 +286,6 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
             )
             return
 
-        # TODO: return single item from select instead of the list
-        identity = (await get_identity_query(gel_client, telegram_id=message.from_user.id))[
-            0
-        ]
         # NOTE: select the most recent agent if user hasn't selected
         if not identity.selected_agent:
             agent_id = await get_default_agent(identity)
@@ -272,7 +305,7 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
                 messages=[{'role': 'user', 'content': request}],  # type: ignore
                 include_pings=True,
                 request_options={
-                    'timeout_in_seconds': 300,
+                    'timeout_in_seconds': 120,
                 },
             )
 
@@ -305,69 +338,6 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
     return agent_router
 
 
-# Letta API integration functions
-async def create_letta_identity(identifier_key: str, name: str) -> Identity:
-    """Create identity in Letta API with retry logic.
-
-    Returns identity object with .id attribute.
-
-    States:
-    1. Attempt creation
-    2. If fails, attempt retrieval by identifier_key
-    3. If retrieval also fails, raise error
-    """
-    try:
-        # State 1: Attempt to create new identity
-        identity = await client.identities.create(
-            identifier_key=identifier_key,
-            name=name,
-            identity_type='user',
-        )
-        LOGGER.info(f'Created identity: {identity.id}')
-        return identity
-
-    except ApiError as create_error:
-        # State 2: Creation failed, attempt to retrieve existing identity
-        LOGGER.info(f'Retrieving existing identity: {identifier_key}')
-
-        try:
-            # List identities by identifier_key (same pattern as delete_identity.py)
-            # TODO: Now list works properly only with project_id specified
-            identities = await client.identities.list(identifier_key=identifier_key)
-
-            if not identities:
-                LOGGER.error(f'No existing identity found: {identifier_key}')
-                raise create_error
-
-            identity = identities[0]
-            LOGGER.info(f'Retrieved existing identity: {identity.id}')
-            return identity
-
-        except ApiError as retrieve_error:
-            # State 3: Both creation and retrieval failed
-            LOGGER.critical(f'Identity creation and retrieval failed: {identifier_key}')
-            raise retrieve_error
-
-
-async def create_agent_from_template(template_id: str, identity_id: str) -> None:
-    """Create agent from template in Letta API. Returns agent object."""
-    info = RequestNewAgentCallback.unpack(template_id)
-
-    # NOTE: That's weird finding out ID of current project in use
-    # But Letta client constructor accepts project slug
-    projects_list = (await client.projects.list(name=CONFIG.letta_project)).projects
-    if len(projects_list) > 1:
-        LOGGER.warning('There is more than one project with given name')
-    if len(projects_list) == 0:
-        LOGGER.critical('Project in use wasnt found')
-        raise RuntimeError('Project in use wasnt found')
-
-    project_id = projects_list[0].id
-
-    # TODO: mb tags for creator, mb custom name
-    await client.templates.createagentsfromtemplate(
-        project_id, f'{info.template_name}:{info.version}', identity_ids=[identity_id]
-    )
 
 
 async def get_default_agent(identity: GetIdentityResult) -> str:

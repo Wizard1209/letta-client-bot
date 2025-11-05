@@ -6,14 +6,17 @@ from uuid import UUID
 
 from aiogram import Bot, Router
 from aiogram.filters.command import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 from aiogram.utils.formatting import Code, Text, as_list
 from gel import AsyncIOExecutor as GelClient
 
-from letta_bot.agent import create_agent_from_template, create_letta_identity
 from letta_bot.config import CONFIG
+from letta_bot.letta_api import create_agent_from_template, create_letta_identity
 from letta_bot.queries.create_identity_async_edgeql import (
     create_identity as create_identity_query,
+)
+from letta_bot.queries.get_allowed_identity_async_edgeql import (
+    get_allowed_identity as get_allowed_identity_query,
 )
 from letta_bot.queries.get_identity_async_edgeql import (
     get_identity as get_identity_query,
@@ -45,6 +48,65 @@ def admin_only(func: Callable) -> Callable:  # type: ignore[type-arg]
         await func(message)
 
     return wrapper
+
+
+# TODO: fix typing
+def require_identity(
+    gel_client: GelClient,
+) -> Callable:  # type: ignore
+    """Decorator to check identity access and inject identity object into handler.
+
+    Verifies that the user has allowed identity access, fetches the identity,
+    and passes it as 'identity' kwarg to the decorated handler.
+
+    Args:
+        gel_client: Gel database client for queries
+
+    Returns:
+        Decorator function that injects identity into handler kwargs
+    """
+
+    def decorator(func: Callable) -> Callable:  # type: ignore
+        @wraps(func)
+        async def wrapper(*args, **kwargs):  # type: ignore  # noqa: ANN002, ANN003, ANN202
+            # Extract message or callback from args
+            event = args[0] if args else None
+            if not isinstance(event, (Message, CallbackQuery)):
+                raise TypeError('First argument must be Message or CallbackQuery')
+
+            # Get user from event
+            from_user = event.from_user
+            if not from_user:
+                return None
+
+            # Check if user has allowed identity
+            if not await get_allowed_identity_query(gel_client, telegram_id=from_user.id):
+                await event.answer(
+                    Text(
+                        'You need to request identity access first using /request_identity'
+                    ).as_markdown()
+                )
+                return None
+
+            # Fetch identity
+            identity_list = await get_identity_query(gel_client, telegram_id=from_user.id)
+            if not identity_list:
+                # This shouldn't happen if get_allowed_identity returned True
+                LOGGER.error(
+                    f'Identity not found for user {from_user.id} '
+                    'despite having allowed access'
+                )
+                await event.answer(
+                    Text('Error: Identity not found. Please contact admin.').as_markdown()
+                )
+                return None
+
+            # Inject identity into kwargs
+            return await func(*args, identity=identity_list[0], **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
@@ -236,7 +298,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             if reason:
                 user_message_parts.append(f'\n\nReason: {reason}')
             user_message_parts.append(
-                '\n\nYou can submit a new request using /agent_from_template if needed.'
+                '\n\nYou can submit a new request using /request_identity or /new_agent_from_template if needed.'
             )
 
             await bot.send_message(
@@ -292,7 +354,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                     '🚫 Your access to the bot has been revoked.\n\n'
                     'If you believe this was done in error, '
                     'please contact the administrator.\n'
-                    'You can submit a new request using /agent_from_template '
+                    'You can submit a new request using /request_identity '
                     'if you wish to regain access.'
                 ).as_markdown(),
             )

@@ -2,16 +2,20 @@
 
 All notable changes to this project will be documented in this file\.
 
-*\[Unreleased\]*
+*\[Latest additions\]*
 
 *Added:*
 • User notification system for authorization events \(approval, denial, revocation\)
 • Error handling for notification delivery with logging
+• /request\_identity command for requesting identity access independently
+• Pending request validation to prevent duplicate identity requests
+• /switch\_agent command for switching between user's agents
 
 *Changed:*
 • Updated help documentation formatting
+• Updated help documentation with /request\_identity workflow
 
-*\[0\.1\.0\] \- 2025\-01\-03*
+*\[0\.1\.0\] \- 2025\-11\-03*
 
 *Added:*
 • Multi\-user Telegram bot with Letta identity system integration

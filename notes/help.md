@@ -8,21 +8,16 @@
 /changelog \- View project changelog and version history
 
 *Agent Access*
-/agent\_from\_template \- Request access to an AI agent from available templates
-
-*Admin Commands*
-/admin pending \- View all pending authorization requests
-/admin allow \- Approve a user's authorization request
-/admin deny \- Deny a user's authorization request
-/admin list \- List all active users with granted access
-/admin revoke \- Revoke a user's access to the system
+/request\_identity \- Request identity access to use the bot
+/new\_agent\_from\_template \- Request access to an AI agent from available templates
+/switch\_agent \- Switch between your available agents
 
 ──────────────────────────────
 
 *How to Use*
 
-Use /agent\_from\_template to browse available AI agent templates and request access\. An administrator will review and approve your request\.
+Use /new\_agent\_from\_template to browse available AI agent templates and request access\. An administrator will review and approve your request\.
 
-Once approved, simply send messages to chat with your personal AI agent\.
+You can also request agent and identity access together by using /new\_agent\_from\_template directly\.
 
 Need help? Use /contact to reach support\.
