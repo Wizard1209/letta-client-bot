@@ -298,7 +298,8 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             if reason:
                 user_message_parts.append(f'\n\nReason: {reason}')
             user_message_parts.append(
-                '\n\nYou can submit a new request using /request_identity or /new_agent_from_template if needed.'
+                '\n\nYou can submit a new request using /request_identity or '
+                '/new_agent_from_template if needed.'
             )
 
             await bot.send_message(

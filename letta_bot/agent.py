@@ -13,7 +13,6 @@ from letta_client.core.api_error import ApiError
 
 from letta_bot.auth import require_identity
 from letta_bot.config import CONFIG
-from letta_bot.message_splitter import send_long_message
 from letta_bot.queries.check_pending_request_async_edgeql import (
     check_pending_request as check_pending_request_query,
 )
@@ -31,7 +30,7 @@ from letta_bot.queries.is_registered_async_edgeql import (
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
 )
-from letta_bot.response_parser import process_stream_event
+from letta_bot.response_handler import AgentStreamHandler
 
 client = LettaClient(project=CONFIG.letta_project, token=CONFIG.letta_api_key)
 LOGGER = logging.getLogger(__name__)
@@ -147,7 +146,9 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
             )
             return
 
-        if not await get_allowed_identity_query(gel_client, telegram_id=callback.from_user.id):
+        if not await get_allowed_identity_query(
+            gel_client, telegram_id=callback.from_user.id
+        ):
             # TODO: maybe identity name could be customed
             # Check if user already has a pending identity request
             has_pending = await check_pending_request_query(
@@ -309,15 +310,14 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
                 },
             )
 
+            handler = AgentStreamHandler(message)
+
             async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
                 async for event in response_stream:
                     try:
-                        formatted_content = await process_stream_event(event)
-                        if formatted_content:
-                            await send_long_message(message, formatted_content)
-
+                        await handler.handle_event(event)
                     except Exception as e:
-                        LOGGER.warning(f'Error processing stream event: {e}')
+                        LOGGER.error(f'Error processing stream event: {e}')
                         continue
 
         except ApiError as e:
@@ -336,8 +336,6 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
             raise
 
     return agent_router
-
-
 
 
 async def get_default_agent(identity: GetIdentityResult) -> str:

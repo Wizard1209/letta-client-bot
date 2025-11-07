@@ -10,13 +10,12 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ### High Priority
 
-- Run gel schema migrations automatically
-- `/status` command (identity and agent info)
-- Agent selection per chat
-- Fix agent formating to be compatible with telegram rendering
+- Improve rendering for tool calls
 
 ### Medium Priority
 
+- Run gel schema migrations automatically
+- `/status` command (identity and agent info)
 - **Voice/audio transcription** (OpenAI Whisper API)
   - Detect voice/audio messages in Telegram
   - Download and send to Whisper API
