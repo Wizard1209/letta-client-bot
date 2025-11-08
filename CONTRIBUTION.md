@@ -10,7 +10,10 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ### High Priority
 
+- Fix markdown spliting, which leads to incorrect markdownv2 conversion
 - Improve rendering for tool calls
+- Update to Letta SDK 1.0
+- Add telegram notification tool to the bot
 
 ### Medium Priority
 
@@ -30,12 +33,12 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Usage analytics per identity
 - Bulk admin operations
 - Add message editing support
+- Telegram reply support
 
 ## Technical TODOs
 
 Local TODOs are still in code
 
-- Rewrite agent response formating from aiogram to custom based on Cameron advice
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>
 - Wrap auth logic with multiple db queries into transactions <https://docs.geldata.com/reference/using/python#transactions>
 
