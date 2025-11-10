@@ -8,9 +8,9 @@
 /changelog \- View project changelog and version history
 
 *Agent Access*
-/request\_identity \- Request identity access to use the bot
 /new\_agent\_from\_template \- Request access to an AI agent from available templates
 /switch\_agent \- Switch between your available agents
+/request\_identity \- Request only bot access
 /notify \- Enable/disable proactive agent notifications
 
 ──────────────────────────────

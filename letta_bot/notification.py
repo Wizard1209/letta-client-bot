@@ -110,9 +110,7 @@ def get_notification_router(bot: Bot, gel_client: GelClient) -> Router:
             LOGGER.error(f'Error checking notification status: {e}')
             await message.answer(Text('❌ Error checking status: ', str(e)).as_markdown())
 
-    async def handle_notify_enable(
-        message: Message, agent_id: str, chat_id: str
-    ) -> None:
+    async def handle_notify_enable(message: Message, agent_id: str, chat_id: str) -> None:
         """Enable notifications for the agent."""
         try:
             # Step 1: Check if tool exists and register/attach it
@@ -132,7 +130,7 @@ def get_notification_router(bot: Bot, gel_client: GelClient) -> Router:
 
             # Check if already attached
             attached_tools = await client.agents.tools.list(agent_id=agent_id)
-            if not any(t.id == notify_tool.id for t in attached_tools):
+            if notify_tool.id and not any(t.id == notify_tool.id for t in attached_tools):
                 await client.agents.tools.attach(agent_id=agent_id, tool_id=notify_tool.id)
                 LOGGER.info(f'Attached tool {notify_tool.id} to agent {agent_id}')
 
@@ -208,9 +206,7 @@ def get_notification_router(bot: Bot, gel_client: GelClient) -> Router:
             )
 
             await message.answer(
-                Text(
-                    '✅ Notifications disabled for ', Bold(agent.name)
-                ).as_markdown()
+                Text('✅ Notifications disabled for ', Bold(agent.name)).as_markdown()
             )
 
         except Exception as e:

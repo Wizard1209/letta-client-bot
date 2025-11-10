@@ -374,8 +374,11 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
 
         response_lines = ['👥 Active Users:\n']
 
-        # Group by user (DB already returns sorted by user)
-        for user, requests in groupby(all_requests, key=lambda r: r.user):
+        # Group by telegram_id (DB already returns sorted by telegram_id)
+        for _, requests in groupby(all_requests, key=lambda r: r.user.telegram_id):
+            # Convert iterator to list to use first item and iterate again
+            requests_list = list(requests)
+            user = requests_list[0].user
             username_str = f'@{user.username}' if user.username else 'no username'
             response_lines.append(
                 f'• {user.full_name or user.first_name} ({username_str})\n'
@@ -383,7 +386,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             )
 
             # List all accesses for this user
-            for req in requests:
+            for req in requests_list:
                 response_lines.append(
                     f'  └─ {req.resource_type.value}: {req.resource_id}\n'
                 )

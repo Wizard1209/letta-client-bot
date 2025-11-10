@@ -81,7 +81,7 @@ async def list_auth_requests_by_status(
         """\
         select AuthorizationRequest {**}
         filter .status = <optional AuthStatus>$status ?? .status
-        order by .created_at;\
+        order by .user.telegram_id then .created_at;\
         """,
         status=status,
     )
