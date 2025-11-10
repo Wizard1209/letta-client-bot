@@ -10,8 +10,8 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.formatting import Code, Text, as_list
 from gel import AsyncIOExecutor as GelClient
 
+from letta_bot.client import create_agent_from_template, create_letta_identity
 from letta_bot.config import CONFIG
-from letta_bot.letta_api import create_agent_from_template, create_letta_identity
 from letta_bot.queries.create_identity_async_edgeql import (
     create_identity as create_identity_query,
 )

@@ -11,6 +11,7 @@
 /request\_identity \- Request identity access to use the bot
 /new\_agent\_from\_template \- Request access to an AI agent from available templates
 /switch\_agent \- Switch between your available agents
+/notify \- Enable/disable proactive agent notifications
 
 ──────────────────────────────
 
@@ -19,5 +20,9 @@
 Use /new\_agent\_from\_template to browse available AI agent templates and request access\. An administrator will review and approve your request\.
 
 You can also request agent and identity access together by using /new\_agent\_from\_template directly\.
+
+*Proactive Notifications*
+
+Use /notify enable to allow your agent to send you messages on its own initiative\. ⚠️ *Important: Your agent architecture must support proactive behavior \(ability to act without user prompts\) for notifications to work\.*
 
 Need help? Use /contact to reach support\.

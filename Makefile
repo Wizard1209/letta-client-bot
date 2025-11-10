@@ -18,7 +18,6 @@ help:
 	@echo "  make down       - Stop containers"
 	@echo "  make logs       - View container logs"
 	@echo "  make restart    - Rebuild and restart (pull + build + down + up)"
-	@echo "  make clean      - Stop containers and remove volumes"
 
 # Development
 install:
@@ -55,8 +54,10 @@ down:
 logs:
 	docker compose -f deploy/docker-compose.yaml --env-file .env logs -f
 
-restart: down build up
-	@echo "Bot restarted successfully"
+pull:
+	git pull
 
-clean:
-	docker compose -f deploy/docker-compose.yaml --env-file .env down -v
+r: pull build down up
+
+restart: build down up
+	@echo "Bot restarted successfully"

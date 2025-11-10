@@ -28,6 +28,7 @@ exclude = [
     "build",
     "dist",
     "letta_bot/queries/*_async_edgeql.py",
+    "letta_bot/custom_tools/",
 ]
 
 [tool.ruff.lint]
@@ -77,6 +78,7 @@ exclude = [
     "letta-telegram-reference/",
     "letta_bot/queries/.*_async_edgeql\\.py$",
     "development_scripts/",
+    "letta_bot/custom_tools/",
 ]
 plugins = ['pydantic.mypy']
 

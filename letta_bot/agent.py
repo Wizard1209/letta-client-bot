@@ -8,11 +8,12 @@ from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.formatting import Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor as GelClient
-from letta_client import AsyncLetta as LettaClient
 from letta_client.core.api_error import ApiError
 
 from letta_bot.auth import require_identity
+from letta_bot.client import client, get_default_agent
 from letta_bot.config import CONFIG
+from letta_bot.notification import get_notification_router
 from letta_bot.queries.check_pending_request_async_edgeql import (
     check_pending_request as check_pending_request_query,
 )
@@ -32,7 +33,6 @@ from letta_bot.queries.set_selected_agent_async_edgeql import (
 )
 from letta_bot.response_handler import AgentStreamHandler
 
-client = LettaClient(project=CONFIG.letta_project, token=CONFIG.letta_api_key)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -254,6 +254,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         )
 
     # Include nested routers
+    agent_commands_router.include_router(get_notification_router(bot, gel_client))
     agent_commands_router.include_router(agent_messaging_router)
 
     LOGGER.info('Agent handlers initialized')
@@ -289,7 +290,11 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
 
         # NOTE: select the most recent agent if user hasn't selected
         if not identity.selected_agent:
-            agent_id = await get_default_agent(identity)
+            try:
+                agent_id = await get_default_agent(identity.identity_id)
+            except IndexError:
+                await message.answer('There is no agent yet on your identity.')
+                return
             await set_selected_agent_query(
                 gel_client, identity_id=identity.identity_id, agent_id=agent_id
             )
@@ -336,12 +341,3 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
             raise
 
     return agent_router
-
-
-async def get_default_agent(identity: GetIdentityResult) -> str:
-    result = await client.identities.agents.list(
-        identity_id=identity.identity_id, limit=1, order='asc'
-    )
-    # TODO: what if there are no agents
-    agent_id = result[0].id
-    return agent_id

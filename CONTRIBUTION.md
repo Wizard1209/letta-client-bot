@@ -1,5 +1,59 @@
 # Contribution guide
 
+## Getting Started: Step-by-Step Setup
+
+### Prerequisites
+
+1. **uv** package manager
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. **Telegram Bot Token** - Create via [@BotFather](https://t.me/BotFather)
+3. **Letta API Access** - Sign up at https://letta.com
+
+### Setup Steps
+
+**1. Clone and install:**
+```bash
+git clone <repository-url>
+cd letta-client-bot
+make dev # install all dependencies
+```
+
+**2. Configure environment:**
+Copy `.env.example` to `.env` and fill in your credentials.
+
+**3. Initialize database:**
+```bash
+uv run gel init
+uv run gel migrate
+```
+
+**4. Run the bot:**
+```bash
+make poll
+```
+
+### Development Workflow
+
+**Code quality:**
+```bash
+make check  # Runs linting, formatting, and type checking
+```
+
+**When adding features:**
+1. Modify/add `.edgeql` queries → run `gel-py`
+2. Implement feature
+3. Test with `make poll`
+4. Run `make check`
+5. Update `notes/changelog.md`
+
+**Database schema changes:**
+1. Edit `dbschema/default.esdl`
+2. For development: `gel watch --migrate` (auto-applies schema changes)
+3. For production: `gel migration create` → `gel migrate`
+
 ## Weird solutions
 
 ### Message sending
@@ -13,7 +67,6 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Fix markdown spliting, which leads to incorrect markdownv2 conversion
 - Improve rendering for tool calls
 - Update to Letta SDK 1.0
-- Add telegram notification tool to the bot
 
 ### Medium Priority
 

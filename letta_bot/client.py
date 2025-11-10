@@ -1,15 +1,30 @@
-"""Letta API integration functions for identity and agent management."""
+"""Shared Letta client instance and Letta API operations.
+
+This module provides:
+1. A single Letta client instance used across the application
+2. Pure Letta API operations (identity, agent, tool management)
+
+Isolating the client here prevents circular import issues.
+"""
 
 import logging
+from pathlib import Path
 
 from letta_client import AsyncLetta as LettaClient
 from letta_client.core.api_error import ApiError
 from letta_client.types.identity import Identity
+from letta_client.types.tool import Tool
 
 from letta_bot.config import CONFIG
 
+# Single shared client instance
 client = LettaClient(project=CONFIG.letta_project, token=CONFIG.letta_api_key)
 LOGGER = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Identity Management
+# =============================================================================
 
 
 async def create_letta_identity(identifier_key: str, name: str) -> Identity:
@@ -59,6 +74,11 @@ async def create_letta_identity(identifier_key: str, name: str) -> Identity:
             raise retrieve_error
 
 
+# =============================================================================
+# Agent Management
+# =============================================================================
+
+
 async def create_agent_from_template(template_id: str, identity_id: str) -> None:
     """Create agent from template in Letta API. Returns agent object."""
     # Local import to avoid circular dependency
@@ -80,4 +100,45 @@ async def create_agent_from_template(template_id: str, identity_id: str) -> None
     # TODO: mb tags for creator, mb custom name
     await client.templates.createagentsfromtemplate(
         project_id, f'{info.template_name}:{info.version}', identity_ids=[identity_id]
+    )
+
+
+async def get_default_agent(identity_id: str) -> str:
+    """Get the oldest agent for a given identity.
+
+    Args:
+        identity_id: The Letta identity ID
+
+    Returns:
+        Agent ID of the oldest agent
+
+    Raises:
+        IndexError: If no agents exist for the identity
+    """
+    result = await client.identities.agents.list(
+        identity_id=identity_id, limit=1, order='asc'
+    )
+    return result[0].id
+
+
+# =============================================================================
+# Tool Management
+# =============================================================================
+
+
+async def register_notify_tool() -> Tool:
+    """Register the notify_via_telegram tool with Letta from source file.
+
+    Returns:
+        The registered tool object
+
+    Raises:
+        Exception: If tool registration fails
+    """
+    tool_file = Path(__file__).parent / 'custom_tools' / 'notify_via_telegram.py'
+    source_code = tool_file.read_text()
+
+    return await client.tools.create(
+        source_code=source_code,
+        tags=['telegram', 'notification', 'messaging'],
     )

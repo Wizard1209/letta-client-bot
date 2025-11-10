@@ -11,11 +11,13 @@ All notable changes to this project will be documented in this file\.
 • /request\_identity command for requesting identity access independently
 • Pending request validation to prevent duplicate identity requests
 • /switch\_agent command for switching between user's agents
+• /notify command for managing agent\-to\-user proactive notifications via Telegram with automatic tool registration
 
 *Changed:*
 • Agent responses now render with proper Telegram\-compatible markdown formatting using telegramify\-markdown library
 • Improved message splitting with intelligent boundary detection at newlines and spaces
 • Updated help documentation with /request\_identity workflow
+• Centralized Letta client operations into dedicated client module
 
 *\[0\.1\.0\] \- 2025\-11\-03*
 
