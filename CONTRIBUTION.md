@@ -67,6 +67,7 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Fix markdown spliting, which leads to incorrect markdownv2 conversion
 - Improve rendering for tool calls
 - Update to Letta SDK 1.0
+- Update keyboard after action on switching agent and creating from the  template <https://core.telegram.org/bots/api#editmessagereplymarkup>
 
 ### Medium Priority
 
