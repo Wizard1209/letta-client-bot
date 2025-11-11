@@ -77,3 +77,37 @@ def test_nested_markdown_tokens():
 def test_empty_input_returns_single_chunk():
     """Empty input should return a single empty string chunk."""
     assert split_markdown_v2('') == ['']
+
+
+def test_large_code_block_splits_into_two_chunks():
+    """Verify that a large code block splits correctly with proper closure/reopening."""
+    # Build text: 400 'a' chars + newline + code block with 4000 chars + newline + 400 'a' chars
+    # Total: 400 + 1 + 3 (```) + 4000 + 3 (```) + 1 + 400 = 4808 chars
+    # Should split into 2 chunks with default limit of 4096
+    prefix = 'a' * 400
+    code_content = 'x' * 4000
+    suffix = 'a' * 400
+    text = f'{prefix}\n```{code_content}```\n{suffix}'
+
+    chunks = split_markdown_v2(text, limit=4096)
+
+    # Should split into exactly 2 chunks
+    assert len(chunks) == 2, f'Expected 2 chunks, got {len(chunks)}'
+
+    # Each chunk should respect the limit
+    assert all(
+        len(chunk) <= 4096 for chunk in chunks
+    ), 'All chunks should be within limit'
+
+    # First chunk should close the code block properly
+    assert chunks[0].endswith('```'), 'First chunk should close code block'
+
+    # Second chunk should reopen the code block
+    assert chunks[1].startswith('```'), 'Second chunk should reopen code block'
+
+    # Joined chunks should equal original text
+    assert ''.join(chunks) == text, 'Joined chunks should match original text'
+
+    # Verify the prefix is in first chunk and suffix is in second chunk
+    assert chunks[0].startswith(prefix), 'First chunk should start with prefix'
+    assert chunks[1].endswith(suffix), 'Second chunk should end with suffix'
