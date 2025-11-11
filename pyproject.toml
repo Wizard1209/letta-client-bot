@@ -5,51 +5,48 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "aiogram>=3.22.0",
-    "gel>=3.1.0",
-    "letta-client>=0.1.324",
-    "pydantic-settings>=2.11.0",
-    "telegramify-markdown>=0.5.2",
+  "aiogram>=3.22.0",
+  "gel>=3.1.0",
+  "letta-client>=0.1.324",
+  "pydantic-settings>=2.11.0",
+  "telegramify-markdown>=0.5.2",
 ]
 
 [dependency-groups]
-dev = [
-    "ruff>=0.8.0",
-    "mypy>=1.18.0",
-]
+dev = ["ruff>=0.8.0", "mypy>=1.18.0", "pytest>=9.0.0"]
 
 [tool.ruff]
 line-length = 92
 target-version = "py313"
 exclude = [
-    ".git",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    "letta_bot/queries/*_async_edgeql.py",
-    "letta_bot/custom_tools/",
+  ".git",
+  ".venv",
+  "__pycache__",
+  "build",
+  "dist",
+  "letta_bot/queries/*_async_edgeql.py",
+  "letta_bot/custom_tools/",
 ]
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "F",   # pyflakes
-    "W",   # pycodestyle warnings
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "UP",  # pyupgrade
-    "ANN", # flake8-annotations
-    "C4",  # flake8-comprehensions
-    "SIM", # flake8-simplify
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "W",   # pycodestyle warnings
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "UP",  # pyupgrade
+  "ANN", # flake8-annotations
+  "C4",  # flake8-comprehensions
+  "SIM", # flake8-simplify
 ]
 ignore = []
 fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
-"tests/*" = ["ANN"]        # Don't require type annotations in tests
+"__init__.py" = ["F401"] # Allow unused imports in __init__.py
+"tests/*" = ["ANN"]      # Don't require type annotations in tests
 
 [tool.ruff.lint.isort]
 known-first-party = ["letta_client_bot"]
@@ -75,10 +72,10 @@ warn_unused_ignores = true
 warn_unreachable = true
 strict_equality = true
 exclude = [
-    "letta-telegram-reference/",
-    "letta_bot/queries/.*_async_edgeql\\.py$",
-    "development_scripts/",
-    "letta_bot/custom_tools/",
+  "letta-telegram-reference/",
+  "letta_bot/queries/.*_async_edgeql\\.py$",
+  "development_scripts/",
+  "letta_bot/custom_tools/",
 ]
 plugins = ['pydantic.mypy']
 
@@ -87,9 +84,7 @@ module = "tests.*"
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = [
-    "letta_client.*",
-]
+module = ["letta_client.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
