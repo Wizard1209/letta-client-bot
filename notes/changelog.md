@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file\.
 • Improved message splitting with intelligent boundary detection at newlines and spaces
 • Updated help documentation with /request\_identity workflow
 • Centralized Letta client operations into dedicated client module
+• Changed: Improved message rendering to properly preserve Markdown formatting when splitting long messages (fixes issue where code blocks and formatting would break across message
+  boundaries)
 
 *\[0\.1\.0\] \- 2025\-11\-03*
 

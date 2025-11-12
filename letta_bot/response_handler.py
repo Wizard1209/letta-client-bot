@@ -7,6 +7,7 @@ This module handles:
 4. Sending responses to users
 """
 
+from collections import deque
 import json
 import logging
 from typing import Any
@@ -21,7 +22,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 TELEGRAM_MAX_LEN = 4096
-
+MARKDOWN_TOKENS = {'`': ('```', '`'), '*': ('*',), '_': ('_',), '~': ('~',)}
 
 # =============================================================================
 # Stream Event Formatting (Helper Functions)
@@ -40,8 +41,26 @@ def convert_to_telegram_markdown(text: str) -> str:
         print(f'Error converting to Telegram markdown: {e}')
         # Fallback: return the original text with basic escaping
         # Escape MarkdownV2 special characters
-        special_chars = ('_', '*', '[', ']', '(', ')', '~', '`', '>', '#',
-                         '+', '-', '=', '|', '{', '}', '.', '!')
+        special_chars = (
+            '_',
+            '*',
+            '[',
+            ']',
+            '(',
+            ')',
+            '~',
+            '`',
+            '>',
+            '#',
+            '+',
+            '-',
+            '=',
+            '|',
+            '{',
+            '}',
+            '.',
+            '!',
+        )
         escaped_text = text
         for char in special_chars:
             escaped_text = escaped_text.replace(char, f'\\{char}')
@@ -197,33 +216,111 @@ def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> Text:
 # =============================================================================
 # Message Splitting and Sending
 # =============================================================================
+def _get_next_token(text: str, pos: int, escaped: bool) -> tuple[str | None, int]:
+    """Find the next Markdown token at the given position.
+
+    Checks if the text starting from `pos` begins with any known Markdown token,
+    unless the preceding character was an escape character '\'.
+
+    Args:
+        text: The string to search within.
+        pos: The starting position in the text to check for a token.
+        escaped: True if the character immediately preceding `pos` was an
+                 escape character ('\'), False otherwise.
+
+    Returns:
+        A tuple containing:
+        - The found Markdown token (str) or None if no token is found
+          at the position or if it's escaped.
+        - The length of the found token (int), or 0 if no token is found.
+    """
+    if escaped:
+        return None, 0
+    first = text[pos]
+    for token in MARKDOWN_TOKENS.get(first, ()):
+        if text.startswith(token, pos):
+            return token, len(token)
+    return None, 0
 
 
-def split_raw_text(text: str, max_length: int = TELEGRAM_MAX_LEN) -> list[str]:
-    """Split text at natural boundaries (\n or space) near max_length."""
-    if len(text) <= max_length:
+def split_markdown_v2(
+    text: str,
+    limit: int = TELEGRAM_MAX_LEN,
+    recommended_margin: int = 400,
+    safety_margin: int = 50,
+) -> list[str]:
+    """Split a Markdown text into chunks while trying to preserve formatting.
+
+    Attempts to split the text into chunks smaller than `limit`. It tracks
+    opening and closing Markdown tokens using a stack. When a chunk needs to be
+    split, it appends the necessary closing tokens to the end of the current
+    chunk and prepends the corresponding opening tokens to the beginning of the
+    next chunk.
+
+    Splitting priority:
+    1. At a newline character when the buffer size is close to the limit
+       (within `recommended_margin`).
+    2. Anywhere when the buffer size is very close to the limit
+       (within `safety_margin`).
+
+    Args:
+        text: The Markdown string to split.
+        limit: The maximum desired length for each chunk. Defaults to
+               `constants.MessageLimit.MAX_TEXT_LENGTH`.
+        recommended_margin: The preferred distance from the `limit` at which
+               to split, ideally looking for a newline.
+        safety_margin: The absolute minimum distance from the `limit` at which
+               a split must occur, regardless of the character.
+
+    Returns:
+        A list of strings, where each string is a chunk of the original text,
+        with formatting tokens adjusted to maintain validity across chunks.
+    """
+
+    if len(text) <= limit:
         return [text]
 
-    chunks = []
-    pos = 0
+    chunks: list[str] = []
+    buffer: list[str] = []
+    buf_len = 0
+    stack: deque[str] = deque()
+    i = 0
+    n = len(text)
+    escaped = False
 
-    while pos < len(text):
-        remaining = len(text) - pos
+    while i < n:
+        token, shift = _get_next_token(text, i, escaped)
+        next_piece = token if token else text[i]
+        next_len = len(next_piece)
+        escaped = text[i] == '\\'
 
-        # If remaining text fits, take it all (don't split further)
-        if remaining <= max_length:
-            chunks.append(text[pos:])
-            break
+        if buf_len + next_len > limit - safety_margin:
+            closing_sequence = ''.join(reversed(stack))
+            chunks.append(''.join(buffer) + closing_sequence)
+            buffer = list(stack)
+            buf_len = sum(len(t) for t in stack)
 
-        # Need to split: find natural boundary in next max_length chars
-        chunk = text[pos : pos + max_length]
-        split = chunk.rfind('\n')
-        if split == -1:
-            split = chunk.rfind(' ')
+        buffer.append(next_piece)
+        buf_len += next_len
 
-        split = split + 1 if split != -1 else len(chunk)
-        chunks.append(text[pos : pos + split])
-        pos += split
+        if token:
+            if stack and stack[-1] == token:
+                stack.pop()
+            else:
+                stack.append(token)
+            i += shift
+        else:
+            i += 1
+
+        if buf_len >= limit - recommended_margin and i < n and text[i] == '\n':
+            closing_sequence = ''.join(reversed(stack))
+            chunks.append(''.join(buffer) + closing_sequence)
+            buffer = list(stack)
+            buf_len = sum(len(t) for t in stack)
+            i += 1  # skip newline
+
+    if buffer:
+        chunks.append(''.join(buffer))
 
     return chunks
 
@@ -240,9 +337,10 @@ async def send_assistant_message(message: Message, content: str) -> None:
         2. Convert each chunk to Telegram MarkdownV2
         3. Send each chunk
     """
-    for chunk in split_raw_text(content):
-        telegram_markdown = convert_to_telegram_markdown(chunk)
-        await message.answer(telegram_markdown, parse_mode='MarkdownV2')
+    telegram_markdown = convert_to_telegram_markdown(content)
+    for chunk in split_markdown_v2(telegram_markdown):
+        await message.answer(chunk, parse_mode='MarkdownV2')
+
 
 # =============================================================================
 # Event Handler with State Management
