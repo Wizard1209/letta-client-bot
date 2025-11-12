@@ -21,6 +21,6 @@ Use /new\_agent\_from\_template to browse available AI agent templates and reque
 
 *Proactive Notifications*
 
-Use /notify enable to allow your agent to send you messages on its own initiative\. ⚠️ *Important: Your agent architecture must support proactive behavior \(ability to act without user prompts\) for notifications to work\.*
+Use /notify enable to allow your agent to send you messages on its own initiative and schedule reminders for itself\.
 
 Need help? Use /contact to reach support\.

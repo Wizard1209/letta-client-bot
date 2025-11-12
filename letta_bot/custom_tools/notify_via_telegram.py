@@ -8,14 +8,21 @@ import os
 
 
 def notify_via_telegram(message: str) -> str:
-    """Send notification to Telegram user.
+    """Send proactive notification to Telegram user.
+
+    CRITICAL: This tool is ONLY for proactive behavior - reactions to triggers OTHER than
+    user messages (scheduled events, system events, time-based triggers, etc.).
+
+    Regular conversation responses to user messages go through the normal chat flow.
+    The user will ONLY see messages you explicitly send via this tool - they do NOT see
+    scheduled messages arriving, nor your internal processing of those messages.
 
     This tool sends a notification message to the Telegram chat using the bot API.
     Environment variables TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set
     in the agent's tool execution environment.
 
     Args:
-        message (str): The notification message to send to the user
+        message (str): The proactive notification message to send to the user
 
     Returns:
         str: Confirmation that the message was sent or error message

@@ -29,6 +29,10 @@ class Config(BaseSettings):
     gel_instance: str | None = None
     gel_secret_key: str | None = None
 
+    # Scheduler configuration for schedule_message tool
+    scheduler_url: str | None = None
+    scheduler_api_key: str | None = None
+
     # Info notes directory (optional)
     info_dir: Path = Path.cwd() / 'notes'
 

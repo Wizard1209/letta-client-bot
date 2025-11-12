@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file\.
 • /request\_identity command for requesting identity access independently
 • Pending request validation to prevent duplicate identity requests
 • /switch\_agent command for switching between user's agents
-• /notify command for managing agent\-to\-user proactive notifications via Telegram with automatic tool registration
+• /notify command enabling agent communication tools: scheduled self\-messaging for internal reminders and proactive user notifications
 
 *Changed:*
 • Agent responses now render with proper Telegram\-compatible markdown formatting using telegramify\-markdown library

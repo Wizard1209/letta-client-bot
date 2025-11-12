@@ -138,7 +138,27 @@ async def register_notify_tool() -> Tool:
     tool_file = Path(__file__).parent / 'custom_tools' / 'notify_via_telegram.py'
     source_code = tool_file.read_text()
 
-    return await client.tools.create(
+    return await client.tools.upsert(
         source_code=source_code,
         tags=['telegram', 'notification', 'messaging'],
+        default_requires_approval=False
+    )
+
+
+async def register_schedule_message_tool() -> Tool:
+    """Register the schedule_message tool with Letta from source file.
+
+    Returns:
+        The registered tool object
+
+    Raises:
+        Exception: If tool registration fails
+    """
+    tool_file = Path(__file__).parent / 'custom_tools' / 'schedule_message.py'
+    source_code = tool_file.read_text()
+
+    return await client.tools.upsert(
+        source_code=source_code,
+        tags=['telegram', 'scheduling', 'delayed-message'],
+        default_requires_approval=False
     )
