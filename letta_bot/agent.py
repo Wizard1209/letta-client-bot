@@ -8,6 +8,7 @@ from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.formatting import Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor as GelClient
+from httpx import ReadTimeout
 from letta_client.core.api_error import ApiError
 
 from letta_bot.auth import require_identity
@@ -311,7 +312,7 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
                 messages=[{'role': 'user', 'content': request}],  # type: ignore
                 include_pings=True,
                 request_options={
-                    'timeout_in_seconds': 120,
+                    'timeout_in_seconds': 120,  # Match Cloudflare timeout
                 },
             )
 
@@ -324,6 +325,23 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
                     except Exception as e:
                         LOGGER.error(f'Error processing stream event: {e}')
                         continue
+
+        except ReadTimeout:
+            # If we timeout, it means Letta stopped sending data (no pings, no response)
+            # This indicates a server-side failure, not a slow agent
+            LOGGER.error(
+                'Letta API stopped responding for user %s (agent_id: %s) - '
+                'no data received for 120s (expected pings every ~30s)',
+                message.from_user.id if message.from_user else 'unknown',
+                agent_id,
+            )
+            await message.answer(
+                Text(
+                    '❌ The agent service stopped responding. '
+                    'This may be a temporary issue with Letta API. '
+                    'Please try again in a moment.'
+                ).as_markdown()
+            )
 
         except ApiError as e:
             LOGGER.error(
