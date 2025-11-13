@@ -7,6 +7,7 @@ import logging
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
+from aiogram.utils.formatting import Text
 
 from letta_bot.config import CONFIG
 
@@ -46,7 +47,7 @@ def load_info_command_content(note_name: str) -> str:
         return content
     except Exception as e:
         LOGGER.error(f'Error reading note {note_path}: {e}')
-        return f'❌ Error loading note: {str(e)}'
+        return Text(f'❌ Error loading note: {str(e)}')
 
 
 def get_info_router() -> Router:
