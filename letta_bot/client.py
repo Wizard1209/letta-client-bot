@@ -12,6 +12,9 @@ from pathlib import Path
 
 from letta_client import AsyncLetta as LettaClient
 from letta_client.core.api_error import ApiError
+from letta_client.projects.types.projects_list_response_projects_item import (
+    ProjectsListResponseProjectsItem,
+)
 from letta_client.types.identity import Identity
 from letta_client.types.tool import Tool
 
@@ -20,6 +23,40 @@ from letta_bot.config import CONFIG
 # Single shared client instance
 client = LettaClient(project=CONFIG.letta_project, token=CONFIG.letta_api_key)
 LOGGER = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Project Management
+# =============================================================================
+
+
+async def get_project_by_slug(slug: str) -> ProjectsListResponseProjectsItem:
+    """Get project by slug from Letta API.
+
+    Lists all projects and filters by slug to find matching project.
+
+    Args:
+        slug: Project slug to search for
+
+    Returns:
+        Project object matching the slug
+
+    Raises:
+        RuntimeError: If no project found or multiple projects with same slug
+    """
+    projects_list = (await client.projects.list()).projects
+
+    # Filter projects by slug
+    matching_projects = [p for p in projects_list if p.slug == slug]
+
+    if len(matching_projects) == 0:
+        LOGGER.critical(f'Project with slug "{slug}" was not found')
+        raise RuntimeError(f'Project with slug "{slug}" was not found')
+
+    if len(matching_projects) > 1:
+        LOGGER.warning(f'Multiple projects found with slug "{slug}"')
+
+    return matching_projects[0]
 
 
 # =============================================================================
@@ -53,11 +90,10 @@ async def create_letta_identity(identifier_key: str, name: str) -> Identity:
 
         try:
             # List identities by identifier_key (same pattern as delete_identity.py)
-            # TODO: Now list works properly only with project_id specified
-            projects_list = (await client.projects.list(name=CONFIG.letta_project)).projects
-            project_id = projects_list[0].id
+            # Note: list works properly only with project_id specified
+            project = await get_project_by_slug(CONFIG.letta_project)
             identities = await client.identities.list(
-                identifier_key=identifier_key, project_id=project_id
+                identifier_key=identifier_key, project_id=project.id
             )
 
             if not identities:
@@ -86,20 +122,12 @@ async def create_agent_from_template(template_id: str, identity_id: str) -> None
 
     info = RequestNewAgentCallback.unpack(template_id)
 
-    # NOTE: That's weird finding out ID of current project in use
-    # But Letta client constructor accepts project slug
-    projects_list = (await client.projects.list(name=CONFIG.letta_project)).projects
-    if len(projects_list) > 1:
-        LOGGER.warning('There is more than one project with given name')
-    if len(projects_list) == 0:
-        LOGGER.critical('Project in use wasnt found')
-        raise RuntimeError('Project in use wasnt found')
-
-    project_id = projects_list[0].id
+    # Get project by slug to obtain project ID
+    project = await get_project_by_slug(CONFIG.letta_project)
 
     # TODO: mb tags for creator, mb custom name
     await client.templates.createagentsfromtemplate(
-        project_id, f'{info.template_name}:{info.version}', identity_ids=[identity_id]
+        project.id, f'{info.template_name}:{info.version}', identity_ids=[identity_id]
     )
 
 
@@ -141,7 +169,7 @@ async def register_notify_tool() -> Tool:
     return await client.tools.upsert(
         source_code=source_code,
         tags=['telegram', 'notification', 'messaging'],
-        default_requires_approval=False
+        default_requires_approval=False,
     )
 
 
@@ -160,5 +188,5 @@ async def register_schedule_message_tool() -> Tool:
     return await client.tools.upsert(
         source_code=source_code,
         tags=['telegram', 'scheduling', 'delayed-message'],
-        default_requires_approval=False
+        default_requires_approval=False,
     )
