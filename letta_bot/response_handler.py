@@ -8,12 +8,14 @@ This module handles:
 """
 
 from collections import deque
+import difflib
+from itertools import islice
 import json
 import logging
 from typing import Any
 
+from aiogram.enums import ParseMode
 from aiogram.types import Message
-from aiogram.utils.formatting import BlockQuote, Bold, Code, Italic, Text
 from letta_client.agents.messages.types.letta_streaming_response import (
     LettaStreamingResponse,
 )
@@ -29,6 +31,54 @@ MARKDOWN_TOKENS = {'`': ('```', '`'), '*': ('*',), '_': ('_',), '~': ('~',)}
 # =============================================================================
 
 
+def _get_diff_text(old: str, new: str) -> str:
+    """Generate a unified diff between two text strings, excluding header lines."""
+    if not old.endswith('\n'):
+        old += '\n'
+    if not new.endswith('\n'):
+        new += '\n'
+
+    diff = difflib.unified_diff(
+        old.splitlines(keepends=True),
+        new.splitlines(keepends=True),
+        fromfile='old',
+        tofile='new',
+    )
+    return ''.join(
+        islice(diff, 3, None)  # skip first three lines
+    )
+
+
+def _escape_markdown_v2(text: str) -> str:
+    """Escape all special characters required by Telegram MarkdownV2."""
+    special_chars = (
+        '_',
+        '*',
+        '[',
+        ']',
+        '(',
+        ')',
+        '~',
+        '`',
+        '>',
+        '#',
+        '+',
+        '-',
+        '=',
+        '|',
+        '{',
+        '}',
+        '.',
+        '!',
+    )
+    escaped_text = text
+
+    for char in special_chars:
+        escaped_text = escaped_text.replace(char, f'\\{char}')
+
+    return escaped_text
+
+
 def convert_to_telegram_markdown(text: str) -> str:
     """Convert text to Telegram MarkdownV2 using telegramify-markdown."""
     try:
@@ -38,36 +88,18 @@ def convert_to_telegram_markdown(text: str) -> str:
         telegram_text: str = telegramify_markdown.markdownify(text)
         return telegram_text
     except Exception as e:
-        print(f'Error converting to Telegram markdown: {e}')
+        LOGGER.warning('Error converting to Telegram markdown: %s', e)
         # Fallback: return the original text with basic escaping
         # Escape MarkdownV2 special characters
-        special_chars = (
-            '_',
-            '*',
-            '[',
-            ']',
-            '(',
-            ')',
-            '~',
-            '`',
-            '>',
-            '#',
-            '+',
-            '-',
-            '=',
-            '|',
-            '{',
-            '}',
-            '.',
-            '!',
-        )
-        escaped_text = text
-        for char in special_chars:
-            escaped_text = escaped_text.replace(char, f'\\{char}')
-        return escaped_text
+        return _escape_markdown_v2(text)
 
 
-def _format_reasoning_message(event: LettaStreamingResponse) -> Text:
+def _make_blockquote(text: str) -> str:
+    """Format plain text as a Markdown-style blockquote for Telegram."""
+    return '\n'.join(f'>{line}' for line in text.splitlines())
+
+
+def _format_reasoning_message(event: LettaStreamingResponse) -> str:
     """Format reasoning message response.
 
     Args:
@@ -76,14 +108,14 @@ def _format_reasoning_message(event: LettaStreamingResponse) -> Text:
     Returns:
         Formatted Text object with reasoning content
     """
-    reasoning_text = getattr(event, 'reasoning', '')
+    reasoning_text = _escape_markdown_v2(getattr(event, 'reasoning', ''))
     if len(reasoning_text) > TELEGRAM_MAX_LEN:
         LOGGER.warning('Reasoning message too long')
         reasoning_text = reasoning_text[:TELEGRAM_MAX_LEN]
-    return Text(Italic('Agent reasoning:'), '\n', BlockQuote(reasoning_text))
+    return f'_Agent reasoning:_\n{_make_blockquote(reasoning_text)}'
 
 
-def _format_tool_call_message(event: LettaStreamingResponse) -> Text | None:
+def _format_tool_call_message(event: LettaStreamingResponse) -> str | None:
     """Format tool call message response.
 
     Args:
@@ -109,16 +141,13 @@ def _format_tool_call_message(event: LettaStreamingResponse) -> Text | None:
 
     except json.JSONDecodeError as e:
         LOGGER.warning(f'Error parsing tool arguments: {e}')
-        return Text(
-            Bold('Agent using tool:'),
-            f' {tool_name}\n\n',
-            Code('', arguments),
-        )
+        return f'*Agent using tool: {_escape_markdown_v2(tool_name)}\
+                \n\n```{_escape_markdown_v2(arguments)}```'
 
 
 def _format_tool_by_name(
     tool_name: str, args_obj: dict[str, Any], raw_arguments: str
-) -> Text | None:
+) -> str | None:
     """Format tool call based on tool name.
 
     Args:
@@ -139,7 +168,7 @@ def _format_tool_by_name(
     elif tool_name == 'memory_insert':
         return _format_memory_insert(args_obj)
 
-    elif tool_name == 'memory_replace':
+    elif tool_name == 'memory_replace' or tool_name == 'memory':
         return _format_memory_replace(args_obj)
 
     # Code execution
@@ -152,65 +181,48 @@ def _format_tool_by_name(
         return _format_generic_tool(tool_name, args_obj)
 
 
-def _format_archival_memory_insert(args_obj: dict[str, Any]) -> Text:
+def _format_archival_memory_insert(args_obj: dict[str, Any]) -> str:
     """Format archival_memory_insert tool call."""
-    content_text = args_obj.get('content', '')
-    return Text(
-        Bold('Agent remembered:'),
-        '\n\n',
-        BlockQuote(content_text),
-    )
+    content_text = _escape_markdown_v2(args_obj.get('content', ''))
+    return f'*Agent remembered:*\n\n{_make_blockquote(content_text)}'
 
 
-def _format_archival_memory_search(args_obj: dict[str, Any]) -> Text:
+def _format_archival_memory_search(args_obj: dict[str, Any]) -> str:
     """Format archival_memory_search tool call."""
-    query = args_obj.get('query', '')
-    return Text(Bold('Agent searching:'), ' ', query)
+    query = _escape_markdown_v2(args_obj.get('query', ''))
+    return f'*Agent searching:* {query}'
 
 
-def _format_memory_insert(args_obj: dict[str, Any]) -> Text:
+def _format_memory_insert(args_obj: dict[str, Any]) -> str:
     """Format memory_insert tool call."""
-    new_str = args_obj.get('new_str', '')
-    return Text(
-        Bold('Agent updating memory:'),
-        '\n\n',
-        BlockQuote(new_str),
-    )
+    new_str = _escape_markdown_v2(args_obj.get('new_str', ''))
+    return f'*Agent updating memory:*\n\n{_make_blockquote(new_str)}'
 
 
-def _format_memory_replace(args_obj: dict[str, Any]) -> Text:
+def _format_memory_replace(args_obj: dict[str, Any]) -> str | None:
     """Format memory_replace tool call."""
-    old_str = args_obj.get('old_str', '')
-    new_str = args_obj.get('new_str', '')
-    return Text(
-        Bold('Agent modifying memory:'),
-        '\n\n',
-        'New:\n',
-        BlockQuote(new_str),
-        '\n\nOld:\n',
-        BlockQuote(old_str),
-    )
+    old_str = _escape_markdown_v2(args_obj.get('old_str', ''))
+    new_str = _escape_markdown_v2(args_obj.get('new_str', ''))
+    if not (old_str and new_str):
+        LOGGER.warning('Not implemented features: %s', args_obj)
+        return None
+
+    diff = _get_diff_text(old_str, new_str)
+    return f'*Agent modifying memory:*\n\n```diff\n{diff}```'
 
 
-def _format_run_code(args_obj: dict[str, Any]) -> Text:
+def _format_run_code(args_obj: dict[str, Any]) -> str:
     """Format run_code tool call."""
-    code = args_obj.get('code', '')
+    code = _escape_markdown_v2(args_obj.get('code', ''))
     language = args_obj.get('language', 'python')
-    return Text(
-        Bold('Agent ran code:'),
-        '\n\n',
-        Code(language, code),
-    )
+    return f'*Agent ran code:*\n\n```{language}\n{code}```'
 
 
-def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> Text:
+def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
     """Format generic tool call with JSON arguments."""
-    formatted_args = json.dumps(args_obj, indent=2)
-    return Text(
-        Bold('Agent using tool:'),
-        f' {tool_name}\n\n',
-        Code('json', formatted_args),
-    )
+    formatted_args = _escape_markdown_v2(json.dumps(args_obj, indent=2))
+    return f'*Agent using tool:* {_escape_markdown_v2(tool_name)}\
+            \n\n```json\n{formatted_args}```'
 
 
 # =============================================================================
@@ -339,7 +351,7 @@ async def send_assistant_message(message: Message, content: str) -> None:
     """
     telegram_markdown = convert_to_telegram_markdown(content)
     for chunk in split_markdown_v2(telegram_markdown):
-        await message.answer(chunk, parse_mode='MarkdownV2')
+        await message.answer(chunk, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 # =============================================================================
@@ -388,15 +400,19 @@ class AgentStreamHandler:
         if message_type in ('reasoning_message', 'tool_call_message'):
             formatted_content = self._format_other_event(event)
             if formatted_content:
-                await self.telegram_message.answer(**formatted_content.as_kwargs())
+                await self.telegram_message.answer(
+                    formatted_content, parse_mode=ParseMode.MARKDOWN_V2
+                )
             return
 
         # System alerts (informational messages from Letta)
         if message_type == 'system_alert':
             alert_message = getattr(event, 'message', '')
             if alert_message and alert_message.strip():
-                alert_content = Text(Italic('(info: '), alert_message, Italic(')'))
-                await self.telegram_message.answer(**alert_content.as_kwargs())
+                alert_content = f'_\\(info: _{_escape_markdown_v2(alert_message)}_\\)_'
+                await self.telegram_message.answer(
+                    alert_content, parse_mode=ParseMode.MARKDOWN_V2
+                )
             return
 
         # Phase 3: Final response (clears ping state)
@@ -409,19 +425,19 @@ class AgentStreamHandler:
     async def _handle_ping(self) -> None:
         """Handle ping events with state management."""
         self.ping_count += 1
-        ping_text = Text('⏳' * self.ping_count)
+        ping_text = '⏳' * self.ping_count
 
         if self.ping_message is None:
             # First ping: Send new message
-            self.ping_message = await self.telegram_message.answer(**ping_text.as_kwargs())
+            self.ping_message = await self.telegram_message.answer(ping_text)
         else:
             # Subsequent pings: Edit to add more hourglasses
             try:
-                await self.ping_message.edit_text(**ping_text.as_kwargs())
+                await self.ping_message.edit_text(ping_text)
             except Exception as e:
                 LOGGER.warning(f'Failed to edit ping message: {e}')
 
-    def _format_other_event(self, event: LettaStreamingResponse) -> Text | None:
+    def _format_other_event(self, event: LettaStreamingResponse) -> str | None:
         """Format non-assistant event content (reasoning, tool calls).
 
         Args:
