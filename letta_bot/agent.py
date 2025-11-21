@@ -315,16 +315,16 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
         request = [{'type': 'text', 'text': message.text}]
 
         try:
-            response_stream = await client.agents.messages.create(
-                agent_id=agent_id,
-                messages=[{'role': 'user', 'content': request}],  # type: ignore
-                include_pings=True,
-                streaming=True,
-            )
-
-            handler = AgentStreamHandler(message)
-
             async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+                response_stream = await client.agents.messages.create(
+                    agent_id=agent_id,
+                    messages=[{'role': 'user', 'content': request}],  # type: ignore
+                    include_pings=True,
+                    streaming=True,
+                )
+
+                handler = AgentStreamHandler(message)
+
                 async for event in response_stream:  # type: ignore[union-attr]
                     try:
                         await handler.handle_event(event)
