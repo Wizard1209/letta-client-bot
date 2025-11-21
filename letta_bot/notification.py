@@ -80,7 +80,6 @@ def get_notification_router(bot: Bot, gel_client: GelClient) -> Router:
         elif subcommand == 'disable':
             await handle_notify_disable(message, agent_id)
 
-
     LOGGER.info('Notification handlers initialized')
     return router
 
@@ -88,19 +87,23 @@ def get_notification_router(bot: Bot, gel_client: GelClient) -> Router:
 async def handle_notify_status(message: Message, agent_id: str) -> None:
     """Check scheduling and notification tools status for the agent."""
     try:
-        # Check if tools are attached
-        tools = await client.agents.tools.list(agent_id=agent_id)
-        schedule_tool_attached = any(t.name == 'schedule_message' for t in tools)
-        notify_tool_attached = any(t.name == 'notify_via_telegram' for t in tools)
+        # Check if tools are attached (check ALL tools across all pages)
+        schedule_tool_attached = False
+        notify_tool_attached = False
+        async for tool in client.agents.tools.list(agent_id=agent_id):
+            if tool.name == 'schedule_message':
+                schedule_tool_attached = True
+            if tool.name == 'notify_via_telegram':
+                notify_tool_attached = True
+            if schedule_tool_attached and notify_tool_attached:
+                break  # Found both, can stop early
 
         # Check environment variables
         agent = await client.agents.retrieve(agent_id=agent_id)
         env_vars = agent.tool_exec_environment_variables or []
 
         # Scheduling env vars
-        has_letta_key = any(
-            v.key == 'LETTA_API_KEY' for v in env_vars if hasattr(v, 'key')
-        )
+        has_letta_key = any(v.key == 'LETTA_API_KEY' for v in env_vars if hasattr(v, 'key'))
         has_scheduler_token = any(
             v.key == 'SCHEDULER_API_KEY' for v in env_vars if hasattr(v, 'key')
         )
@@ -131,18 +134,14 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
                 Text(Bold('Agent: '), agent.name),
                 '',
                 Text(Bold('📅 Scheduling (schedule_message):')),
-                Text(
-                    '  Tool attached: ', '✅ Yes' if schedule_tool_attached else '❌ No'
-                ),
+                Text('  Tool attached: ', '✅ Yes' if schedule_tool_attached else '❌ No'),
                 Text(
                     '  Environment configured: ',
                     '✅ Yes' if schedule_configured else '❌ No',
                 ),
                 '',
                 Text(Bold('📢 Notifications (notify_via_telegram):')),
-                Text(
-                    '  Tool attached: ', '✅ Yes' if notify_tool_attached else '❌ No'
-                ),
+                Text('  Tool attached: ', '✅ Yes' if notify_tool_attached else '❌ No'),
                 Text(
                     '  Environment configured: ',
                     '✅ Yes' if notify_configured else '❌ No',
@@ -156,6 +155,7 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
     except Exception as e:
         LOGGER.error(f'Error checking notification status: {e}')
         await message.answer(Text('❌ Error checking status: ', str(e)).as_markdown())
+
 
 async def handle_notify_enable(message: Message, agent_id: str, chat_id: str) -> None:
     """Enable scheduling and notifications for the agent."""
@@ -217,24 +217,35 @@ async def handle_notify_enable(message: Message, agent_id: str, chat_id: str) ->
         LOGGER.error(f'Error enabling communication tools: {e}')
         await message.answer(Text('❌ Error enabling tools: ', str(e)).as_markdown())
 
+
 async def _enable_schedule_tool(agent_id: str) -> None:
     """Enable schedule_message tool - completely separate logic."""
+    # Validate required config
+    if not CONFIG.scheduler_url or not CONFIG.scheduler_api_key:
+        raise ValueError('SCHEDULER_URL and SCHEDULER_API_KEY must be configured')
+
     # Check if tool exists and register/attach it
     schedule_tool = await register_schedule_message_tool()
 
-    # Attach tool if not already attached
-    attached_tools = await client.agents.tools.list(agent_id=agent_id)
-    if schedule_tool.id and not any(t.id == schedule_tool.id for t in attached_tools):
-        await client.agents.tools.attach(agent_id=agent_id, tool_id=schedule_tool.id)
-        LOGGER.info(
-            f'Attached schedule_message tool {schedule_tool.id} to agent {agent_id}'
-        )
+    # Attach tool if not already attached (check ALL tools)
+    if schedule_tool.id:
+        tool_already_attached = False
+        async for tool in client.agents.tools.list(agent_id=agent_id):
+            if tool.id == schedule_tool.id:
+                tool_already_attached = True
+                break
+
+        if not tool_already_attached:
+            await client.agents.tools.attach(agent_id=agent_id, tool_id=schedule_tool.id)
+            LOGGER.info(
+                f'Attached schedule_message tool {schedule_tool.id} to agent {agent_id}'
+            )
 
     # Set up environment variables for scheduling
     agent = await client.agents.retrieve(agent_id=agent_id)
     current_env_vars = agent.tool_exec_environment_variables or []
 
-    env_dict: dict[str, str | None] = {
+    env_dict: dict[str, str] = {
         var.key: var.value
         for var in current_env_vars
         if hasattr(var, 'key') and hasattr(var, 'value') and var.value is not None
@@ -246,28 +257,33 @@ async def _enable_schedule_tool(agent_id: str) -> None:
     env_dict['SCHEDULER_API_KEY'] = CONFIG.scheduler_api_key
     env_dict['AGENT_ID'] = agent_id
 
-    await client.agents.modify(
-        agent_id=agent_id, tool_exec_environment_variables=env_dict
-    )
+    await client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env_dict)
+
 
 async def _enable_notify_tool(agent_id: str, chat_id: str) -> None:
     """Enable notify_via_telegram tool - completely separate logic."""
     # Check if tool exists and register/attach it
     notify_tool = await register_notify_tool()
 
-    # Attach tool if not already attached
-    attached_tools = await client.agents.tools.list(agent_id=agent_id)
-    if notify_tool.id and not any(t.id == notify_tool.id for t in attached_tools):
-        await client.agents.tools.attach(agent_id=agent_id, tool_id=notify_tool.id)
-        LOGGER.info(
-            f'Attached notify_via_telegram tool {notify_tool.id} to agent {agent_id}'
-        )
+    # Attach tool if not already attached (check ALL tools)
+    if notify_tool.id:
+        tool_already_attached = False
+        async for tool in client.agents.tools.list(agent_id=agent_id):
+            if tool.id == notify_tool.id:
+                tool_already_attached = True
+                break
+
+        if not tool_already_attached:
+            await client.agents.tools.attach(agent_id=agent_id, tool_id=notify_tool.id)
+            LOGGER.info(
+                f'Attached notify_via_telegram tool {notify_tool.id} to agent {agent_id}'
+            )
 
     # Set up environment variables for notifications
     agent = await client.agents.retrieve(agent_id=agent_id)
     current_env_vars = agent.tool_exec_environment_variables or []
 
-    env_dict: dict[str, str | None] = {
+    env_dict: dict[str, str] = {
         var.key: var.value
         for var in current_env_vars
         if hasattr(var, 'key') and hasattr(var, 'value') and var.value is not None
@@ -277,9 +293,8 @@ async def _enable_notify_tool(agent_id: str, chat_id: str) -> None:
     env_dict['TELEGRAM_BOT_TOKEN'] = CONFIG.bot_token
     env_dict['TELEGRAM_CHAT_ID'] = chat_id
 
-    await client.agents.modify(
-        agent_id=agent_id, tool_exec_environment_variables=env_dict
-    )
+    await client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env_dict)
+
 
 async def handle_notify_disable(message: Message, agent_id: str) -> None:
     """Disable scheduling and notifications for the agent."""
@@ -320,13 +335,15 @@ async def handle_notify_disable(message: Message, agent_id: str) -> None:
         LOGGER.error(f'Error disabling communication tools: {e}')
         await message.answer(Text('❌ Error disabling tools: ', str(e)).as_markdown())
 
+
 async def _disable_schedule_tool(agent_id: str) -> None:
     """Disable schedule_message tool - completely separate logic."""
-    # Detach the tool
-    attached_tools = await client.agents.tools.list(agent_id=agent_id)
-    schedule_tool = next(
-        (t for t in attached_tools if t.name == 'schedule_message'), None
-    )
+    # Detach the tool (search ALL tools)
+    schedule_tool = None
+    async for tool in client.agents.tools.list(agent_id=agent_id):
+        if tool.name == 'schedule_message':
+            schedule_tool = tool
+            break
 
     if schedule_tool and schedule_tool.id:
         await client.agents.tools.detach(agent_id=agent_id, tool_id=schedule_tool.id)
@@ -336,25 +353,28 @@ async def _disable_schedule_tool(agent_id: str) -> None:
     agent = await client.agents.retrieve(agent_id=agent_id)
     current_env_vars = agent.tool_exec_environment_variables or []
 
-    filtered_vars: dict[str, str | None] = {
+    filtered_vars: dict[str, str] = {
         var.key: var.value
         for var in current_env_vars
         if hasattr(var, 'key')
         and hasattr(var, 'value')
         and var.value is not None
-        and var.key not in ('LETTA_API_KEY', 'SCHEDULER_URL', 'SCHEDULER_API_KEY', 'AGENT_ID')
+        and var.key
+        not in ('LETTA_API_KEY', 'SCHEDULER_URL', 'SCHEDULER_API_KEY', 'AGENT_ID')
     }
-    await client.agents.modify(
+    await client.agents.update(
         agent_id=agent_id, tool_exec_environment_variables=filtered_vars
     )
 
+
 async def _disable_notify_tool(agent_id: str) -> None:
     """Disable notify_via_telegram tool - completely separate logic."""
-    # Detach the tool
-    attached_tools = await client.agents.tools.list(agent_id=agent_id)
-    notify_tool = next(
-        (t for t in attached_tools if t.name == 'notify_via_telegram'), None
-    )
+    # Detach the tool (search ALL tools)
+    notify_tool = None
+    async for tool in client.agents.tools.list(agent_id=agent_id):
+        if tool.name == 'notify_via_telegram':
+            notify_tool = tool
+            break
 
     if notify_tool and notify_tool.id:
         await client.agents.tools.detach(agent_id=agent_id, tool_id=notify_tool.id)
@@ -364,7 +384,7 @@ async def _disable_notify_tool(agent_id: str) -> None:
     agent = await client.agents.retrieve(agent_id=agent_id)
     current_env_vars = agent.tool_exec_environment_variables or []
 
-    filtered_vars: dict[str, str | None] = {
+    filtered_vars: dict[str, str] = {
         var.key: var.value
         for var in current_env_vars
         if hasattr(var, 'key')
@@ -373,18 +393,20 @@ async def _disable_notify_tool(agent_id: str) -> None:
         and var.key not in ('TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID')
     }
 
-    await client.agents.modify(
+    await client.agents.update(
         agent_id=agent_id, tool_exec_environment_variables=filtered_vars
     )
+
 
 async def _attach_tool_memory_block(agent_id: str) -> None:
     """Attach proactive messaging protocol memory block to agent."""
     try:
-        # Check if block with this label already exists on agent
-        existing_blocks = await client.agents.blocks.list(agent_id=agent_id)
-        block_exists = any(
-            b.label == NOTIFICATION_TOOL_BLOCK_LABEL for b in existing_blocks
-        )
+        # Check if block with this label already exists on agent (check ALL blocks)
+        block_exists = False
+        async for block in client.agents.blocks.list(agent_id=agent_id):
+            if block.label == NOTIFICATION_TOOL_BLOCK_LABEL:
+                block_exists = True
+                break
 
         if block_exists:
             LOGGER.info(
@@ -414,15 +436,16 @@ async def _attach_tool_memory_block(agent_id: str) -> None:
         LOGGER.error(f'Error attaching memory block to agent {agent_id}: {e}')
         raise
 
+
 async def _detach_tool_memory_block(agent_id: str) -> None:
     """Detach and delete proactive messaging protocol memory block from agent."""
     try:
-        # List agent's blocks and find the one with our label
-        existing_blocks = await client.agents.blocks.list(agent_id=agent_id)
-        target_block = next(
-            (b for b in existing_blocks if b.label == NOTIFICATION_TOOL_BLOCK_LABEL),
-            None,
-        )
+        # List agent's blocks and find the one with our label (search ALL blocks)
+        target_block = None
+        async for block in client.agents.blocks.list(agent_id=agent_id):
+            if block.label == NOTIFICATION_TOOL_BLOCK_LABEL:
+                target_block = block
+                break
 
         if not target_block:
             LOGGER.info(

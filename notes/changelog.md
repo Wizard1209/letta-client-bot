@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file\.
 
 *\[Latest additions\]*
 
+*Changed:*
+• Updated to Letta SDK v1\.0 with proper async streaming support for agent message responses
+
 *Added:*
 • Progressive "working" indicator that updates in real\-time during agent processing \(shows increasing hourglass symbols while waiting\)
 • New unified response handler module consolidating stream event processing and message formatting

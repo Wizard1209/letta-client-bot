@@ -14,9 +14,7 @@ from typing import Any
 
 from aiogram.types import Message
 from aiogram.utils.formatting import BlockQuote, Bold, Code, Italic, Text
-from letta_client.agents.messages.types.letta_streaming_response import (
-    LettaStreamingResponse,
-)
+from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
 
 LOGGER = logging.getLogger(__name__)
 
