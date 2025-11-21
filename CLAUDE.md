@@ -71,7 +71,7 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
   - Shows user details, request UUID, resource type, and resource ID
 - Admin approves request: `/admin allow <request_uuid>`
   - **Identity requests**: Creates Letta identity with `tg-{telegram_id}` format, stores in database
-  - **Agent requests**: Creates agent from template using `client.templates.createagentsfromtemplate()`
+  - **Agent requests**: Creates agent from template using `client.templates.agents.create()`
   - User receives approval notification
 - Admin denies request: `/admin deny <request_uuid> [reason]`
   - Updates request status to denied
@@ -81,8 +81,8 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 **Phase 4: Message Routing and Response Processing**
 - Authorized users send messages to bot
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
-- Bot streams agent responses via `client.agents.messages.create_stream()`
-- **Response parser** (`response_parser.py`) processes stream events:
+- Bot streams agent responses via `client.agents.messages.create()` with `streaming=True`
+- **Response handler** (`response_handler.py`) processes stream events:
   - **assistant_message**: Main agent response (formatted with bold "Agent response:" header)
   - **reasoning_message**: Internal agent reasoning (italic header, blockquote formatting)
   - **tool_call_message**: Tool execution details (parsed from JSON arguments)
@@ -216,7 +216,11 @@ letta_bot/
   config.py            # Configuration management (Pydantic settings)
   auth.py              # Admin authorization handlers (/admin pending, allow, deny, list, revoke)
   agent.py             # Agent request handlers, message routing, and Letta API integration
+  client.py            # Shared Letta client instance and Letta API operations
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
+  notification.py      # Notification and scheduling tool management handlers
+  response_handler.py  # Agent response stream processing and message formatting
+  letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
   queries/             # EdgeQL queries and auto-generated Python modules
     register_user.edgeql                    # Register new user
     is_registered.edgeql                    # Check if user is registered
@@ -255,7 +259,7 @@ Environment variables via `.env` (provide `.env.example`):
 **Required**:
 - `BOT_TOKEN` - Telegram bot token from BotFather
 - `WEBHOOK_HOST` - Hostname for webhook (e.g., `ltgmc.online`)
-- `LETTA_PROJECT` - Letta project name/identifier
+- `LETTA_PROJECT_ID` - Letta project ID (UUID)
 - `LETTA_API_KEY` - Letta API key for authentication
 
 **Optional**:
