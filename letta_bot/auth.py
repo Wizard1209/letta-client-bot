@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.formatting import Code, Text, as_list
 from gel import AsyncIOExecutor as GelClient
 
-from letta_bot.client import create_agent_from_template, create_letta_identity
+from letta_bot.client import create_agent_from_template, get_or_create_letta_identity
 from letta_bot.config import CONFIG
 from letta_bot.queries.create_identity_async_edgeql import (
     create_identity as create_identity_query,
@@ -206,7 +206,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                     # if identity doesn't exist create identity with letta
                     name, id_ = resource_id.rsplit(':', 1)
                     # TODO: change identity prefix based on local or prod env
-                    letta_identity = await create_letta_identity(
+                    letta_identity = await get_or_create_letta_identity(
                         identifier_key=f'tg-{id_}', name=name
                     )
                     await create_identity_query(

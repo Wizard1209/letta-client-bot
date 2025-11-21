@@ -47,7 +47,7 @@ def load_info_command_content(note_name: str) -> str:
         return content
     except Exception as e:
         LOGGER.error(f'Error reading note {note_path}: {e}')
-        return Text(f'❌ Error loading note: {str(e)}')
+        return Text(f'❌ Error loading note: {str(e)}').as_markdown()
 
 
 def get_info_router() -> Router:

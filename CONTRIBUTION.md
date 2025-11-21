@@ -64,10 +64,8 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ### High Priority
 
-- Fix markdown spliting, which leads to incorrect markdownv2 conversion
 - Improve rendering for tool calls
-- Update to Letta SDK 1.0
-- Update keyboard after action on switching agent and creating from the  template <https://core.telegram.org/bots/api#editmessagereplymarkup>
+- Update keyboard after action on switching agent and creating from the template <https://core.telegram.org/bots/api#editmessagereplymarkup>
 
 ### Medium Priority
 
@@ -138,7 +136,7 @@ To add new queries to use in the application put query.edgeql to letta_bot/queri
 
 **Required env vars**:
 ```
-BOT_TOKEN, WEBHOOK_HOST, LETTA_PROJECT, LETTA_API_KEY
+BOT_TOKEN, WEBHOOK_HOST, LETTA_PROJECT_ID, LETTA_API_KEY
 GEL_INSTANCE, GEL_SECRET_KEY (if using Gel Cloud)
 ```
 

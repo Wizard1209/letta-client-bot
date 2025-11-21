@@ -9,11 +9,12 @@ from aiogram.utils.formatting import Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor as GelClient
 from httpx import ReadTimeout
-from letta_client.core.api_error import ApiError
+from letta_client import APIError
 
 from letta_bot.auth import require_identity
 from letta_bot.client import client, get_default_agent
 from letta_bot.config import CONFIG
+from letta_bot.letta_sdk_extensions import list_templates
 from letta_bot.notification import get_notification_router
 from letta_bot.queries.check_pending_request_async_edgeql import (
     check_pending_request as check_pending_request_query,
@@ -105,8 +106,10 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     async def new_agent_from_template(message: Message) -> None:
         # TODO: if no pending requests
 
-        templates_response = await client.templates.list(project_slug=CONFIG.letta_project)
-        templates = templates_response.templates
+        # List available templates using SDK extension
+        paginator = await list_templates(client, CONFIG.letta_project_id)
+        page = await paginator
+        templates = page.templates
 
         # TODO: Maybe adjust builder for vertical buttons layout
         builder = InlineKeyboardBuilder()
@@ -202,9 +205,14 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
 
         # List all agents for this identity
         try:
-            agents = await client.identities.agents.list(identity_id=identity.identity_id)
+            # Collect ALL agents across all pages
+            all_agents = []
+            async for agent in client.identities.agents.list(
+                identity_id=identity.identity_id
+            ):
+                all_agents.append(agent)
 
-            if not agents:
+            if not all_agents:
                 await message.answer(
                     Text(
                         "You don't have any agents yet. "
@@ -215,7 +223,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
 
             # Build inline keyboard with agents
             builder = InlineKeyboardBuilder()
-            for agent in agents:
+            for agent in all_agents:
                 # Mark currently selected agent
                 is_selected = agent.id == identity.selected_agent
                 button_text = f'{"✅ " if is_selected else ""}{agent.name}'
@@ -229,7 +237,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
                 Text('Select an agent:').as_markdown(), reply_markup=builder.as_markup()
             )
 
-        except ApiError as e:
+        except APIError as e:
             LOGGER.error(f'Error listing agents for identity {identity.identity_id}: {e}')
             await message.answer(Text('Error retrieving your agents').as_markdown())
 
@@ -307,19 +315,17 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
         request = [{'type': 'text', 'text': message.text}]
 
         try:
-            response_stream = client.agents.messages.create_stream(
+            response_stream = await client.agents.messages.create(
                 agent_id=agent_id,
                 messages=[{'role': 'user', 'content': request}],  # type: ignore
                 include_pings=True,
-                request_options={
-                    'timeout_in_seconds': 120,  # Match Cloudflare timeout
-                },
+                streaming=True,
             )
 
             handler = AgentStreamHandler(message)
 
             async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-                async for event in response_stream:
+                async for event in response_stream:  # type: ignore[union-attr]
                     try:
                         await handler.handle_event(event)
                     except Exception as e:
@@ -343,7 +349,7 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
                 ).as_markdown()
             )
 
-        except ApiError as e:
+        except APIError as e:
             LOGGER.error(
                 'Letta API error - status: %s, body: %s, type: %s',
                 getattr(e, 'status_code', 'unknown'),

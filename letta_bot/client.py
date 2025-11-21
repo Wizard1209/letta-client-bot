@@ -10,53 +10,21 @@ Isolating the client here prevents circular import issues.
 import logging
 from pathlib import Path
 
-from letta_client import AsyncLetta as LettaClient
-from letta_client.core.api_error import ApiError
-from letta_client.projects.types.projects_list_response_projects_item import (
-    ProjectsListResponseProjectsItem,
-)
+from letta_client import APIError, AsyncLetta as LettaClient, ConflictError
 from letta_client.types.identity import Identity
 from letta_client.types.tool import Tool
 
 from letta_bot.config import CONFIG
 
+LETTA_CLIENT_TIMEOUT = 120
+
 # Single shared client instance
-client = LettaClient(project=CONFIG.letta_project, token=CONFIG.letta_api_key)
+client = LettaClient(
+    project_id=CONFIG.letta_project_id,
+    api_key=CONFIG.letta_api_key,
+    timeout=LETTA_CLIENT_TIMEOUT,
+)
 LOGGER = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Project Management
-# =============================================================================
-
-
-async def get_project_by_slug(slug: str) -> ProjectsListResponseProjectsItem:
-    """Get project by slug from Letta API.
-
-    Lists all projects and filters by slug to find matching project.
-
-    Args:
-        slug: Project slug to search for
-
-    Returns:
-        Project object matching the slug
-
-    Raises:
-        RuntimeError: If no project found or multiple projects with same slug
-    """
-    projects_list = (await client.projects.list()).projects
-
-    # Filter projects by slug
-    matching_projects = [p for p in projects_list if p.slug == slug]
-
-    if len(matching_projects) == 0:
-        LOGGER.critical(f'Project with slug "{slug}" was not found')
-        raise RuntimeError(f'Project with slug "{slug}" was not found')
-
-    if len(matching_projects) > 1:
-        LOGGER.warning(f'Multiple projects found with slug "{slug}"')
-
-    return matching_projects[0]
 
 
 # =============================================================================
@@ -64,18 +32,32 @@ async def get_project_by_slug(slug: str) -> ProjectsListResponseProjectsItem:
 # =============================================================================
 
 
-async def create_letta_identity(identifier_key: str, name: str) -> Identity:
+async def get_or_create_letta_identity(identifier_key: str, name: str) -> Identity:
     """Create identity in Letta API with retry logic.
 
     Returns identity object with .id attribute.
 
     States:
-    1. Attempt creation
-    2. If fails, attempt retrieval by identifier_key
-    3. If retrieval also fails, raise error
+    1. Attempt retrieval by identifier_key
+    2. If fails, attempt creation
+    3. If creation also fails, raise error
     """
     try:
-        # State 1: Attempt to create new identity
+        # List identities by identifier_key
+        # Note: Client is already configured with project, so it auto-scopes
+        # New pagination API: await to get page, then access .items
+        page = await client.identities.list(
+            project_id=CONFIG.letta_project_id, identifier_key=identifier_key
+        )
+        identities = page.items
+
+        if identities:
+            identity = identities[0]
+            LOGGER.info(f'Retrieved existing identity: {identity.id}')
+            return identity
+
+        LOGGER.info(f'No identity found for {identifier_key}')
+        # Create identity if not existed
         identity = await client.identities.create(
             identifier_key=identifier_key,
             name=name,
@@ -83,31 +65,14 @@ async def create_letta_identity(identifier_key: str, name: str) -> Identity:
         )
         LOGGER.info(f'Created identity: {identity.id}')
         return identity
-
-    except ApiError as create_error:
-        # State 2: Creation failed, attempt to retrieve existing identity
-        LOGGER.info(f'Retrieving existing identity: {identifier_key}')
-
-        try:
-            # List identities by identifier_key (same pattern as delete_identity.py)
-            # Note: list works properly only with project_id specified
-            project = await get_project_by_slug(CONFIG.letta_project)
-            identities = await client.identities.list(
-                identifier_key=identifier_key, project_id=project.id
-            )
-
-            if not identities:
-                LOGGER.error(f'No existing identity found: {identifier_key}')
-                raise create_error
-
-            identity = identities[0]
-            LOGGER.info(f'Retrieved existing identity: {identity.id}')
-            return identity
-
-        except ApiError as retrieve_error:
-            # State 3: Both creation and retrieval failed
-            LOGGER.critical(f'Identity creation and retrieval failed: {identifier_key}')
-            raise retrieve_error
+    except ConflictError:
+        LOGGER.critical(
+            f'Identity already exists but couldnt be retrieved {identifier_key}'
+        )
+        raise
+    except APIError:
+        LOGGER.critical(f'Identity creation and retrieval failed: {identifier_key}')
+        raise
 
 
 # =============================================================================
@@ -116,18 +81,19 @@ async def create_letta_identity(identifier_key: str, name: str) -> Identity:
 
 
 async def create_agent_from_template(template_id: str, identity_id: str) -> None:
-    """Create agent from template in Letta API. Returns agent object."""
+    """Create agent from template in Letta API."""
     # Local import to avoid circular dependency
     from letta_bot.agent import RequestNewAgentCallback
 
     info = RequestNewAgentCallback.unpack(template_id)
 
-    # Get project by slug to obtain project ID
-    project = await get_project_by_slug(CONFIG.letta_project)
+    # Use new templates.agents.create() API
+    # Client is already configured with project, so it auto-scopes
+    template_version = f'{info.template_name}:{info.version}'
 
     # TODO: mb tags for creator, mb custom name
-    await client.templates.createagentsfromtemplate(
-        project.id, f'{info.template_name}:{info.version}', identity_ids=[identity_id]
+    await client.templates.agents.create(
+        template_version=template_version, identity_ids=[identity_id]
     )
 
 
@@ -143,10 +109,11 @@ async def get_default_agent(identity_id: str) -> str:
     Raises:
         IndexError: If no agents exist for the identity
     """
-    result = await client.identities.agents.list(
+    # New pagination API: await to get page, then access .items
+    page = await client.identities.agents.list(
         identity_id=identity_id, limit=1, order='asc'
     )
-    return result[0].id
+    return page.items[0].id
 
 
 # =============================================================================

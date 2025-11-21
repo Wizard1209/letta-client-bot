@@ -22,7 +22,7 @@ class Config(BaseSettings):
 
     admin_ids: list[int] | None = None
 
-    letta_project: str
+    letta_project_id: str
     letta_api_key: str
 
     # Gel/EdgeDB configuration
