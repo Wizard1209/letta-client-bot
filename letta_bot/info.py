@@ -2,31 +2,36 @@
 Info handlers for commands serving information
 """
 
+from functools import lru_cache
 import logging
 
 from aiogram import Router
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import Message
-from aiogram.utils.formatting import Text
 
 from letta_bot.config import CONFIG
+from letta_bot.response_handler import _escape_markdown_v2, convert_to_telegram_markdown
 
 LOGGER = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=32)
 def load_info_command_content(note_name: str) -> str:
     """
-    Load markdown note from specified directory as raw MarkdownV2 text.
+    Load markdown note from specified directory and convert to Telegram MarkdownV2.
 
-    Note files must be manually formatted with proper MarkdownV2 escaping.
-    Content is NOT processed through aiogram formatting utilities - it's sent
-    directly to Telegram as raw MarkdownV2.
+    Note files should be written in standard Markdown format. This function
+    automatically converts them to Telegram-compatible MarkdownV2 using the same
+    conversion pipeline used for agent responses.
+
+    Results are cached to avoid re-converting the same notes on every request.
 
     Args:
         note_name: Name of the note file (without .md extension)
 
     Returns:
-        Raw MarkdownV2 content, or error message if not found
+        Telegram MarkdownV2 formatted content, or error message if not found
     """
     notes_dir = CONFIG.info_dir
 
@@ -40,14 +45,15 @@ def load_info_command_content(note_name: str) -> str:
 
     if not note_path.exists():
         LOGGER.warning(f'Note file not found: {note_path}')
-        return f"ℹ️ Note '{note_name}' is not available\\."
+        return _escape_markdown_v2(f"ℹ️ Note '{note_name}' is not available.")
 
     try:
-        content = note_path.read_text(encoding='utf-8').strip()
-        return content
+        # Load standard markdown content and convert to Telegram MarkdownV2
+        markdown_content = note_path.read_text(encoding='utf-8').strip()
+        return convert_to_telegram_markdown(markdown_content)
     except Exception as e:
         LOGGER.error(f'Error reading note {note_path}: {e}')
-        return Text(f'❌ Error loading note: {str(e)}').as_markdown()
+        return _escape_markdown_v2(f'❌ Error loading note: {str(e)}')
 
 
 def get_info_router() -> Router:
