@@ -133,30 +133,93 @@ def _format_tool_by_name(
     Returns:
         Formatted Text object or None for tools that should be hidden
     """
-    # Memory operations
-    if tool_name == 'archival_memory_insert':
-        return _format_archival_memory_insert(args_obj)
+    match tool_name:
+        # Memory operations
+        case 'archival_memory_insert':
+            return _format_archival_memory_insert(args_obj)
 
-    elif tool_name == 'archival_memory_search':
-        return _format_archival_memory_search(args_obj)
+        case 'archival_memory_search':
+            return _format_archival_memory_search(args_obj)
 
-    elif tool_name == 'memory_insert':
-        return _format_memory_insert(args_obj, legacy=True)
+        case 'memory_insert':
+            return _format_memory_insert(args_obj, legacy=True)
 
-    elif tool_name == 'memory_replace':
-        return _format_memory_replace(args_obj)
+        case 'memory_replace':
+            return _format_memory_replace(args_obj)
 
-    elif tool_name == 'memory':
-        return _format_memory(args_obj)
+        case 'memory':
+            return _format_memory(args_obj)
 
-    # Code execution
-    elif tool_name == 'run_code':
-        return _format_run_code(args_obj)
+        # Code execution
+        case 'run_code':
+            return _format_run_code(args_obj)
 
-    # Generic tool display
-    else:
-        LOGGER.warning('No formating supported for tool %s', tool_name)
-        return _format_generic_tool(tool_name, args_obj)
+        case 'web_search':
+            return _format_web_search(args_obj)
+
+        case 'fetch_webpage':
+            return _format_fetch_webpage(args_obj)
+
+        # Generic tool
+        case _:
+            LOGGER.warning('No formatting supported for tool %s', tool_name)
+            return _format_generic_tool(tool_name, args_obj)
+
+
+def _format_web_search(args_obj: dict[str, Any]) -> str:
+    query = args_obj.get('query', '')
+    num_results = args_obj.get('num_results', '')
+    category = args_obj.get('category', '')
+    include_text = args_obj.get('include_text', False)
+    include_domains = args_obj.get('include_domains', [])
+    exclude_domains = args_obj.get('exclude_domains', [])
+    start_published_date = args_obj.get('start_published_date', '')
+    end_published_date = args_obj.get('end_published_date', '')
+    user_location = args_obj.get('user_location', '')
+
+    def format_domains(domains: list[str]) -> str:
+        return '\\[' + ', '.join(_escape_markdown_v2(item) for item in domains) + '\\]'
+
+    msg = (
+        f'🔍 _Let me search for this\\.\\.\\._\n'
+        f'Searching for *"{_escape_markdown_v2(query)}"*'
+    )
+
+    parts = []
+
+    if num_results:
+        msg += f' — returning top {num_results} results'
+    if category:
+        msg += f' in the "{_escape_markdown_v2(category)}" category'
+
+    if include_domains:
+        parts.append(f'limited to {format_domains(include_domains)}')
+    if exclude_domains:
+        parts.append(f'excluding {format_domains(exclude_domains)}')
+    if include_text:
+        parts.append('retrieving full page content')
+    if start_published_date and end_published_date:
+        parts.append(
+            f'published between {_escape_markdown_v2(start_published_date)} '
+            f'and {_escape_markdown_v2(end_published_date)}'
+        )
+    elif start_published_date:
+        parts.append(f'published after {_escape_markdown_v2(start_published_date)}')
+    elif end_published_date:
+        parts.append(f'published before {_escape_markdown_v2(end_published_date)}')
+
+    if user_location:
+        parts.append(f'localized for {_escape_markdown_v2(user_location)} users')
+
+    if parts:
+        msg += ', ' + ', '.join(parts)
+
+    return msg
+
+
+def _format_fetch_webpage(args_obj: dict[str, Any]) -> str:
+    url = _escape_markdown_v2(args_obj.get('url', ''))
+    return f'🌐 _Fetching webpage_\\.\\.\\.\n_Retrieving content from_ {url}'
 
 
 def _format_archival_memory_insert(args_obj: dict[str, Any]) -> str:
@@ -186,6 +249,21 @@ def _format_memory_replace(args_obj: dict[str, Any]) -> str | None:
     return f'*Agent modifying memory:*\n\n```diff\n{diff}```'
 
 
+def _format_memory_rename(args_obj: dict[str, Any]) -> str:
+    description = _escape_markdown_v2(args_obj.get('description', ''))
+    path = _escape_markdown_v2(args_obj.get('path', ''))
+    new_path = _escape_markdown_v2(args_obj.get('new_path', ''))
+    old_path = _escape_markdown_v2(args_obj.get('old_path', ''))
+
+    if description and path:
+        return (
+            '🏷️ _Updating memory description\\.\\.\\._\n'
+            f'*Path:* {path}\n'
+            f'*New description:* "{description}"'
+        )
+    return f'📂 _Renaming memory block\\.\\.\\._\n*From:* {old_path}\n*To:* {new_path}'
+
+
 def _format_memory(args_obj: dict[str, Any]) -> None | str:
     """Format memory tool call."""
     match args_obj:
@@ -193,6 +271,8 @@ def _format_memory(args_obj: dict[str, Any]) -> None | str:
             return _format_memory_replace(args_obj)
         case {'command': 'insert'}:
             return _format_memory_insert(args_obj)
+        case {'command': 'rename'}:
+            return _format_memory_rename(args_obj)
         case {'command': command}:
             return _format_generic_tool(f'memory_{command}', args_obj)
         case _:
