@@ -92,7 +92,14 @@ def schedule_message(message_to_self: str, delay_seconds: int = 0, schedule_at: 
 
     # Format in simple readable format: "2025-01-15 14:30 UTC"
     scheduled_at_str = now_utc.strftime('%Y-%m-%d %H:%M UTC')
-    expected_at_str = expected_arrival.strftime('%Y-%m-%d %H:%M UTC')
+
+    if has_timestamp:
+        # Preserve user's timezone from schedule_at
+        tz_label = expected_arrival.strftime('%Z') or expected_arrival.strftime('%z')
+        expected_at_str = expected_arrival.strftime(f'%Y-%m-%d %H:%M {tz_label}')
+    else:
+        # No timezone context from delay_seconds, use UTC
+        expected_at_str = expected_arrival.strftime('%Y-%m-%d %H:%M UTC')
 
     # Build system message for self with timing info
     system_text = (
