@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 **[Latest additions]**
 
 **Added:**
+• Timestamp scheduling with X-Schedule-At header support for absolute time scheduling
+• Expanded proactive messaging protocol memory block with scheduling patterns, timezone handling, and recurring notifications
 • Unified diff visualization for memory modifications (shows color-coded diffs of exactly what changed instead of old/new text blocks)
 • Rich formatting for web search and webpage fetching operations (displays query parameters, filters, domain restrictions, date ranges)
 • Support for new memory tool subcommands with specialized formatting (insert, str_replace, rename operations)

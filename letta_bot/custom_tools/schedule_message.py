@@ -11,11 +11,18 @@ from datetime import datetime, timedelta, timezone
 import os
 
 
-def schedule_message(message_to_self: str, delay_seconds: int) -> str:
+def schedule_message(message_to_self: str, delay_seconds: int = 0, schedule_at: str = '') -> str:
     """Schedule a delayed message to self for proactive behavior.
 
-    This tool allows the agent to send a message to itself after a specified delay,
-    enabling proactive reminders, scheduled tasks, and delayed actions.
+    This tool allows the agent to send a message to itself after a specified delay
+    or at a specific time, enabling proactive reminders, scheduled tasks, and delayed actions.
+
+    You must provide EITHER delay_seconds OR schedule_at (not both):
+    - delay_seconds: Relative delay from now (e.g., 3600 for 1 hour from now)
+    - schedule_at: Absolute timestamp in ISO format with timezone (e.g., '2025-01-15T14:30:00-05:00')
+
+    IMPORTANT: After scheduling, tell the user when they'll receive the notification.
+    Only use schedule_at when you know the user's timezone (from conversation or memory).
 
     Environment variables required:
     - LETTA_API_KEY: Letta API authentication token
@@ -26,7 +33,8 @@ def schedule_message(message_to_self: str, delay_seconds: int) -> str:
 
     Args:
         message_to_self (str): The system message to send to yourself after the delay
-        delay_seconds (int): Delay in seconds before the message is delivered
+        delay_seconds (int): Delay in seconds before message delivery (default: 0, use schedule_at instead)
+        schedule_at (str): ISO format timestamp with timezone for absolute scheduling (default: '', use delay_seconds instead)
 
     Returns:
         str: Confirmation that the scheduled message was queued or error message
@@ -50,22 +58,46 @@ def schedule_message(message_to_self: str, delay_seconds: int) -> str:
     if not agent_id:
         return 'Error: AGENT_ID environment variable is not set'
 
-    # Validate delay
-    if delay_seconds < 0:
-        return 'Error: delay_seconds must be a positive integer'
+    # Validate scheduling parameters - exactly one must be provided
+    has_delay = delay_seconds > 0
+    has_timestamp = schedule_at != ''
+
+    if not has_delay and not has_timestamp:
+        return 'Error: Must provide either delay_seconds or schedule_at'
+    if has_delay and has_timestamp:
+        return 'Error: Cannot provide both delay_seconds and schedule_at - choose one'
 
     # Calculate timing information
     now_utc = datetime.now(timezone.utc)
-    expected_arrival = now_utc + timedelta(seconds=delay_seconds)
+
+    if has_timestamp:
+        # Parse ISO timestamp and validate
+        try:
+            expected_arrival = datetime.fromisoformat(schedule_at)
+        except (ValueError, TypeError) as e:
+            return f'Error: Invalid ISO timestamp format for schedule_at: {str(e)}'
+
+        # Ensure timestamp is timezone-aware
+        if expected_arrival.tzinfo is None:
+            return 'Error: schedule_at must include timezone (e.g., +00:00 or Z)'
+
+        # Check if timestamp is in the future
+        if expected_arrival <= now_utc:
+            return f'Error: schedule_at must be in the future (got {schedule_at}, now is {now_utc.isoformat()})'
+    else:
+        # Validate delay
+        if delay_seconds < 0:
+            return 'Error: delay_seconds must be a positive integer'
+        expected_arrival = now_utc + timedelta(seconds=delay_seconds)
 
     # Format in simple readable format: "2025-01-15 14:30 UTC"
-    scheduled_at = now_utc.strftime('%Y-%m-%d %H:%M UTC')
-    expected_at = expected_arrival.strftime('%Y-%m-%d %H:%M UTC')
+    scheduled_at_str = now_utc.strftime('%Y-%m-%d %H:%M UTC')
+    expected_at_str = expected_arrival.strftime('%Y-%m-%d %H:%M UTC')
 
     # Build system message for self with timing info
     system_text = (
-        f'Scheduled at: {scheduled_at}\n'
-        f'Expected at: {expected_at}\n'
+        f'Scheduled at: {scheduled_at_str}\n'
+        f'Expected at: {expected_at_str}\n'
         f'Message: {message_to_self}'
     )
 
@@ -90,22 +122,28 @@ def schedule_message(message_to_self: str, delay_seconds: int) -> str:
     headers = {
         # Scheduler authentication
         'X-API-Key': scheduler_api_key,
-        # Delay interval in seconds
-        'X-Delay-Seconds': str(delay_seconds),
         # Letta API authentication (forwarded by Scheduler)
         'Authorization': f'Bearer {letta_api_key}',
         'Content-Type': 'application/json',
     }
+
+    # Add scheduling header based on mode
+    if has_timestamp:
+        # Use absolute timestamp scheduling
+        headers['X-Schedule-At'] = expected_arrival.isoformat()
+    else:
+        # Use relative delay scheduling
+        headers['X-Delay-Seconds'] = str(delay_seconds)
 
     try:
         # Send request to Scheduler, which will queue and forward to Letta
         response = requests.post(scheduler_url, json=letta_payload, headers=headers, timeout=10)
 
         if response.status_code == 200:
-            return f'Scheduled at: {scheduled_at}\nExpected at: {expected_at}'
+            return f'Scheduled at: {scheduled_at_str}\nExpected at: {expected_at_str}'
         elif response.status_code == 201:
             # Scheduler returns 201 when job is created
-            return f'Scheduled at: {scheduled_at}\nExpected at: {expected_at}'
+            return f'Scheduled at: {scheduled_at_str}\nExpected at: {expected_at_str}'
         else:
             return f'Failed to schedule message: {response.status_code} - {response.text}'
 

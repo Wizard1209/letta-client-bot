@@ -19,6 +19,8 @@ LOGGER = logging.getLogger(__name__)
 # Memory block label for agent notification tools guidance
 NOTIFICATION_TOOL_BLOCK_LABEL = 'proactive_messaging_protocol'
 
+NOTIFICATION_MEMORY_BLOCK_DESC = 'How to use scheduling and notification tools to enable proactive behavior: scheduling reminders and follow-ups, sending notifications at specific times across timezones, creating recurring check-ins, understanding conversational vs silent communication modes, context preservation, and timing verification'
+
 
 def _load_memory_block_content() -> str:
     """Load memory block content from markdown file."""
@@ -420,7 +422,9 @@ async def _attach_tool_memory_block(agent_id: str) -> None:
 
         # Create new memory block
         block = await client.blocks.create(
-            label=NOTIFICATION_TOOL_BLOCK_LABEL, value=block_content
+            label=NOTIFICATION_TOOL_BLOCK_LABEL,
+            description=NOTIFICATION_MEMORY_BLOCK_DESC,
+            value=block_content
         )
 
         LOGGER.info(
