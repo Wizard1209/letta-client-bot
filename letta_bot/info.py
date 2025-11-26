@@ -6,7 +6,6 @@ from functools import lru_cache
 import logging
 
 from aiogram import Router
-from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import Message
 

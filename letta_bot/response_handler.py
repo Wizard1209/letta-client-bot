@@ -48,6 +48,31 @@ def _get_diff_text(old: str, new: str) -> str:
     )
 
 
+def _format_datetime(dt_string: str) -> str:
+    """Format datetime string to readable format.
+
+    Args:
+        dt_string: ISO datetime string (e.g., "2024-01-01" or "2024-01-01T10:30:00")
+
+    Returns:
+        Formatted datetime string (e.g., "Jan 01, 2024" or "Jan 01, 2024 10:30")
+    """
+    from datetime import datetime
+
+    try:
+        # Try parsing with time component
+        if 'T' in dt_string:
+            dt = datetime.fromisoformat(dt_string.replace('Z', '+00:00'))
+            return dt.strftime('%b %d, %Y %H:%M')
+        else:
+            # Date only
+            dt = datetime.fromisoformat(dt_string)
+            return dt.strftime('%b %d, %Y')
+    except (ValueError, AttributeError):
+        # Fallback to original string if parsing fails
+        return dt_string
+
+
 def _escape_markdown_v2(text: str) -> str:
     """Escape all special characters required by Telegram MarkdownV2."""
     pattern = re.compile(r'([\_\*\[\]\(\)\~\`\>\#\+\-\=\|\{\}\.\!\/\\])')
@@ -160,10 +185,50 @@ def _format_tool_by_name(
         case 'fetch_webpage':
             return _format_fetch_webpage(args_obj)
 
+        case 'conversation_search':
+            return _format_conversation_search(args_obj)
+
         # Generic tool
         case _:
             LOGGER.warning('No formatting supported for tool %s', tool_name)
             return _format_generic_tool(tool_name, args_obj)
+
+
+def _format_conversation_search(args_obj: dict[str, Any]) -> str:
+    """Format conversation_search tool call."""
+    query = _escape_markdown_v2(args_obj.get('query', ''))
+    limit = args_obj.get('limit')
+    start_date = args_obj.get('start_date', '')
+    end_date = args_obj.get('end_date', '')
+    roles = args_obj.get('roles', [])
+
+    header = '🔍 _Searching conversation history\\.\\.\\._\n'
+    header += f'*Query:* "{query}"'
+
+    parts = []
+
+    if limit:
+        parts.append(f'top {limit} results')
+
+    if start_date and end_date:
+        formatted_start = _escape_markdown_v2(_format_datetime(start_date))
+        formatted_end = _escape_markdown_v2(_format_datetime(end_date))
+        parts.append(f'between {formatted_start} and {formatted_end}')
+    elif start_date:
+        formatted_start = _escape_markdown_v2(_format_datetime(start_date))
+        parts.append(f'after {formatted_start}')
+    elif end_date:
+        formatted_end = _escape_markdown_v2(_format_datetime(end_date))
+        parts.append(f'before {formatted_end}')
+
+    if roles:
+        formatted_roles = ', '.join(_escape_markdown_v2(role) for role in roles)
+        parts.append(f'roles: {formatted_roles}')
+
+    if parts:
+        header += '\n' + '\n'.join(f'• {part}' for part in parts)
+
+    return header
 
 
 def _format_web_search(args_obj: dict[str, Any]) -> str:
@@ -180,17 +245,15 @@ def _format_web_search(args_obj: dict[str, Any]) -> str:
     def format_domains(domains: list[str]) -> str:
         return '\\[' + ', '.join(_escape_markdown_v2(item) for item in domains) + '\\]'
 
-    msg = (
-        f'🔍 _Let me search for this\\.\\.\\._\n'
-        f'Searching for *"{_escape_markdown_v2(query)}"*'
-    )
+    header = '🔍 _Let me search for this\\.\\.\\._\n'
+    header += f'*Query:* "{_escape_markdown_v2(query)}"'
 
     parts = []
 
     if num_results:
-        msg += f' — returning top {num_results} results'
+        parts.append(f'top {num_results} results')
     if category:
-        msg += f' in the "{_escape_markdown_v2(category)}" category'
+        parts.append(f'category: {_escape_markdown_v2(category)}')
 
     if include_domains:
         parts.append(f'limited to {format_domains(include_domains)}')
@@ -199,22 +262,23 @@ def _format_web_search(args_obj: dict[str, Any]) -> str:
     if include_text:
         parts.append('retrieving full page content')
     if start_published_date and end_published_date:
-        parts.append(
-            f'published between {_escape_markdown_v2(start_published_date)} '
-            f'and {_escape_markdown_v2(end_published_date)}'
-        )
+        formatted_start = _escape_markdown_v2(_format_datetime(start_published_date))
+        formatted_end = _escape_markdown_v2(_format_datetime(end_published_date))
+        parts.append(f'published between {formatted_start} and {formatted_end}')
     elif start_published_date:
-        parts.append(f'published after {_escape_markdown_v2(start_published_date)}')
+        formatted_start = _escape_markdown_v2(_format_datetime(start_published_date))
+        parts.append(f'published after {formatted_start}')
     elif end_published_date:
-        parts.append(f'published before {_escape_markdown_v2(end_published_date)}')
+        formatted_end = _escape_markdown_v2(_format_datetime(end_published_date))
+        parts.append(f'published before {formatted_end}')
 
     if user_location:
         parts.append(f'localized for {_escape_markdown_v2(user_location)} users')
 
     if parts:
-        msg += ', ' + ', '.join(parts)
+        header += '\n' + '\n'.join(f'• {part}' for part in parts)
 
-    return msg
+    return header
 
 
 def _format_fetch_webpage(args_obj: dict[str, Any]) -> str:
@@ -224,20 +288,71 @@ def _format_fetch_webpage(args_obj: dict[str, Any]) -> str:
 
 def _format_archival_memory_insert(args_obj: dict[str, Any]) -> str:
     """Format archival_memory_insert tool call."""
-    content_text = _escape_markdown_v2(args_obj.get('content', ''))
-    return f'*Agent remembered:*\n\n{_make_blockquote(content_text)}'
+    content_text = args_obj.get('content', '')
+    tags = args_obj.get('tags', [])
+
+    # Convert content using the same conversion as assistant messages
+    converted_content = convert_to_telegram_markdown(
+        content_text
+    )  # FIXME: split long message
+
+    header = '💾 _Storing in archival memory\\.\\.\\._\n'
+
+    if tags:
+        formatted_tags = ', '.join(_escape_markdown_v2(tag) for tag in tags)
+        header += f'*Tags:* {formatted_tags}\n'
+
+    header += f'\n*Content:*\n{converted_content}'
+
+    return header
 
 
 def _format_archival_memory_search(args_obj: dict[str, Any]) -> str:
     """Format archival_memory_search tool call."""
     query = _escape_markdown_v2(args_obj.get('query', ''))
-    return f'*Agent searching:* {query}'
+    start_datetime = args_obj.get('start_datetime', '')
+    end_datetime = args_obj.get('end_datetime', '')
+    tags = args_obj.get('tags', [])
+    tag_match_mode = args_obj.get('tag_match_mode', '')
+    top_k = args_obj.get('top_k')
+
+    header = '🔍 _Searching archival memory\\.\\.\\._\n'
+    header += f'*Query:* "{query}"'
+
+    parts = []
+    if top_k:
+        parts.append(f'top {top_k} results')
+
+    if start_datetime and end_datetime:
+        formatted_start = _escape_markdown_v2(_format_datetime(start_datetime))
+        formatted_end = _escape_markdown_v2(_format_datetime(end_datetime))
+        parts.append(f'between {formatted_start} and {formatted_end}')
+    elif start_datetime:
+        formatted_start = _escape_markdown_v2(_format_datetime(start_datetime))
+        parts.append(f'after {formatted_start}')
+    elif end_datetime:
+        formatted_end = _escape_markdown_v2(_format_datetime(end_datetime))
+        parts.append(f'before {formatted_end}')
+
+    if tags:
+        formatted_tags = ', '.join(_escape_markdown_v2(tag) for tag in tags)
+        tag_mode = f' \\({tag_match_mode}\\)' if tag_match_mode else ''
+        parts.append(f'tags: {formatted_tags}{tag_mode}')
+
+    if parts:
+        header += '\n' + '\n'.join(f'• {part}' for part in parts)
+
+    return header
 
 
 def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> str:
     """Format memory_insert tool call."""
-    new_str = _escape_markdown_v2(args_obj.get('new_str' if legacy else 'insert_text', ''))
-    return f'*Agent updating memory:*\n\n{_make_blockquote(new_str)}'
+    insert_text = _escape_markdown_v2(
+        args_obj.get('new_str' if legacy else 'insert_text', '')
+    )
+    path = _escape_markdown_v2(args_obj.get('path', ''))
+
+    return f'📝 _Updating memory block\\.\\.\\._\n*Path:* {path}\n\n{insert_text}'
 
 
 def _format_memory_replace(args_obj: dict[str, Any]) -> str | None:
@@ -246,7 +361,7 @@ def _format_memory_replace(args_obj: dict[str, Any]) -> str | None:
     new_str = _escape_markdown_v2(args_obj.get('new_str', ''))
 
     diff = _get_diff_text(old_str, new_str)
-    return f'*Agent modifying memory:*\n\n```diff\n{diff}```'
+    return f'🔧 _Modifying memory block\\.\\.\\._\n```diff\n{diff}```'
 
 
 def _format_memory_rename(args_obj: dict[str, Any]) -> str:
@@ -264,6 +379,43 @@ def _format_memory_rename(args_obj: dict[str, Any]) -> str:
     return f'📂 _Renaming memory block\\.\\.\\._\n*From:* {old_path}\n*To:* {new_path}'
 
 
+def _format_memory_delete(args_obj: dict[str, Any]) -> str:
+    path = _escape_markdown_v2(args_obj.get('path', ''))
+    return f'🧹 _Removing a memory block\\.\\.\\._\nDeleting *"{path}"* permanently\\.'
+
+
+def _format_memory_create(args_obj: dict[str, Any]) -> str:
+    """Format memory create tool call.
+
+    Handles two scenarios:
+    1. Creating memory block with initial content (has 'file_text')
+    2. Creating empty memory block (no 'file_text')
+    """
+    path = _escape_markdown_v2(args_obj.get('path', ''))
+    description = _escape_markdown_v2(args_obj.get('description', ''))
+    file_text = args_obj.get('file_text', '')
+
+    if file_text:
+        # Creating memory with initial content
+        # Convert file_text using the same conversion as assistant messages
+        converted_content = convert_to_telegram_markdown(
+            file_text
+        )  # FIXME: split long message
+        header = '📝 _Creating new memory block\\.\\.\\._\n'
+        header += f'*Path:* {path}\n'
+        if description:
+            header += f'*Description:* "{description}"\n'
+        header += f'\n*Initial content:*\n{converted_content}'
+        return header
+    else:
+        # Creating empty memory block
+        header = '📝 _Creating new memory block\\.\\.\\._\n'
+        header += f'*Path:* {path}\n'
+        if description:
+            header += f'*Description:* "{description}"'
+        return header
+
+
 def _format_memory(args_obj: dict[str, Any]) -> None | str:
     """Format memory tool call."""
     match args_obj:
@@ -273,8 +425,10 @@ def _format_memory(args_obj: dict[str, Any]) -> None | str:
             return _format_memory_insert(args_obj)
         case {'command': 'rename'}:
             return _format_memory_rename(args_obj)
-        case {'command': command}:
-            return _format_generic_tool(f'memory_{command}', args_obj)
+        case {'command': 'delete'}:
+            return _format_memory_delete(args_obj)
+        case {'command': 'create'}:
+            return _format_memory_create(args_obj)
         case _:
             LOGGER.warning('Not implemented features: %s', args_obj)
             return None
@@ -282,16 +436,25 @@ def _format_memory(args_obj: dict[str, Any]) -> None | str:
 
 def _format_run_code(args_obj: dict[str, Any]) -> str:
     """Format run_code tool call."""
-    code = _escape_markdown_v2(args_obj.get('code', ''))
+    code = _escape_markdown_v2(args_obj.get('code', ''))  # FIXME: maybe long message?
     language = args_obj.get('language', 'python')
-    return f'*Agent ran code:*\n\n```{language}\n{code}```'
+
+    header = '⚙️ _Executing code\\.\\.\\._\n'
+    header += f'*Language:* {_escape_markdown_v2(language)}\n'
+    header += f'```{language}\n{code}\n```'
+
+    return header
 
 
 def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
     """Format generic tool call with JSON arguments."""
     formatted_args = _escape_markdown_v2(json.dumps(args_obj, indent=2))
-    return f'*Agent using tool:* {_escape_markdown_v2(tool_name)}\
-            \n\n```json\n{formatted_args}```'
+
+    header = '🔧 _Using tool\\.\\.\\._\n'
+    header += f'*Tool:* {_escape_markdown_v2(tool_name)}\n'
+    header += f'\n*Arguments:*\n```json\n{formatted_args}\n```'
+
+    return header
 
 
 # =============================================================================
@@ -406,6 +569,21 @@ def split_markdown_v2(
     return chunks
 
 
+async def _send_error_message(message: Message, reason: Exception, content: str) -> None:
+    """Send formatted error message to user and log the reason.
+
+    Args:
+        message: Original message from user
+        reason: Error description to log
+    """
+    LOGGER.warning('Failed to send message: %s\ncontent: %s', reason)
+    LOGGER.debug('Content: %s', reason)
+
+    error_text = '❌ Something went wrong'
+
+    await message.answer(text=error_text, parse_mode=ParseMode.MARKDOWN_V2)
+
+
 async def send_assistant_message(message: Message, content: str) -> None:
     """Send assistant message, splitting and converting to Telegram markdown.
 
@@ -420,7 +598,11 @@ async def send_assistant_message(message: Message, content: str) -> None:
     """
     telegram_markdown = convert_to_telegram_markdown(content)
     for chunk in split_markdown_v2(telegram_markdown):
-        await message.answer(chunk, parse_mode=ParseMode.MARKDOWN_V2)
+        try:
+            await message.answer(chunk, parse_mode=ParseMode.MARKDOWN_V2)
+        except Exception as e:
+            await _send_error_message(message, e, chunk)
+            continue
 
 
 # =============================================================================
@@ -469,9 +651,12 @@ class AgentStreamHandler:
         if message_type in ('reasoning_message', 'tool_call_message'):
             formatted_content = self._format_other_event(event)
             if formatted_content:
-                await self.telegram_message.answer(
-                    formatted_content, parse_mode=ParseMode.MARKDOWN_V2
-                )
+                try:
+                    await self.telegram_message.answer(
+                        formatted_content, parse_mode=ParseMode.MARKDOWN_V2
+                    )
+                except Exception as e:
+                    await _send_error_message(self.telegram_message, e, formatted_content)
             return
 
         # System alerts (informational messages from Letta)

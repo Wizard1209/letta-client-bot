@@ -94,18 +94,35 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
 - Bot streams agent responses via `client.agents.messages.create()` with `streaming=True`
 - **Response handler** (`response_handler.py`) processes stream events:
-  - **assistant_message**: Main agent response (formatted with bold "Agent response:" header)
+  - **assistant_message**: Main agent response converted to Telegram MarkdownV2 via `telegramify-markdown`
   - **reasoning_message**: Internal agent reasoning (italic header, blockquote formatting)
   - **tool_call_message**: Tool execution details (parsed from JSON arguments)
-  - **ping**: Heartbeat messages (displayed as "⏳Working on it⏳")
-- **Specialized tool formatting**:
-  - `archival_memory_insert`: "Agent remembered:" with blockquote content
-  - `archival_memory_search`: "Agent searching:" with query
-  - `memory_insert`: "Agent updating memory:" with new content
-  - `memory_replace`: "Agent modifying memory:" showing old vs new
-  - `run_code`: "Agent ran code:" with syntax-highlighted code block
-  - Generic tools: Display tool name with JSON arguments
-- Real-time message streaming with typing indicator
+  - **ping**: Progressive heartbeat indicator (displays "⏳", "⏳⏳", "⏳⏳⏳", etc., updating same message)
+  - **system_alert**: Informational messages from Letta (displayed as info text)
+- **Specialized tool formatting** (consistent style with emoji, italic headers, bullet lists):
+  - `archival_memory_insert`: "💾 Storing in archival memory..." with tags and markdown content
+  - `archival_memory_search`: "🔍 Searching archival memory..." with query, date range, tags, and top_k limit
+  - `conversation_search`: "🔍 Searching conversation history..." with query, date range, roles filter, and result limit
+  - `memory` (with subcommands): Different operations formatted appropriately
+    - `insert`: "📝 Updating memory..." with new content (plain text)
+    - `str_replace`: "🔧 Modifying memory block..." with unified diff visualization
+    - `rename`: "🏷️ Updating memory description..." or "📂 Renaming memory block..."
+    - `delete`: "🧹 Removing a memory block..." with path
+    - `create`: "📝 Creating new memory block..." with path, description, and optional markdown content
+  - `memory_insert` (legacy): "📝 Updating memory..." with new content (plain text)
+  - `memory_replace` (legacy): "🔧 Modifying memory block..." with unified diff
+  - `run_code`: "⚙️ Executing code..." with language and syntax-highlighted code block
+  - `web_search`: "🔍 Let me search for this..." with query, result count, category, domain filters, date range (formatted), and location
+  - `fetch_webpage`: "🌐 Fetching webpage..." with URL
+  - Generic tools: "🔧 Using tool..." with tool name and JSON arguments
+- **Message formatting pipeline**:
+  - Agent responses: Standard Markdown → `convert_to_telegram_markdown()` → Telegram MarkdownV2
+  - Info notes: Standard Markdown files → same conversion pipeline
+  - Tool outputs: Manual MarkdownV2 strings with `_escape_markdown_v2()` helper
+  - Long messages: Split using `split_markdown_v2()` with intelligent boundary detection (preserves code blocks and formatting across chunks)
+  - Date/time formatting: ISO datetime strings converted to readable format via `_format_datetime()` (e.g., "Jan 01, 2024" or "Jan 01, 2024 10:30")
+- **Error handling**: Failed message sends logged with `LOGGER.warning()` and generic error shown to user ("❌ Something went wrong")
+- Real-time message streaming with stateful ping indicator
 
 **Phase 5: Agent Management**
 
