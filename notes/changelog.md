@@ -5,8 +5,10 @@ All notable changes to this project will be documented in this file.
 **[Latest additions]**
 
 **Added:**
+• Rich formatting for all core Letta tools (memory operations, archival/conversation search, code execution, web search, notifications, and scheduling)
 • Timestamp scheduling with X-Schedule-At header support for absolute time scheduling
 • Expanded proactive messaging protocol memory block with scheduling patterns, timezone handling, and recurring notifications
+• Rich formatting for notification and scheduling tools (schedule_message shows human-readable timing and message content, notify_via_telegram displays delivery status)
 • Unified diff visualization for memory modifications (shows color-coded diffs of exactly what changed instead of old/new text blocks)
 • Rich formatting for web search and webpage fetching operations (displays query parameters, filters, domain restrictions, date ranges)
 • Support for new memory tool subcommands with specialized formatting (insert, str_replace, rename operations)

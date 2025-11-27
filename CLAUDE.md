@@ -214,7 +214,7 @@ docker-compose -f deploy/docker-compose.yaml up -d --build
 
 ## Changelog Maintenance
 
-The project maintains a changelog at `notes/changelog.md` in Telegram MarkdownV2 format. When updating the changelog:
+The project maintains a changelog at `notes/changelog.md` in **standard Markdown format**. The file is automatically converted to Telegram MarkdownV2 when displayed to users. When updating the changelog:
 
 **What to Include:**
 
@@ -232,18 +232,19 @@ The project maintains a changelog at `notes/changelog.md` in Telegram MarkdownV2
 
 **Structure:**
 
-- Use `*Added:*` for new features and capabilities
-- Use `*Changed:*` for improvements to existing features
-- Generally avoid `*Removed:*` section - focus on what's new and improved
+- Use `**Added:**` for new features and capabilities
+- Use `**Changed:**` for improvements to existing features
+- Generally avoid `**Removed:**` section - focus on what's new and improved
+- Use standard Markdown syntax (not MarkdownV2 escaping)
 
 **Example:**
 
 ```markdown
-_Added:_
-• Progressive "working" indicator that updates in real-time during agent processing
+**Added:**
+- Progressive "working" indicator that updates in real-time during agent processing
 
-_Changed:_
-• Agent responses now render with proper Telegram-compatible markdown formatting
+**Changed:**
+- Agent responses now render with proper Telegram-compatible markdown formatting
 ```
 
 ## Project Structure

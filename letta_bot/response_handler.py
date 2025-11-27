@@ -8,6 +8,7 @@ This module handles:
 """
 
 from collections import deque
+from datetime import datetime, timedelta
 import difflib
 from itertools import islice
 import json
@@ -57,8 +58,6 @@ def _format_datetime(dt_string: str) -> str:
     Returns:
         Formatted datetime string (e.g., "Jan 01, 2024" or "Jan 01, 2024 10:30")
     """
-    from datetime import datetime
-
     try:
         # Try parsing with time component
         if 'T' in dt_string:
@@ -188,6 +187,13 @@ def _format_tool_by_name(
         case 'conversation_search':
             return _format_conversation_search(args_obj)
 
+        # Notifications and scheduling
+        case 'schedule_message':
+            return _format_schedule_message(args_obj)
+
+        case 'notify_via_telegram':
+            return _format_notify_via_telegram()
+
         # Generic tool
         case _:
             LOGGER.warning('No formatting supported for tool %s', tool_name)
@@ -229,6 +235,51 @@ def _format_conversation_search(args_obj: dict[str, Any]) -> str:
         header += '\n' + '\n'.join(f'• {part}' for part in parts)
 
     return header
+
+
+def _format_schedule_message(args_obj: dict[str, Any]) -> str:
+    """Format schedule_message tool call."""
+
+    message_to_self = _escape_markdown_v2(args_obj.get('message_to_self', ''))
+    delay_seconds = args_obj.get('delay_seconds')
+    schedule_at = args_obj.get('schedule_at', '')
+
+    header = '⏱️ _Setting self activation\\.\\.\\._\n'
+
+    # Show timing first (most important info)
+    if delay_seconds is not None:
+        td = timedelta(seconds=delay_seconds)
+        total_seconds = int(td.total_seconds())
+
+        # Format human-readable string (prioritize largest unit)
+        if td.days >= 365:
+            years = td.days // 365
+            time_str = f'{years} year{"s" if years != 1 else ""}'
+        elif td.days > 0:
+            time_str = f'{td.days} day{"s" if td.days != 1 else ""}'
+        elif total_seconds >= 3600:
+            hours = total_seconds // 3600
+            time_str = f'{hours} hour{"s" if hours != 1 else ""}'
+        elif total_seconds >= 60:
+            minutes = total_seconds // 60
+            time_str = f'{minutes} minute{"s" if minutes != 1 else ""}'
+        else:
+            time_str = f'{total_seconds} second{"s" if total_seconds != 1 else ""}'
+
+        header += f'*When:* in {_escape_markdown_v2(time_str)}\n'
+    elif schedule_at:
+        formatted_time = _escape_markdown_v2(_format_datetime(schedule_at))
+        header += f'*When:* {formatted_time}\n'
+
+    # Message content last
+    header += f'*Message:* "{message_to_self}"'
+
+    return header
+
+
+def _format_notify_via_telegram() -> str:
+    """Format notify_via_telegram tool call."""
+    return '📲 _Sending message to Telegram\\.\\.\\._'
 
 
 def _format_web_search(args_obj: dict[str, Any]) -> str:
