@@ -5,6 +5,7 @@
 ### Prerequisites
 
 1. **uv** package manager
+
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
@@ -15,6 +16,7 @@
 ### Setup Steps
 
 **1. Clone and install:**
+
 ```bash
 git clone <repository-url>
 cd letta-client-bot
@@ -25,12 +27,14 @@ make dev # install all dependencies
 Copy `.env.example` to `.env` and fill in your credentials.
 
 **3. Initialize database:**
+
 ```bash
 uv run gel init
 uv run gel migrate
 ```
 
 **4. Run the bot:**
+
 ```bash
 make poll
 ```
@@ -38,11 +42,13 @@ make poll
 ### Development Workflow
 
 **Code quality:**
+
 ```bash
 make check  # Runs linting, formatting, and type checking
 ```
 
 **When adding features:**
+
 1. Modify/add `.edgeql` queries → run `gel-py`
 2. Implement feature
 3. Test with `make poll`
@@ -50,6 +56,7 @@ make check  # Runs linting, formatting, and type checking
 5. Update `notes/changelog.md`
 
 **Database schema changes:**
+
 1. Edit `dbschema/default.esdl`
 2. For development: `gel watch --migrate` (auto-applies schema changes)
 3. For production: `gel migration create` → `gel migrate`
@@ -93,6 +100,7 @@ Local TODOs are still in code
 
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>
 - Wrap auth logic with multiple db queries into transactions <https://docs.geldata.com/reference/using/python#transactions>
+- Implement global error handling for agent message sending using aiogram middlewares <https://docs.aiogram.dev/en/v3.22.0/dispatcher/middlewares.html>
 
 ## GEL
 
@@ -121,12 +129,14 @@ To add new queries to use in the application put query.edgeql to letta_bot/queri
 **Stack**: Python 3.13-slim + uv + Traefik reverse proxy
 
 **Dockerfile** (`deploy/Dockerfile`):
+
 - Base: `python:3.13-slim`
 - Non-root user: `app`
 - Dependencies: `uv sync --frozen --no-dev`
 - Entry: `uv run python letta_bot/main.py` (webhook mode)
 
 **docker-compose.yaml** (`deploy/docker-compose.yaml`):
+
 - Service: `letta-bot`
 - Exposes port 80 (internal)
 - Traefik labels: TLS + Let's Encrypt (`lets-encrypt-ssl` resolver)
@@ -135,6 +145,7 @@ To add new queries to use in the application put query.edgeql to letta_bot/queri
 - Volume: `bot-storage` (local)
 
 **Required env vars**:
+
 ```
 BOT_TOKEN, WEBHOOK_HOST, LETTA_PROJECT_ID, LETTA_API_KEY
 GEL_INSTANCE, GEL_SECRET_KEY (if using Gel Cloud)
@@ -145,18 +156,23 @@ GEL_INSTANCE, GEL_SECRET_KEY (if using Gel Cloud)
 ## Logging Policy
 
 ### DEBUG
-*(Reserved for future use)*
+
+_(Reserved for future use)_
 
 ### INFO
+
 **Major business logic events outside agent interaction**
 
 ### WARNING
+
 **Unexpected behavior from code logic perspective**
 
 ### ERROR
+
 **Easily recoverable errors**
 
 ### CRITICAL
+
 **Non-recoverable errors affecting application availability**
 
 ### General Rules
