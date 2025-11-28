@@ -40,12 +40,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 # NOTE: Callback should fit in 64 chars
-class RequestNewAgentCallback(CallbackData, prefix='from_template'):
+class NewAssistantCallback(CallbackData, prefix='new_assistant'):
     template_name: str
     version: str = 'latest'
 
 
-class SwitchAgentCallback(CallbackData, prefix='switch_agent'):
+class SwitchAssistantCallback(CallbackData, prefix='switch'):
     agent_id: str
 
 
@@ -103,8 +103,8 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
                     tg_id, Text('New identity access request').as_markdown()
                 )
 
-    @agent_commands_router.message(Command('new_agent_from_template'))
-    async def new_agent_from_template(message: Message) -> None:
+    @agent_commands_router.message(Command('new_assistant'))
+    async def new_assistant(message: Message) -> None:
         # TODO: if no pending requests
 
         # List available templates using SDK extension
@@ -115,15 +115,16 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         # TODO: Maybe adjust builder for vertical buttons layout
         builder = InlineKeyboardBuilder()
         for t in templates:
-            data = RequestNewAgentCallback(template_name=t.name, version=t.latest_version)
+            data = NewAssistantCallback(template_name=t.name, version=t.latest_version)
             builder.button(text=f'{t.name}', callback_data=data.pack())
         await message.answer(
-            Text('Choose template').as_markdown(), reply_markup=builder.as_markup()
+            Text('Choose a template for your assistant').as_markdown(),
+            reply_markup=builder.as_markup(),
         )
 
-    @agent_commands_router.callback_query(RequestNewAgentCallback.filter())
-    async def register_agent_request(
-        callback: CallbackQuery, callback_data: RequestNewAgentCallback
+    @agent_commands_router.callback_query(NewAssistantCallback.filter())
+    async def register_assistant_request(
+        callback: CallbackQuery, callback_data: NewAssistantCallback
     ) -> None:
         # Check if user is registered
         if not await is_registered_query(gel_client, telegram_id=callback.from_user.id):
@@ -136,7 +137,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
             )
             return
 
-        # Check if user already has a pending identity request
+        # Check if user already has a pending assistant request
         has_pending = await check_pending_request_query(
             gel_client,
             telegram_id=callback.from_user.id,
@@ -145,7 +146,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         if has_pending:
             await callback.answer(
                 Text(
-                    '⏳ You already have a pending identity access request. '
+                    '⏳ You already have a pending assistant request. '
                     'Please wait for admin approval.'
                 ).as_markdown()
             )
@@ -195,12 +196,12 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         if CONFIG.admin_ids is None:
             return
         for tg_id in CONFIG.admin_ids:
-            await bot.send_message(tg_id, Text('New agent request').as_markdown())
+            await bot.send_message(tg_id, Text('New assistant request').as_markdown())
 
-    @agent_commands_router.message(Command('switch_agent'))
+    @agent_commands_router.message(Command('switch_assistant'))
     @require_identity(gel_client)
-    async def switch_agent(message: Message, identity: GetIdentityResult) -> None:
-        """List user's agents and allow switching between them."""
+    async def switch_assistant(message: Message, identity: GetIdentityResult) -> None:
+        """List user's assistants and allow switching between them."""
         if not message.from_user:
             return
 
@@ -216,40 +217,41 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
             if not all_agents:
                 await message.answer(
                     Text(
-                        "You don't have any agents yet. "
-                        'Use /agent_from_template to request one.'
+                        "You don't have any assistants yet. "
+                        'Use /new_assistant to request one.'
                     ).as_markdown()
                 )
                 return
 
-            # Build inline keyboard with agents
+            # Build inline keyboard with assistants
             builder = InlineKeyboardBuilder()
             for agent in all_agents:
-                # Mark currently selected agent
+                # Mark currently selected assistant
                 is_selected = agent.id == identity.selected_agent
                 button_text = f'{"✅ " if is_selected else ""}{agent.name}'
-                callback_data = SwitchAgentCallback(agent_id=agent.id)
+                callback_data = SwitchAssistantCallback(agent_id=agent.id)
                 builder.button(text=button_text, callback_data=callback_data.pack())
 
             # Adjust layout for vertical buttons
             builder.adjust(1)
 
             await message.answer(
-                Text('Select an agent:').as_markdown(), reply_markup=builder.as_markup()
+                Text('Select an assistant:').as_markdown(),
+                reply_markup=builder.as_markup(),
             )
 
         except APIError as e:
             LOGGER.error(f'Error listing agents for identity {identity.identity_id}: {e}')
-            await message.answer(Text('Error retrieving your agents').as_markdown())
+            await message.answer(Text('Error retrieving your assistants').as_markdown())
 
-    @agent_commands_router.callback_query(SwitchAgentCallback.filter())
+    @agent_commands_router.callback_query(SwitchAssistantCallback.filter())
     @require_identity(gel_client)
-    async def handle_switch_agent(
+    async def handle_switch_assistant(
         callback: CallbackQuery,
-        callback_data: SwitchAgentCallback,
+        callback_data: SwitchAssistantCallback,
         identity: GetIdentityResult,
     ) -> None:
-        """Handle agent selection callback."""
+        """Handle assistant selection callback."""
         if not callback.from_user:
             return
 
@@ -260,7 +262,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
 
         await bot.send_message(
             chat_id=callback.from_user.id,
-            text=Text('✅ Agent switched successfully').as_markdown(),
+            text=Text('✅ Assistant switched successfully').as_markdown(),
         )
 
     # Include nested routers
@@ -352,7 +354,7 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
             try:
                 agent_id = await get_default_agent(identity.identity_id)
             except IndexError:
-                await message.answer('There is no agent yet on your identity')
+                await message.answer('You have no assistants yet. Use /new_assistant')
                 return
             await set_selected_agent_query(
                 gel_client, identity_id=identity.identity_id, agent_id=agent_id
@@ -413,7 +415,7 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
                 message.from_user.id,
                 agent_id,
             )
-            await message.answer(Text('Error communicating with agent').as_markdown())
+            await message.answer(Text('Error communicating with assistant').as_markdown())
             raise
 
         except Exception:

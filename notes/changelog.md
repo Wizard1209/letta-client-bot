@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 **[Latest additions]**
 
 **Added:**
+• Support for voice and audio messages
 • Rich formatting for all core Letta tools (memory operations, archival/conversation search, code execution, web search, notifications, and scheduling)
 • Timestamp scheduling with X-Schedule-At header support for absolute time scheduling
 • Expanded proactive messaging protocol memory block with scheduling patterns, timezone handling, and recurring notifications

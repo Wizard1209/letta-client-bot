@@ -7,20 +7,20 @@
 /contact - Get support and contact information
 /changelog - View project changelog and version history
 
-**Agent Access**
-/new_agent_from_template - Request access to an AI agent from available templates
-/switch_agent - Switch between your available agents
+**Assistants**
+/new_assistant - Request a new AI assistant
+/switch_assistant - Switch between your assistants
 /request_identity - Request only bot access
-/notify - Enable/disable proactive agent notifications
+/notify - Enable/disable proactive notifications
 
 ──────────────────────────────
 
 **How to Use**
 
-Use /new_agent_from_template to browse available AI agent templates and request access. An administrator will review and approve your request.
+Use /new_assistant to browse available AI assistant templates and request access. An administrator will review and approve your request.
 
 **Proactive Notifications**
 
-Use /notify enable to allow your agent to send you messages on its own initiative and schedule reminders for itself.
+Use /notify enable to allow your assistant to send you messages on its own initiative and schedule reminders for itself.
 
 Need help? Use /contact to reach support.

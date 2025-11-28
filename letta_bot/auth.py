@@ -240,7 +240,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             resource_description = (
                 'identity access'
                 if resource_type == ResourceType.ACCESS_IDENTITY
-                else f'agent from template {resource_id}'
+                else f'assistant from template {resource_id}'
             )
             await bot.send_message(
                 chat_id=result.user.telegram_id,
@@ -299,7 +299,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                 user_message_parts.append(f'\n\nReason: {reason}')
             user_message_parts.append(
                 '\n\nYou can submit a new request using /request_identity or '
-                '/new_agent_from_template if needed.'
+                '/new_assistant if needed.'
             )
 
             await bot.send_message(

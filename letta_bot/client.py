@@ -83,9 +83,9 @@ async def get_or_create_letta_identity(identifier_key: str, name: str) -> Identi
 async def create_agent_from_template(template_id: str, identity_id: str) -> None:
     """Create agent from template in Letta API."""
     # Local import to avoid circular dependency
-    from letta_bot.agent import RequestNewAgentCallback
+    from letta_bot.agent import NewAssistantCallback
 
-    info = RequestNewAgentCallback.unpack(template_id)
+    info = NewAssistantCallback.unpack(template_id)
 
     # Use new templates.agents.create() API
     # Client is already configured with project, so it auto-scopes
