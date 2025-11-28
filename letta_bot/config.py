@@ -39,6 +39,10 @@ class Config(BaseSettings):
     # Logging level
     logging_level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] = 'INFO'
 
+    # OpenAI config for audio transcription (optional, voice disabled if not set)
+    openai_api_key: str | None = None
+    whisper_model: str = 'gpt-4o-mini-transcribe'
+
     @field_validator('admin_ids', mode='before')
     def split_ids(cls, ids: int | str | None) -> list[int]:
         if not ids:

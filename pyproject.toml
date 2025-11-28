@@ -8,6 +8,7 @@ dependencies = [
   "aiogram>=3.22.0",
   "gel>=3.1.0",
   "letta-client>=1.0.0",
+  "openai>=2.8.1",
   "pydantic-settings>=2.11.0",
   "telegramify-markdown>=0.5.2",
 ]

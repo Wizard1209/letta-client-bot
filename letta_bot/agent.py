@@ -34,6 +34,7 @@ from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
 )
 from letta_bot.response_handler import AgentStreamHandler
+from letta_bot.transcription import TranscriptionError, get_transcription_service
 
 LOGGER = logging.getLogger(__name__)
 
@@ -279,20 +280,69 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
         if not message.from_user:
             return
 
-        if message.audio or message.voice:
-            await message.answer(
-                Text('Audio and voice are not yet supported, but will be').as_markdown()
-            )
+        # Build message content layer by layer
+        parts: list[str] = []
+
+        # Layer 1: Reply context (quote takes priority over full reply)
+        if message.quote:
+            # User quoted a specific part of the message
+            parts.append(f'<quote>{message.quote.text}</quote>')
+        elif message.reply_to_message:
+            # Full reply without specific quote
+            reply = message.reply_to_message
+            if reply.text:
+                preview = reply.text[:100] + ('...' if len(reply.text) > 100 else '')
+                parts.append(f'<reply_to>{preview}</reply_to>')
+
+        # Layer 2: Text content
+        if message.text:
+            parts.append(message.text)
+
+        # Layer 3: Caption (for media messages)
+        if message.caption:
+            parts.append(f'<caption>{message.caption}</caption>')
+
+        # Layer 4: Audio transcription
+        if message.voice or message.audio:
+            transcription_service = get_transcription_service()
+            if transcription_service is None:
+                await message.answer(
+                    Text(
+                        'Audio not supported. OpenAI API key not configured.'
+                    ).as_markdown()
+                )
+                return
+
+            tag = 'voice_transcript' if message.voice else 'audio_transcript'
+            try:
+                transcript = await transcription_service.transcribe_message_content(
+                    bot, message
+                )
+                parts.append(f'<{tag}>{transcript}</{tag}>')
+            except TranscriptionError as e:
+                LOGGER.warning(
+                    '%s failed: %s, telegram_id=%s',
+                    tag,
+                    e,
+                    message.from_user.id,
+                )
+                parts.append(f'<{tag}_error>{e}</{tag}_error>')
+
+        # Unsupported content types
         if message.video:
             await message.answer(Text('Video content is not supported').as_markdown())
         if message.photo or message.sticker:
             await message.answer(
                 Text('Photos and stickers are not yet supported, but will be').as_markdown()
             )
-        if not message.text:
+
+        # Combine all parts
+        message_text = '\n\n'.join(parts) if parts else None
+
+        if not message_text:
             await message.answer(
                 Text(
-                    'No supported context provided, I hope to hear more from you'
+                    'No supported content provided, I hope to hear more from you'
                 ).as_markdown()
             )
             return
@@ -312,7 +362,7 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
             agent_id = identity.selected_agent
 
         # Should I let agent know that message came through telegram?
-        request = [{'type': 'text', 'text': message.text}]
+        request = [{'type': 'text', 'text': message_text}]
 
         try:
             async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
@@ -329,7 +379,12 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
                     try:
                         await handler.handle_event(event)
                     except Exception as e:
-                        LOGGER.error(f'Error processing stream event: {e}')
+                        LOGGER.error(
+                            'Stream event error: %s, tg_id=%s, agent=%s',
+                            e,
+                            message.from_user.id,
+                            agent_id,
+                        )
                         continue
 
         except ReadTimeout:
@@ -351,17 +406,23 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
 
         except APIError as e:
             LOGGER.error(
-                'Letta API error - status: %s, body: %s, type: %s',
+                'Letta API error: status=%s, body=%s, type=%s, telegram_id=%s, agent_id=%s',
                 getattr(e, 'status_code', 'unknown'),
                 getattr(e, 'body', 'no body'),
                 type(e).__name__,
+                message.from_user.id,
+                agent_id,
             )
             await message.answer(Text('Error communicating with agent').as_markdown())
             raise
 
-        except Exception as e:
-            LOGGER.exception('Message handler error')
-            await message.answer(Text('An error occurred: ', str(e)).as_markdown())
+        except Exception:
+            LOGGER.exception(
+                'Message handler error: telegram_id=%s, agent_id=%s',
+                message.from_user.id,
+                agent_id,
+            )
+            await message.answer(Text('An unexpected error occurred').as_markdown())
             raise
 
     return agent_router

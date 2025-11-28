@@ -71,7 +71,6 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ### High Priority
 
-- Improve rendering for tool calls
 - Update keyboard after action on switching agent and creating from the template <https://core.telegram.org/bots/api#editmessagereplymarkup>
 
 ### Medium Priority
