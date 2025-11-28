@@ -1,12 +1,14 @@
-"""Telegram notification and scheduling tool management handlers."""
+"""Proactive assistant behavior: notifications and scheduling tool management."""
 
 import logging
 from pathlib import Path
 
 from aiogram import Bot, Router
+from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
-from aiogram.types import Message
-from aiogram.utils.formatting import Bold, Code, Text, as_list, as_marked_section
+from aiogram.types import CallbackQuery, InaccessibleMessage, Message
+from aiogram.utils.formatting import Bold, Code, Text, as_list
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor as GelClient
 
 from letta_bot.auth import require_identity
@@ -16,10 +18,22 @@ from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
 
 LOGGER = logging.getLogger(__name__)
 
+
+class NotifyCallback(CallbackData, prefix='notify'):
+    """Callback data for notification enable/disable buttons."""
+
+    enable: bool
+
+
 # Memory block label for agent notification tools guidance
 NOTIFICATION_TOOL_BLOCK_LABEL = 'proactive_messaging_protocol'
 
-NOTIFICATION_MEMORY_BLOCK_DESC = 'How to use scheduling and notification tools to enable proactive behavior: scheduling reminders and follow-ups, sending notifications at specific times across timezones, creating recurring check-ins, understanding conversational vs silent communication modes, context preservation, and timing verification'
+NOTIFICATION_MEMORY_BLOCK_DESC = (
+    'How to use scheduling and notification tools to enable proactive behavior: '
+    'scheduling reminders and follow-ups, sending notifications at specific times '
+    'across timezones, creating recurring check-ins, understanding conversational '
+    'vs silent communication modes, context preservation, and timing verification'
+)
 
 
 def _load_memory_block_content() -> str:
@@ -34,60 +48,58 @@ def _load_memory_block_content() -> str:
 
 
 def get_notification_router(bot: Bot, gel_client: GelClient) -> Router:
-    """Create and return notification command router."""
+    """Create and return proactive mode command router."""
     router = Router(name=f'{__name__}.commands')
 
     @router.message(Command('notify'))
     @require_identity(gel_client)
     async def notify_command(message: Message, identity: GetIdentityResult) -> None:
-        """Handle /notify command for managing agent notifications."""
-        if not message.from_user or not message.text:
+        """Handle /notify command - manage proactive assistant behavior."""
+        if not message.from_user:
             return
 
-        # Parse subcommand
-        parts = message.text.strip().split()
-        subcommand = parts[1].lower() if len(parts) > 1 else 'status'
-
-        if subcommand not in ['enable', 'disable', 'status']:
-            await message.answer(
-                as_list(
-                    Text('❌ ', Bold('Invalid command')),
-                    '',
-                    Text('Usage:'),
-                    as_marked_section(
-                        Text(Code('/notify enable'), ' - Enable proactive notifications'),
-                        Text(Code('/notify disable'), ' - Disable proactive notifications'),
-                        Text(Code('/notify status'), ' - Check current status'),
-                        Text(Code('/notify'), ' - Check current status (default)'),
-                        marker='• ',
-                    ),
-                    sep='\n',
-                ).as_markdown()
-            )
-            return
-
-        # Get selected agent
         if not identity.selected_agent:
             await message.answer(
-                Text('❌ No agent selected. Use /switch_agent to select one.').as_markdown()
+                Text('❌ No assistant selected. Use /switch to select one.').as_markdown()
             )
             return
 
-        agent_id = identity.selected_agent
+        await handle_notify_status(message, identity.selected_agent)
 
-        if subcommand == 'status':
-            await handle_notify_status(message, agent_id)
-        elif subcommand == 'enable':
-            await handle_notify_enable(message, agent_id, str(message.from_user.id))
-        elif subcommand == 'disable':
-            await handle_notify_disable(message, agent_id)
+    @router.callback_query(NotifyCallback.filter())
+    @require_identity(gel_client)
+    async def handle_notify_callback(
+        callback: CallbackQuery,
+        callback_data: NotifyCallback,
+        identity: GetIdentityResult,
+    ) -> None:
+        """Handle enable/disable button clicks."""
+        if not callback.from_user:
+            return
+
+        if isinstance(callback.message, InaccessibleMessage) or not callback.message:
+            await callback.answer('Message expired. Use /notify again.')
+            return
+
+        if not identity.selected_agent:
+            await callback.answer('No assistant selected.')
+            return
+
+        await callback.answer()
+
+        if callback_data.enable:
+            await handle_notify_enable(
+                callback.message, identity.selected_agent, str(callback.from_user.id)
+            )
+        else:
+            await handle_notify_disable(callback.message, identity.selected_agent)
 
     LOGGER.info('Notification handlers initialized')
     return router
 
 
 async def handle_notify_status(message: Message, agent_id: str) -> None:
-    """Check scheduling and notification tools status for the agent."""
+    """Check proactive behavior status for the agent."""
     try:
         # Check if tools are attached (check ALL tools across all pages)
         schedule_tool_attached = False
@@ -129,29 +141,34 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
 
         overall_status = '✅' if (schedule_configured and notify_configured) else '⚠️'
 
+        # Build inline keyboard with Enable/Disable buttons
+        builder = InlineKeyboardBuilder()
+        builder.button(text='✅ Enable', callback_data=NotifyCallback(enable=True))
+        builder.button(text='❌ Disable', callback_data=NotifyCallback(enable=False))
+        builder.adjust(2)
+
         await message.answer(
             as_list(
-                Text(overall_status, ' ', Bold('Agent Communication Status')),
+                Text(overall_status, ' ', Bold('Proactive Mode')),
                 '',
                 Text(Bold('Agent: '), agent.name),
                 '',
-                Text(Bold('📅 Scheduling (schedule_message):')),
+                Text(Bold('📅 Reminders & Follow-ups:')),
                 Text('  Tool attached: ', '✅ Yes' if schedule_tool_attached else '❌ No'),
                 Text(
                     '  Environment configured: ',
                     '✅ Yes' if schedule_configured else '❌ No',
                 ),
                 '',
-                Text(Bold('📢 Notifications (notify_via_telegram):')),
+                Text(Bold('📢 Proactive Messaging:')),
                 Text('  Tool attached: ', '✅ Yes' if notify_tool_attached else '❌ No'),
                 Text(
                     '  Environment configured: ',
                     '✅ Yes' if notify_configured else '❌ No',
                 ),
-                '',
-                Text('Use ', Code('/notify enable'), ' to set up both tools.'),
                 sep='\n',
-            ).as_markdown()
+            ).as_markdown(),
+            reply_markup=builder.as_markup(),
         )
 
     except Exception as e:
@@ -160,11 +177,11 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
 
 
 async def handle_notify_enable(message: Message, agent_id: str, chat_id: str) -> None:
-    """Enable scheduling and notifications for the agent."""
+    """Enable proactive behavior for the agent (reminders, follow-ups, notifications)."""
     try:
         # Check if Scheduler API key is configured
         if not CONFIG.scheduler_api_key:
-            await message.answer(
+            await message.edit_text(
                 Text(
                     '❌ Scheduled messages require SCHEDULER_API_KEY to be configured. '
                     'Please contact the administrator.'
@@ -174,50 +191,39 @@ async def handle_notify_enable(message: Message, agent_id: str, chat_id: str) ->
 
         agent = await client.agents.retrieve(agent_id=agent_id)
 
-        # Send initial status message
-        status_message = await message.answer(
-            Text(
-                '🔧 Setting up communication tools for ', Bold(agent.name), '...'
-            ).as_markdown()
-        )
-
         # STEP 1: Enable Scheduling (schedule_message)
-        await status_message.edit_text(
+        await message.edit_text(
             Text('📅 Configuring ', Code('schedule_message'), ' tool...').as_markdown()
         )
         await _enable_schedule_tool(agent_id)
 
         # STEP 2: Enable Notifications (notify_via_telegram)
-        await status_message.edit_text(
+        await message.edit_text(
             Text('📢 Configuring ', Code('notify_via_telegram'), ' tool...').as_markdown()
         )
         await _enable_notify_tool(agent_id, chat_id)
 
         # STEP 3: Attach Memory Block (agent_communication_tools_memo)
-        await status_message.edit_text(
+        await message.edit_text(
             Text('📝 Attaching tool guidance memory block...').as_markdown()
         )
         await _attach_tool_memory_block(agent_id)
 
         # Final success message
-        await status_message.edit_text(
+        await message.edit_text(
             Text(
-                '✅ Communication tools enabled for ',
+                '✅ Proactive mode enabled for ',
                 Bold(agent.name),
-                '\n\n• ',
-                Code('schedule_message'),
-                ' - Agent can schedule delayed messages',
-                '\n• ',
-                Code('notify_via_telegram'),
-                ' - Agent can send you notifications',
-                '\n• ',
-                'Tool guidance memory block attached',
+                '\n\nYour assistant can now:',
+                '\n• Schedule future check-ins and reminders',
+                '\n• Queue tasks for later execution',
+                '\n• Notify you at the right time',
             ).as_markdown()
         )
 
     except Exception as e:
         LOGGER.error(f'Error enabling communication tools: {e}')
-        await message.answer(Text('❌ Error enabling tools: ', str(e)).as_markdown())
+        await message.edit_text(Text('❌ Error enabling tools: ', str(e)).as_markdown())
 
 
 async def _enable_schedule_tool(agent_id: str) -> None:
@@ -299,43 +305,36 @@ async def _enable_notify_tool(agent_id: str, chat_id: str) -> None:
 
 
 async def handle_notify_disable(message: Message, agent_id: str) -> None:
-    """Disable scheduling and notifications for the agent."""
+    """Disable proactive behavior for the agent."""
     try:
         agent = await client.agents.retrieve(agent_id=agent_id)
 
-        # Send initial status message
-        status_message = await message.answer(
-            Text(
-                '🔧 Disabling communication tools for ', Bold(agent.name), '...'
-            ).as_markdown()
-        )
-
         # STEP 1: Disable Scheduling (schedule_message)
-        await status_message.edit_text(
+        await message.edit_text(
             Text('📅 Removing ', Code('schedule_message'), ' tool...').as_markdown()
         )
         await _disable_schedule_tool(agent_id)
 
         # STEP 2: Disable Notifications (notify_via_telegram)
-        await status_message.edit_text(
+        await message.edit_text(
             Text('📢 Removing ', Code('notify_via_telegram'), ' tool...').as_markdown()
         )
         await _disable_notify_tool(agent_id)
 
         # STEP 3: Detach Memory Block (agent_communication_tools_memo)
-        await status_message.edit_text(
+        await message.edit_text(
             Text('📝 Removing tool guidance memory block...').as_markdown()
         )
         await _detach_tool_memory_block(agent_id)
 
         # Final success message
-        await status_message.edit_text(
-            Text('✅ Communication tools disabled for ', Bold(agent.name)).as_markdown()
+        await message.edit_text(
+            Text('✅ Proactive mode disabled for ', Bold(agent.name)).as_markdown()
         )
 
     except Exception as e:
         LOGGER.error(f'Error disabling communication tools: {e}')
-        await message.answer(Text('❌ Error disabling tools: ', str(e)).as_markdown())
+        await message.edit_text(Text('❌ Error disabling tools: ', str(e)).as_markdown())
 
 
 async def _disable_schedule_tool(agent_id: str) -> None:
@@ -424,7 +423,7 @@ async def _attach_tool_memory_block(agent_id: str) -> None:
         block = await client.blocks.create(
             label=NOTIFICATION_TOOL_BLOCK_LABEL,
             description=NOTIFICATION_MEMORY_BLOCK_DESC,
-            value=block_content
+            value=block_content,
         )
 
         LOGGER.info(

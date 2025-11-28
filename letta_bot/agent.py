@@ -54,9 +54,9 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     agent_commands_router = Router(name=f'{__name__}.commands')
     agent_messaging_router = get_agent_messaging_router(bot, gel_client)
 
-    @agent_commands_router.message(Command('request_identity'))
-    async def request_identity(message: Message) -> None:
-        """Request identity access without requesting an agent."""
+    @agent_commands_router.message(Command('botaccess'))
+    async def botaccess(message: Message) -> None:
+        """Request or restore bot access without requesting an agent."""
         if not message.from_user:
             return
 
@@ -112,13 +112,16 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         page = await paginator
         templates = page.templates
 
-        # TODO: Maybe adjust builder for vertical buttons layout
         builder = InlineKeyboardBuilder()
         for t in templates:
             data = NewAssistantCallback(template_name=t.name, version=t.latest_version)
             builder.button(text=f'{t.name}', callback_data=data.pack())
+        builder.adjust(1)  # One button per row for vertical layout
         await message.answer(
-            Text('Choose a template for your assistant').as_markdown(),
+            Text(
+                'Choose a template for your assistant\n\n'
+                'See /about for detailed template descriptions'
+            ).as_markdown(),
             reply_markup=builder.as_markup(),
         )
 
@@ -185,12 +188,17 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
             resource_id=callback_data.pack(),
         )
 
-        # Notify user that request was submitted
-        await callback.answer(
-            Text(
-                '✅ Your request has been submitted and is pending admin approval'
-            ).as_markdown(),
-        )
+        # Update original message to show selection and remove keyboard
+        if isinstance(callback.message, Message):
+            await callback.message.edit_text(
+                Text(
+                    f'✅ Request submitted for: {callback_data.template_name}\n\n'
+                    'Pending admin approval'
+                ).as_markdown(),
+            )
+
+        # Acknowledge the callback
+        await callback.answer()
 
         # notify admins
         if CONFIG.admin_ids is None:
@@ -198,9 +206,9 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
         for tg_id in CONFIG.admin_ids:
             await bot.send_message(tg_id, Text('New assistant request').as_markdown())
 
-    @agent_commands_router.message(Command('switch_assistant'))
+    @agent_commands_router.message(Command('switch'))
     @require_identity(gel_client)
-    async def switch_assistant(message: Message, identity: GetIdentityResult) -> None:
+    async def switch(message: Message, identity: GetIdentityResult) -> None:
         """List user's assistants and allow switching between them."""
         if not message.from_user:
             return
@@ -260,10 +268,30 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
             gel_client, identity_id=identity.identity_id, agent_id=callback_data.agent_id
         )
 
-        await bot.send_message(
-            chat_id=callback.from_user.id,
-            text=Text('✅ Assistant switched successfully').as_markdown(),
-        )
+        # Rebuild keyboard with updated selection
+        try:
+            builder = InlineKeyboardBuilder()
+            async for agent in client.identities.agents.list(
+                identity_id=identity.identity_id
+            ):
+                is_selected = agent.id == callback_data.agent_id
+                button_text = f'{"✅ " if is_selected else ""}{agent.name}'
+                builder.button(
+                    text=button_text,
+                    callback_data=SwitchAssistantCallback(agent_id=agent.id).pack(),
+                )
+            builder.adjust(1)
+
+            # Update keyboard to show new selection
+            if isinstance(callback.message, Message):
+                await callback.message.edit_reply_markup(
+                    reply_markup=builder.as_markup(),
+                )
+        except APIError as e:
+            LOGGER.error(f'Error updating keyboard: {e}')
+
+        # Toast notification for success
+        await callback.answer('✅ Assistant switched')
 
     # Include nested routers
     agent_commands_router.include_router(get_notification_router(bot, gel_client))

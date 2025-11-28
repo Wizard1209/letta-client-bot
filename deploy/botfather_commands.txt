@@ -1,0 +1,9 @@
+new_assistant - Request a new AI assistant
+switch - Switch between your assistants
+botaccess - Request or restore bot access
+notify - Enable proactive assistant behavior
+help - How to use the bot
+about - About available assistants
+privacy - Privacy policy
+contact - Contact information
+changelog - View recent updates

@@ -16,18 +16,22 @@ All notable changes to this project will be documented in this file.
 • Progressive "working" indicator that updates in real-time during agent processing (shows increasing hourglass symbols while waiting)
 • New unified response handler module consolidating stream event processing and message formatting
 • User notification system for authorization events (approval, denial, revocation)
-• /request_identity command for requesting identity access independently
+• /botaccess command for requesting or restoring bot access independently
 • Pending request validation to prevent duplicate identity requests
-• /switch_agent command for switching between user's agents
-• /notify command enabling agent communication tools: scheduled self-messaging for internal reminders and proactive user notifications
+• /switch command for switching between user's assistants
+• /notify command with inline buttons for enabling proactive assistant behavior (reminders, follow-ups, notifications)
 
 **Changed:**
+• Simplified command names: `/switch_assistant` → `/switch`, `/request_identity` → `/botaccess`
+• Admin commands now use separate commands (`/pending`, `/allow`, `/deny`, `/revoke`, `/users`) instead of `/admin` subcommands
+• Template selection now shows vertical button layout with confirmation message after selection
+• Assistant switching now updates the keyboard in-place to show current selection
+• /notify command uses inline Enable/Disable buttons instead of subcommands
 • Info notes now use standard Markdown with automatic conversion to Telegram MarkdownV2 (same pipeline as agent responses, eliminates need for manual escaping)
 • Reworked message formatting architecture from aiogram utilities to manual MarkdownV2 strings for better rendering control
 • Updated to Letta SDK v1.0 with proper async streaming support for agent message responses
 • Agent responses now render with proper Telegram-compatible markdown formatting using telegramify-markdown library
 • Improved message splitting with intelligent boundary detection at newlines and spaces
-• Updated help documentation with /request_identity workflow
 • Centralized Letta client operations into dedicated client module
 • Improved message rendering to properly preserve Markdown formatting when splitting long messages (fixes issue where code blocks and formatting would break across message boundaries)
 

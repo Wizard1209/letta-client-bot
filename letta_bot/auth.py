@@ -83,7 +83,7 @@ def require_identity(
             if not await get_allowed_identity_query(gel_client, telegram_id=from_user.id):
                 await event.answer(
                     Text(
-                        'You need to request identity access first using /request_identity'
+                        'You need to request bot access first using /botaccess'
                     ).as_markdown()
                 )
                 return None
@@ -113,34 +113,9 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
     """Create and return auth router with admin command handlers."""
     auth_router = Router(name=__name__)
 
-    @auth_router.message(Command('admin'))
+    @auth_router.message(Command('pending'))
     @admin_only
-    async def admin(message: Message) -> None:
-        if not message.text:
-            return
-
-        parts = message.text.split(maxsplit=2)
-        subcommand = parts[1].lower() if len(parts) > 1 else None
-
-        match subcommand:
-            case 'pending':
-                await handle_pending(message, gel_client, bot)
-            case 'allow':
-                await handle_allow(message, gel_client, bot, parts)
-            case 'deny':
-                await handle_deny(message, gel_client, bot, parts)
-            case 'revoke':
-                await handle_revoke(message, gel_client, bot, parts)
-            case 'list':
-                await handle_list(message, gel_client)
-            case _:
-                await message.answer(
-                    Text(
-                        'Unknown subcommand. Available: pending, allow, deny, list, revoke'
-                    ).as_markdown()
-                )
-
-    async def handle_pending(message: Message, gel_client: GelClient, bot: Bot) -> None:
+    async def pending_command(message: Message) -> None:
         """List all pending authorization requests"""
         pending_requests = await list_auth_requests_by_status_query(
             gel_client, status=AuthStatus02.PENDING
@@ -169,16 +144,20 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
 
         await message.answer(as_list(*response_lines).as_markdown())
 
-    async def handle_allow(
-        message: Message, gel_client: GelClient, bot: Bot, parts: list[str]
-    ) -> None:
-        """Approve a user's authorization request"""
-        if len(parts) < 3:
-            await message.answer(Text('Usage: /admin allow <request_uuid>').as_markdown())
+    @auth_router.message(Command('allow'))
+    @admin_only
+    async def allow_command(message: Message) -> None:
+        """Approve a user's authorization request."""
+        if not message.text:
+            return
+
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer(Text('Usage: /allow <request_uuid>').as_markdown())
             return
 
         try:
-            request_id = UUID(parts[2])
+            request_id = UUID(parts[1])
         except (ValueError, IndexError):
             await message.answer(
                 Text('Invalid request_uuid. Must be a valid UUID.').as_markdown()
@@ -254,25 +233,27 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                 f'Failed to notify user {result.user.telegram_id} about approval: {e}'
             )
 
-    async def handle_deny(
-        message: Message, gel_client: GelClient, bot: Bot, parts: list[str]
-    ) -> None:
-        """Deny a user's authorization request"""
-        if len(parts) < 3:
-            await message.answer(
-                Text('Usage: /admin deny <request_uuid> [reason]').as_markdown()
-            )
+    @auth_router.message(Command('deny'))
+    @admin_only
+    async def deny_command(message: Message) -> None:
+        """Deny a user's authorization request."""
+        if not message.text:
+            return
+
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 2:
+            await message.answer(Text('Usage: /deny <request_uuid> [reason]').as_markdown())
             return
 
         try:
-            request_id = UUID(parts[2])
+            request_id = UUID(parts[1])
         except (ValueError, IndexError):
             await message.answer(
                 Text('Invalid request_uuid. Must be a valid UUID.').as_markdown()
             )
             return
 
-        reason = parts[3] if len(parts) > 3 else None
+        reason = parts[2] if len(parts) > 2 else None
 
         # Update request status to denied
         result = await resolve_auth_request_query(
@@ -298,7 +279,7 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             if reason:
                 user_message_parts.append(f'\n\nReason: {reason}')
             user_message_parts.append(
-                '\n\nYou can submit a new request using /request_identity or '
+                '\n\nYou can submit a new request using /botaccess or '
                 '/new_assistant if needed.'
             )
 
@@ -311,18 +292,20 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                 f'Failed to notify user {result.user.telegram_id} about denial: {e}'
             )
 
-    async def handle_revoke(
-        message: Message, gel_client: GelClient, bot: Bot, parts: list[str]
-    ) -> None:
-        # NOTE: Revoke only identity access
+    @auth_router.message(Command('revoke'))
+    @admin_only
+    async def revoke_command(message: Message) -> None:
+        """Revoke a user's access (identity only)."""
+        if not message.text:
+            return
 
-        """Revoke a user's access"""
-        if len(parts) < 3:
-            await message.answer(Text('Usage: /admin revoke <telegram_id>').as_markdown())
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer(Text('Usage: /revoke <telegram_id>').as_markdown())
             return
 
         try:
-            telegram_id = int(parts[2])
+            telegram_id = int(parts[1])
         except ValueError:
             await message.answer(
                 Text('Invalid telegram_id. Must be an integer.').as_markdown()
@@ -355,15 +338,17 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                     '🚫 Your access to the bot has been revoked.\n\n'
                     'If you believe this was done in error, '
                     'please contact the administrator.\n'
-                    'You can submit a new request using /request_identity '
+                    'You can submit a new request using /botaccess '
                     'if you wish to regain access.'
                 ).as_markdown(),
             )
         except Exception as e:
             LOGGER.error(f'Failed to notify user {telegram_id} about revocation: {e}')
 
-    async def handle_list(message: Message, gel_client: GelClient) -> None:
-        """List active users"""
+    @auth_router.message(Command('users'))
+    @admin_only
+    async def users_command(message: Message) -> None:
+        """List active users."""
         all_requests = await list_auth_requests_by_status_query(
             gel_client, status=AuthStatus02.ALLOWED
         )
