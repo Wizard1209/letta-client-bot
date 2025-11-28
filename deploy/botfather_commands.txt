@@ -1,4 +1,4 @@
-new_assistant - Request a new AI assistant
+newassistant - Request a new AI assistant
 switch - Switch between your assistants
 botaccess - Request or restore bot access
 notify - Enable proactive assistant behavior

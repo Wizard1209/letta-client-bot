@@ -8,7 +8,7 @@
 /changelog - View project changelog and version history
 
 **Assistants**
-/new_assistant - Request a new AI assistant
+/newassistant - Request a new AI assistant
 /switch - Switch between your assistants
 /botaccess - Request or restore bot access
 /notify - Enable/disable proactive notifications
@@ -17,7 +17,7 @@
 
 **How to Use**
 
-Use /new_assistant to browse available AI assistant templates and request access. An administrator will review and approve your request.
+Use /newassistant to browse available AI assistant templates and request access. An administrator will review and approve your request.
 
 **Proactive Notifications**
 

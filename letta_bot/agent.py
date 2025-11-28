@@ -40,7 +40,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 # NOTE: Callback should fit in 64 chars
-class NewAssistantCallback(CallbackData, prefix='new_assistant'):
+class NewAssistantCallback(CallbackData, prefix='newassistant'):
     template_name: str
     version: str = 'latest'
 
@@ -103,8 +103,8 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
                     tg_id, Text('New identity access request').as_markdown()
                 )
 
-    @agent_commands_router.message(Command('new_assistant'))
-    async def new_assistant(message: Message) -> None:
+    @agent_commands_router.message(Command('newassistant'))
+    async def newassistant(message: Message) -> None:
         # TODO: if no pending requests
 
         # List available templates using SDK extension
@@ -226,7 +226,7 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
                 await message.answer(
                     Text(
                         "You don't have any assistants yet. "
-                        'Use /new_assistant to request one.'
+                        'Use /newassistant to request one.'
                     ).as_markdown()
                 )
                 return
@@ -261,6 +261,11 @@ def get_general_agent_router(bot: Bot, gel_client: GelClient) -> Router:
     ) -> None:
         """Handle assistant selection callback."""
         if not callback.from_user:
+            return
+
+        # Check if already selected - avoid unnecessary update and Telegram API error
+        if identity.selected_agent == callback_data.agent_id:
+            await callback.answer('Already selected')
             return
 
         # Update selected agent in database
@@ -382,7 +387,7 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
             try:
                 agent_id = await get_default_agent(identity.identity_id)
             except IndexError:
-                await message.answer('You have no assistants yet. Use /new_assistant')
+                await message.answer('You have no assistants yet. Use /newassistant')
                 return
             await set_selected_agent_query(
                 gel_client, identity_id=identity.identity_id, agent_id=agent_id

@@ -137,8 +137,10 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                     Code(req.id),
                     '\n',
                     f'  Resource: {req.resource_type.value}\n',
-                    f'  Resource ID: {req.resource_id}\n\n',
-                    # TODO: Add approve and revoke command?
+                    f'  Resource ID: {req.resource_id}\n',
+                    '  → ',
+                    Code(f'/allow {req.id}'),
+                    '\n\n',
                 )
             )
 
@@ -279,8 +281,8 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
             if reason:
                 user_message_parts.append(f'\n\nReason: {reason}')
             user_message_parts.append(
-                '\n\nYou can submit a new request using /botaccess or '
-                '/new_assistant if needed.'
+                '\n\nYou can submit a new request using /newassistant or '
+                '/botaccess if needed.'
             )
 
             await bot.send_message(
@@ -338,8 +340,8 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
                     '🚫 Your access to the bot has been revoked.\n\n'
                     'If you believe this was done in error, '
                     'please contact the administrator.\n'
-                    'You can submit a new request using /botaccess '
-                    'if you wish to regain access.'
+                    'You can submit a new request using /newassistant or '
+                    '/botaccess if you wish to regain access.'
                 ).as_markdown(),
             )
         except Exception as e:
