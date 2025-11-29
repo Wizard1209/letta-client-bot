@@ -50,19 +50,25 @@ def _get_diff_text(old: str, new: str) -> str:
 
 
 def _format_datetime(dt_string: str) -> str:
-    """Format datetime string to readable format.
+    """Format datetime string to readable format with timezone.
 
     Args:
-        dt_string: ISO datetime string (e.g., "2024-01-01" or "2024-01-01T10:30:00")
+        dt_string: ISO datetime string (e.g., "2024-01-01" or "2024-01-01T10:30:00+05:00")
 
     Returns:
-        Formatted datetime string (e.g., "Jan 01, 2024" or "Jan 01, 2024 10:30")
+        Formatted datetime string with timezone
+        (e.g., "Jan 01, 2024" or "Jan 01, 2024 10:30 (UTC+05:00)")
     """
     try:
         # Try parsing with time component
         if 'T' in dt_string:
             dt = datetime.fromisoformat(dt_string.replace('Z', '+00:00'))
-            return dt.strftime('%b %d, %Y %H:%M')
+
+            # Get UTC offset
+            offset = dt.strftime('%z')  # e.g., '+0500'
+            offset_formatted = f"{offset[:3]}:{offset[3:]}"  # '+05:00'
+
+            return f"{dt.strftime('%b %d, %Y %H:%M')} (UTC{offset_formatted})"
         else:
             # Date only
             dt = datetime.fromisoformat(dt_string)
