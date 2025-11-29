@@ -218,17 +218,19 @@ def get_auth_router(bot: Bot, gel_client: GelClient) -> Router:
 
         # Notify user of approval
         try:
-            resource_description = (
-                'identity access'
-                if resource_type == ResourceType.ACCESS_IDENTITY
-                else f'assistant from template {resource_id}'
-            )
+            if resource_type == ResourceType.ACCESS_IDENTITY:
+                user_message = (
+                    '✅ Your request for identity access has been approved!\n\n'
+                    'Once your assistant will be available I will let you know'
+                )
+            else:
+                user_message = (
+                    '✅ Your new assistant is ready!\n\n'
+                    'Just type a message to start chatting!'
+                )
             await bot.send_message(
                 chat_id=result.user.telegram_id,
-                text=Text(
-                    f'✅ Your request for {resource_description} has been approved!\n\n'
-                    'You can now use the bot.'
-                ).as_markdown(),
+                text=Text(user_message).as_markdown(),
             )
         except Exception as e:
             LOGGER.error(
