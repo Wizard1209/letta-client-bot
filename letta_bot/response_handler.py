@@ -717,7 +717,7 @@ class AgentStreamHandler:
             return
 
         # System alerts (informational messages from Letta)
-        if message_type == 'system_alert':
+        if message_type == 'system_message':
             alert_message = getattr(event, 'message', '')
             if alert_message and alert_message.strip():
                 alert_content = f'_\\(info: _{_escape_markdown_v2(alert_message)}_\\)_'

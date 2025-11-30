@@ -1,7 +1,7 @@
 from letta_bot.response_handler import split_markdown_v2
 
 
-def test_split_markdown_v2():
+def test_split_markdown_v2() -> None:
     assert split_markdown_v2('') == [''], 'Empty string should return a single empty chunk'
 
     short = 'Hello, *world!*'

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 **[Latest additions]**
 
+**[1.0.0] - 2025-11-29**
+
 **Added:**
 • Support for voice and audio messages
 • Rich formatting for all core Letta tools (memory operations, archival/conversation search, code execution, web search, notifications, and scheduling)
