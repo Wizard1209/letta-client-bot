@@ -77,13 +77,14 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 
 **Phase 3: Admin Approval**
 
-- Admin views pending requests: `/admin pending`
+- Admin views pending requests: `/pending`
   - Shows user details, request UUID, resource type, and resource ID
-- Admin approves request: `/admin allow <request_uuid>`
+  - For each request displays quick approve command: `/allow <request_uuid>`
+- Admin approves request: `/allow <request_uuid>`
   - **Identity requests**: Creates Letta identity with `tg-{telegram_id}` format, stores in database
   - **Agent requests**: Creates agent from template using `client.templates.agents.create()`
   - User receives approval notification
-- Admin denies request: `/admin deny <request_uuid> [reason]`
+- Admin denies request: `/deny <request_uuid> [reason]`
   - Updates request status to denied
   - User receives notification with optional reason
   - User can submit new request after denial
@@ -133,10 +134,11 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 
 **Phase 6: Access Management**
 
-- **List active users**: `/admin list`
+- **List active users**: `/users`
   - Groups users by telegram_id
-  - Shows all allowed resources per user
-- **Revoke access**: `/admin revoke <telegram_id>`
+  - Shows all allowed resources per user with resource type and resource ID
+  - Displays user information (full name, username, telegram ID)
+- **Revoke access**: `/revoke <telegram_id>`
   - Revokes only identity access (sets identity request status to denied)
   - User receives revocation notification
   - User can re-request access after revocation
@@ -255,7 +257,7 @@ Current module organization:
 letta_bot/
   main.py              # Bot entry point with webhook/polling modes, /start handler
   config.py            # Configuration management (Pydantic settings)
-  auth.py              # Admin authorization handlers (/admin pending, allow, deny, list, revoke)
+  auth.py              # Admin authorization handlers (/pending, /allow, /deny, /users, /revoke)
   agent.py             # Agent request handlers, message routing, and Letta API integration
   client.py            # Shared Letta client instance and Letta API operations
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
