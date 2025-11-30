@@ -387,7 +387,8 @@ def get_agent_messaging_router(bot: Bot, gel_client: GelClient) -> Router:
             try:
                 agent_id = await get_default_agent(identity.identity_id)
             except IndexError:
-                await message.answer('You have no assistants yet. Use /newassistant')
+                await message.answer(Text('You have no assistants yet. Use /newassistant')
+                                     .as_markdown())
                 return
             await set_selected_agent_query(
                 gel_client, identity_id=identity.identity_id, agent_id=agent_id
