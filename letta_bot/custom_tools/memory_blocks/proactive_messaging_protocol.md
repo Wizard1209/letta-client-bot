@@ -224,3 +224,16 @@ When you receive a scheduled message:
 **SILENT MODE:** Scheduled triggers wake you → Everything invisible → Must use notify_via_telegram() to communicate
 
 **The Power:** schedule_message gives memory across time; notify_via_telegram breaks the silence when triggered.
+
+## notify_via_telegram Formatting Rules
+
+**NO MARKDOWN** - all special characters are escaped, so any markdown formatting breaks.
+
+- ❌ **bold**, *italic*, `code`, [links](url) - ALL BROKEN
+- ❌ Headers, lists with dashes, asterisks - BROKEN
+- ✅ Plain text - works
+- ✅ Unicode characters - works
+- ✅ Emojis 🎉🚀💪 - works
+- ✅ Line breaks - works
+
+**Always use plain text only in notify_via_telegram.**
