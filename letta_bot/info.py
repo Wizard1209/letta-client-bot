@@ -55,47 +55,40 @@ def load_info_command_content(note_name: str) -> str:
         return _escape_markdown_v2(f'❌ Error loading note: {str(e)}')
 
 
-def get_info_router() -> Router:
-    """
-    Initialize handlers for informational markdown notes.
+info_router = Router(name=__name__)
 
-    Args:
-        dp: Aiogram Dispatcher instance
-        bot: Aiogram Bot instance
-    """
-    info_router = Router(name=__name__)
 
-    # TODO: should there be a function to create info command as whole?
+# TODO: should there be a function to create info command as whole?
+@info_router.message(Command('privacy'))
+async def privacy_handler(message: Message) -> None:
+    """Display privacy policy and data handling information."""
+    content = load_info_command_content('privacy')
+    await message.answer(content)
 
-    @info_router.message(Command('privacy'))
-    async def privacy_handler(message: Message) -> None:
-        """Display privacy policy and data handling information."""
-        content = load_info_command_content('privacy')
-        await message.answer(content)
 
-    @info_router.message(Command('help'))
-    async def help_handler(message: Message) -> None:
-        """Display help documentation and available commands."""
-        content = load_info_command_content('help')
-        await message.answer(content)
+@info_router.message(Command('help'))
+async def help_handler(message: Message) -> None:
+    """Display help documentation and available commands."""
+    content = load_info_command_content('help')
+    await message.answer(content)
 
-    @info_router.message(Command('about'))
-    async def about_handler(message: Message) -> None:
-        """Display information about the bot."""
-        content = load_info_command_content('about')
-        await message.answer(content)
 
-    @info_router.message(Command('contact'))
-    async def contact_handler(message: Message) -> None:
-        """Display contact and support information."""
-        content = load_info_command_content('contact')
-        await message.answer(content)
+@info_router.message(Command('about'))
+async def about_handler(message: Message) -> None:
+    """Display information about the bot."""
+    content = load_info_command_content('about')
+    await message.answer(content)
 
-    @info_router.message(Command('changelog'))
-    async def changelog_handler(message: Message) -> None:
-        """Display project changelog and version history."""
-        content = load_info_command_content('changelog')
-        await message.answer(content)
 
-    LOGGER.info('Info handlers initialized')
-    return info_router
+@info_router.message(Command('contact'))
+async def contact_handler(message: Message) -> None:
+    """Display contact and support information."""
+    content = load_info_command_content('contact')
+    await message.answer(content)
+
+
+@info_router.message(Command('changelog'))
+async def changelog_handler(message: Message) -> None:
+    """Display project changelog and version history."""
+    content = load_info_command_content('changelog')
+    await message.answer(content)
