@@ -12,10 +12,12 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 from gel import AsyncIOExecutor as GelClient, create_async_client
 
-from letta_bot.agent import get_general_agent_router
-from letta_bot.auth import get_auth_router
+from letta_bot.agent import agent_commands_router, agent_router
+from letta_bot.auth import auth_router
 from letta_bot.config import CONFIG
-from letta_bot.info import get_info_router, load_info_command_content
+from letta_bot.info import info_router, load_info_command_content
+from letta_bot.middlewares import setup_middlewares
+from letta_bot.notification import notification_router
 from letta_bot.queries.is_registered_async_edgeql import (
     is_registered as is_registered_query,
 )
@@ -63,12 +65,18 @@ def setup_bot_handlers(
     # Register /start command
     register_start_command(dp, gel_client)
     # Privacy, help, about, contact commands
-    dp.include_router(get_info_router())
+    dp.include_router(info_router)
+    LOGGER.info('Info handlers initialized')
     # Admin authorization handlers
-    dp.include_router(get_auth_router(bot, gel_client))
+    dp.include_router(auth_router)
+    LOGGER.info('Auth handlers initialized')
     # Agent messages and management commands
     # NOTE: all other messages fall to the agent
-    dp.include_router(get_general_agent_router(bot, gel_client))
+    agent_commands_router.include_router(notification_router)
+    agent_commands_router.include_router(agent_router)
+    dp.include_router(agent_commands_router)
+    LOGGER.info('Notification handlers initialized')
+    LOGGER.info('Agent handlers initialized')
 
 
 async def on_startup(bot: Bot) -> None:
@@ -79,6 +87,8 @@ async def on_startup(bot: Bot) -> None:
 def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
     dp = Dispatcher()
     gel_client = create_async_client()
+
+    setup_middlewares(dp, gel_client)
 
     # Register all common bot handlers
     setup_bot_handlers(dp, bot, gel_client, args)
@@ -96,6 +106,8 @@ def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
 async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
     dp = Dispatcher()
     gel_client = create_async_client()
+
+    setup_middlewares(dp, gel_client)
 
     # Register all common bot handlers
     setup_bot_handlers(dp, bot, gel_client, args)

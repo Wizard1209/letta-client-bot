@@ -3,15 +3,13 @@
 import logging
 from pathlib import Path
 
-from aiogram import Bot, Router
+from aiogram import Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 from aiogram.utils.formatting import Bold, Code, Text, as_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from gel import AsyncIOExecutor as GelClient
 
-from letta_bot.auth import require_identity
 from letta_bot.client import client, register_notify_tool, register_schedule_message_tool
 from letta_bot.config import CONFIG
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
@@ -47,55 +45,52 @@ def _load_memory_block_content() -> str:
     return memo_path.read_text(encoding='utf-8')
 
 
-def get_notification_router(bot: Bot, gel_client: GelClient) -> Router:
-    """Create and return proactive mode command router."""
-    router = Router(name=f'{__name__}.commands')
+notification_router = Router(name=f'{__name__}.commands')
 
-    @router.message(Command('notify'))
-    @require_identity(gel_client)
-    async def notify_command(message: Message, identity: GetIdentityResult) -> None:
-        """Handle /notify command - manage proactive assistant behavior."""
-        if not message.from_user:
-            return
 
-        if not identity.selected_agent:
-            await message.answer(
-                Text('❌ No assistant selected. Use /switch to select one.').as_markdown()
-            )
-            return
+@notification_router.message(Command('notify'), flags={'require_identity': True})
+async def notify_command(message: Message, identity: GetIdentityResult) -> None:
+    """Handle /notify command - manage proactive assistant behavior."""
+    if not message.from_user:
+        return
 
-        await handle_notify_status(message, identity.selected_agent)
+    if not identity.selected_agent:
+        await message.answer(
+            Text('❌ No assistant selected. Use /switch to select one.').as_markdown()
+        )
+        return
 
-    @router.callback_query(NotifyCallback.filter())
-    @require_identity(gel_client)
-    async def handle_notify_callback(
-        callback: CallbackQuery,
-        callback_data: NotifyCallback,
-        identity: GetIdentityResult,
-    ) -> None:
-        """Handle enable/disable button clicks."""
-        if not callback.from_user:
-            return
+    await handle_notify_status(message, identity.selected_agent)
 
-        if isinstance(callback.message, InaccessibleMessage) or not callback.message:
-            await callback.answer('Message expired. Use /notify again.')
-            return
 
-        if not identity.selected_agent:
-            await callback.answer('No assistant selected.')
-            return
+@notification_router.callback_query(
+    NotifyCallback.filter(), flags={'require_identity': True}
+)
+async def handle_notify_callback(
+    callback: CallbackQuery,
+    callback_data: NotifyCallback,
+    identity: GetIdentityResult,
+) -> None:
+    """Handle enable/disable button clicks."""
+    if not callback.from_user:
+        return
 
-        await callback.answer()
+    if isinstance(callback.message, InaccessibleMessage) or not callback.message:
+        await callback.answer('Message expired. Use /notify again.')
+        return
 
-        if callback_data.enable:
-            await handle_notify_enable(
-                callback.message, identity.selected_agent, str(callback.from_user.id)
-            )
-        else:
-            await handle_notify_disable(callback.message, identity.selected_agent)
+    if not identity.selected_agent:
+        await callback.answer('No assistant selected.')
+        return
 
-    LOGGER.info('Notification handlers initialized')
-    return router
+    await callback.answer()
+
+    if callback_data.enable:
+        await handle_notify_enable(
+            callback.message, identity.selected_agent, str(callback.from_user.id)
+        )
+    else:
+        await handle_notify_disable(callback.message, identity.selected_agent)
 
 
 async def handle_notify_status(message: Message, agent_id: str) -> None:

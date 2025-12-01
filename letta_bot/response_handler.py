@@ -66,9 +66,9 @@ def _format_datetime(dt_string: str) -> str:
 
             # Get UTC offset
             offset = dt.strftime('%z')  # e.g., '+0500'
-            offset_formatted = f"{offset[:3]}:{offset[3:]}"  # '+05:00'
+            offset_formatted = f'{offset[:3]}:{offset[3:]}'  # '+05:00'
 
-            return f"{dt.strftime('%b %d, %Y %H:%M')} (UTC{offset_formatted})"
+            return f'{dt.strftime("%b %d, %Y %H:%M")} (UTC{offset_formatted})'
         else:
             # Date only
             dt = datetime.fromisoformat(dt_string)

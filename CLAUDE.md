@@ -56,6 +56,243 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 - Each `.edgeql` file generates a corresponding Python module with type-safe async functions
 - Examples: `register_user`, `create_auth_request`, `get_identity`, `set_selected_agent`
 
+### Middleware System
+
+The bot uses **Aiogram's middleware system** for dependency injection and access control. Middlewares are called before handlers and can inject data, perform checks, or block handler execution.
+
+**DBMiddleware** (`middlewares.py`):
+
+- Injects `gel_client` (Gel database client) into handler data for all Message and CallbackQuery events
+- Registered as outer middleware for both message and callback query routers
+- Provides database access to all handlers without manual client passing
+
+**IdentityMiddleware** (`middlewares.py`):
+
+- Checks if handler requires identity verification by inspecting `require_identity` flag
+- Only processes handlers marked with `flags={'require_identity': True}`
+- Performs identity authorization check using `get_allowed_identity_query()`
+- If authorization succeeds:
+  - Fetches user's identity using `get_identity_query()`
+  - Injects `identity` object into handler data
+  - Allows handler execution
+- If authorization fails:
+  - Sends error message to user: "You need to request bot access first using /botaccess"
+  - Blocks handler execution (returns None)
+
+**Marking Handlers that Require Identity**:
+
+Handlers that need identity access should use `flags={'require_identity': True}` parameter:
+
+```python
+# Command handler requiring identity
+@router.message(Command('switch'), flags={'require_identity': True})
+async def switch(message: Message, identity: GetIdentityResult) -> None:
+    # Handler receives identity as injected parameter
+    pass
+
+# Callback query handler requiring identity
+@router.callback_query(
+    SwitchAssistantCallback.filter(),
+    flags={'require_identity': True}
+)
+async def handle_switch(
+    callback: CallbackQuery,
+    callback_data: SwitchAssistantCallback,
+    identity: GetIdentityResult,
+) -> None:
+    # Handler receives identity as injected parameter
+    pass
+
+# Message handler (catch-all) requiring identity
+@router.message(flags={'require_identity': True})
+async def message_handler(
+    message: Message,
+    identity: GetIdentityResult
+) -> None:
+    # Handler receives identity as injected parameter
+    pass
+```
+
+**Key Points**:
+
+- Handlers with `require_identity` flag automatically receive `identity: GetIdentityResult` parameter
+- No need to manually check identity or pass `gel_client` - middleware handles this
+- Middleware setup via `setup_middlewares(dp, gel_client)` in `main.py`
+- Replaces legacy `@require_identity(gel_client)` decorator pattern
+
+**Creating Custom Middlewares**:
+
+Aiogram middlewares inherit from `BaseMiddleware` and implement `__call__` method:
+
+```python
+from aiogram import BaseMiddleware
+from aiogram.types import TelegramObject
+from collections.abc import Awaitable, Callable
+
+class CustomMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
+        event: TelegramObject,
+        data: dict[str, object],
+    ) -> object | None:
+        # Pre-processing: inject data, perform checks
+        data['custom_key'] = 'custom_value'
+
+        # Optional: check conditions and block handler
+        if some_condition:
+            await event.answer('Access denied')
+            return None  # Block handler execution
+
+        # Call handler
+        result = await handler(event, data)
+
+        # Post-processing (optional)
+        # ... do something after handler
+
+        return result
+```
+
+**Middleware Types**:
+
+- **Outer middleware**: Runs before inner middleware and filters
+  - Use: `dp.message.outer_middleware.register(CustomMiddleware())`
+  - Example: `DBMiddleware` (injects database client)
+- **Inner middleware**: Runs after outer middleware but before handlers
+  - Use: `dp.message.middleware(CustomMiddleware())`
+  - Example: `IdentityMiddleware` (checks identity access)
+
+**Registration Order Matters**:
+
+```python
+# DBMiddleware must run first (outer) to inject gel_client
+dp.message.outer_middleware.register(DBMiddleware(gel_client))
+dp.callback_query.outer_middleware.register(DBMiddleware(gel_client))
+
+# IdentityMiddleware runs second (inner) and uses gel_client
+dp.message.middleware(IdentityMiddleware())
+dp.callback_query.middleware(IdentityMiddleware())
+```
+
+### Filters
+
+The bot uses **Aiogram's filter system** for access control. Filters determine whether a handler should execute based on specific conditions. Unlike middleware, filters are declarative and specific to individual handlers.
+
+**AdminOnlyFilter** (`filters.py`):
+
+- Magic filter that restricts handler execution to admin users only
+- Implementation: `MagicData(F.event_from_user.id.in_(CONFIG.admin_ids))`
+- Checks if `event.from_user.id` is in the list of configured admin IDs
+- If `CONFIG.admin_ids` is `None`, filter always fails (no admins configured)
+
+**Usage Pattern**:
+
+```python
+from letta_bot.filters import AdminOnlyFilter
+
+# Apply filter to command handler
+@router.message(Command('pending'), AdminOnlyFilter)
+async def pending(message: Message, gel_client: AsyncIOExecutor) -> None:
+    # Only admins can access this handler
+    pass
+```
+
+**Admin Commands Using This Filter**:
+
+- `/pending` - View pending authorization requests
+- `/allow <request_uuid>` - Approve authorization request
+- `/deny <request_uuid> [reason]` - Deny authorization request with optional reason
+- `/revoke <telegram_id>` - Revoke user's identity access
+- `/users` - List all users with their allowed resources
+
+**Key Points**:
+
+- Filter automatically blocks non-admin users from accessing admin commands
+- No error message sent to non-admin users (handler simply doesn't execute)
+- Admin IDs must be configured via `ADMIN_IDS` environment variable (comma-separated list)
+- If no admin IDs configured, admin commands are inaccessible to everyone
+
+**Creating Custom Filters**:
+
+Aiogram supports multiple filter types:
+
+**1. Magic Filters (Recommended for simple conditions)**:
+
+Using Aiogram's `F` (magic filter) for concise, readable conditions:
+
+```python
+from aiogram import F
+from aiogram.filters.magic_data import MagicData
+
+# Check user ID
+UserIsJohn = MagicData(F.event_from_user.id == 12345)
+
+# Check multiple IDs
+PremiumUsersFilter = MagicData(F.event_from_user.id.in_([123, 456, 789]))
+
+# Check message text pattern
+HasKeywordFilter = MagicData(F.message.text.contains('keyword'))
+
+# Combine conditions with & (AND) and | (OR)
+SpecialFilter = MagicData(
+    (F.event_from_user.id == 123) & (F.message.text.startswith('/'))
+)
+```
+
+**2. Custom Filter Classes (For complex logic)**:
+
+```python
+from aiogram.filters import Filter
+from aiogram.types import Message
+
+class HasAttachmentFilter(Filter):
+    async def __call__(self, message: Message) -> bool:
+        # Return True if handler should execute
+        return bool(
+            message.photo
+            or message.document
+            or message.video
+            or message.audio
+        )
+
+# Usage
+@router.message(HasAttachmentFilter())
+async def handle_attachment(message: Message) -> None:
+    pass
+```
+
+**3. Filter with Data Injection**:
+
+Filters can inject data into handlers by returning a dict:
+
+```python
+from aiogram.filters import Filter
+from aiogram.types import Message
+
+class ExtractMentionFilter(Filter):
+    async def __call__(self, message: Message) -> bool | dict[str, object]:
+        if not message.entities:
+            return False
+
+        for entity in message.entities:
+            if entity.type == 'mention':
+                mention = message.text[entity.offset:entity.offset + entity.length]
+                return {'mentioned_user': mention}
+
+        return False
+
+# Handler receives injected data
+@router.message(ExtractMentionFilter())
+async def handle_mention(message: Message, mentioned_user: str) -> None:
+    await message.answer(f'You mentioned: {mentioned_user}')
+```
+
+**Filter vs Middleware Decision**:
+
+- **Use Filter when**: Condition is specific to a handler (e.g., admin-only command)
+- **Use Middleware when**: Logic applies to many handlers (e.g., database injection, identity checks)
+- **Combine both**: Middleware for common setup, filters for specific conditions
+
 ### Authorization Flow
 
 **Phase 1: User Registration**
@@ -257,6 +494,8 @@ Current module organization:
 letta_bot/
   main.py              # Bot entry point with webhook/polling modes, /start handler
   config.py            # Configuration management (Pydantic settings)
+  middlewares.py       # Middleware for database client injection and identity checks
+  filters.py           # Filters for admin access control
   auth.py              # Admin authorization handlers (/pending, /allow, /deny, /users, /revoke)
   agent.py             # Agent request handlers, message routing, and Letta API integration
   client.py            # Shared Letta client instance and Letta API operations
