@@ -14,8 +14,12 @@ from letta_bot.queries.get_allowed_identity_async_edgeql import (
 from letta_bot.queries.get_identity_async_edgeql import (
     get_identity as get_identity_query,
 )
+from letta_bot.queries.upsert_user_async_edgeql import upsert_user
+from letta_bot.utils import async_cache
 
 LOGGER = logging.getLogger(__name__)
+
+upsert_user_cached = async_cache(ttl=43200)(upsert_user)
 
 
 class DBMiddleware(BaseMiddleware):
@@ -30,6 +34,41 @@ class DBMiddleware(BaseMiddleware):
         data: dict[str, object],
     ) -> object:
         data['gel_client'] = self.client
+        return await handler(event, data)
+
+
+class UserMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
+        event: TelegramObject,
+        data: dict[str, object],
+    ) -> object | None:
+        gel_client = data.get('gel_client')
+        if not gel_client:
+            LOGGER.error('gel_client not found in middleware data')
+            return None
+
+        # Get user from event
+        from_user = event.from_user
+
+        if not from_user:
+            return await handler(event, data)
+
+        user_model = {
+            'telegram_id': from_user.id,
+            'is_bot': from_user.is_bot,
+            'first_name': from_user.first_name,
+            'last_name': from_user.last_name,
+            'username': from_user.username,
+            'language_code': from_user.language_code,
+        }
+
+        user = await upsert_user_cached(gel_client, **user_model)
+        data['user'] = user
+
+        # LOGGER.info(f'User upserted: {user.id}') #
+
         return await handler(event, data)
 
 
@@ -90,7 +129,13 @@ class IdentityMiddleware(BaseMiddleware):
 
 
 def setup_middlewares(dp: Dispatcher, gel_client: AsyncIOExecutor) -> None:
-    dp.message.outer_middleware.register(DBMiddleware(gel_client))
-    dp.callback_query.outer_middleware.register(DBMiddleware(gel_client))
+    db_middleware = DBMiddleware(gel_client)
+
+    dp.message.outer_middleware.register(db_middleware)
+    dp.callback_query.outer_middleware.register(db_middleware)
+
+    dp.message.outer_middleware.register(UserMiddleware())
+    dp.callback_query.outer_middleware.register(UserMiddleware())
+
     dp.message.middleware(IdentityMiddleware())
     dp.callback_query.middleware(IdentityMiddleware())

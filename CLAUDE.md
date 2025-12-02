@@ -54,7 +54,7 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 
 - Auto-generated from `.edgeql` files in `letta_bot/queries/`
 - Each `.edgeql` file generates a corresponding Python module with type-safe async functions
-- Examples: `register_user`, `create_auth_request`, `get_identity`, `set_selected_agent`
+- Examples: `upsert_user`, `create_auth_request`, `get_identity`, `set_selected_agent`
 
 ### Middleware System
 
@@ -65,6 +65,16 @@ The bot uses **Aiogram's middleware system** for dependency injection and access
 - Injects `gel_client` (Gel database client) into handler data for all Message and CallbackQuery events
 - Registered as outer middleware for both message and callback query routers
 - Provides database access to all handlers without manual client passing
+
+**UserMiddleware** (`middlewares.py`):
+
+- Automatically registers/updates users in database on every interaction
+- Extracts user data from `event.from_user` (telegram_id, username, first_name, last_name, etc.)
+- Uses cached `upsert_user` query (5-minute TTL) to minimize database calls
+- Performs upsert operation: inserts new user or updates existing user on conflict
+- Injects `user` object into handler data for all handlers
+- Registered as outer middleware after DBMiddleware (requires `gel_client` from DBMiddleware)
+- Eliminates need for manual user registration in handlers
 
 **IdentityMiddleware** (`middlewares.py`):
 
@@ -165,11 +175,15 @@ class CustomMiddleware(BaseMiddleware):
 **Registration Order Matters**:
 
 ```python
-# DBMiddleware must run first (outer) to inject gel_client
+# 1. DBMiddleware runs first (outer) to inject gel_client
 dp.message.outer_middleware.register(DBMiddleware(gel_client))
 dp.callback_query.outer_middleware.register(DBMiddleware(gel_client))
 
-# IdentityMiddleware runs second (inner) and uses gel_client
+# 2. UserMiddleware runs second (outer) to register/update users
+dp.message.outer_middleware.register(UserMiddleware())
+dp.callback_query.outer_middleware.register(UserMiddleware())
+
+# 3. IdentityMiddleware runs last (inner) and uses gel_client
 dp.message.middleware(IdentityMiddleware())
 dp.callback_query.middleware(IdentityMiddleware())
 ```
@@ -297,9 +311,13 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 
 **Phase 1: User Registration**
 
-- User sends `/start` to bot
-- System registers new users in database
-- Bot shows greeting message from `notes/welcome.md`
+- User interacts with bot (any message or callback)
+- UserMiddleware automatically registers/updates user in database:
+  - Extracts user data from Telegram event (telegram_id, username, first_name, etc.)
+  - Performs upsert operation: inserts new user or updates existing user
+  - Uses 5-minute cache to avoid redundant database calls
+- User sends `/start` command to view welcome message from `notes/welcome.md`
+- No manual registration required - all users are automatically tracked
 
 **Phase 2: Resource Request**
 
@@ -494,7 +512,7 @@ Current module organization:
 letta_bot/
   main.py              # Bot entry point with webhook/polling modes, /start handler
   config.py            # Configuration management (Pydantic settings)
-  middlewares.py       # Middleware for database client injection and identity checks
+  middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
   auth.py              # Admin authorization handlers (/pending, /allow, /deny, /users, /revoke)
   agent.py             # Agent request handlers, message routing, and Letta API integration
@@ -503,8 +521,9 @@ letta_bot/
   notification.py      # Notification and scheduling tool management handlers
   response_handler.py  # Agent response stream processing and message formatting
   letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
+  utils.py             # Utility functions (async cache decorator with TTL)
   queries/             # EdgeQL queries and auto-generated Python modules
-    register_user.edgeql                    # Register new user
+    upsert_user.edgeql                      # Register/update user (upsert on telegram_id)
     is_registered.edgeql                    # Check if user is registered
     get_telegram_ids.edgeql                 # Get all telegram IDs
     create_auth_request.edgeql              # Create authorization request
