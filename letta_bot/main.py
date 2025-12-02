@@ -6,11 +6,11 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart
-from aiogram.types import Message, User
+from aiogram.types import Message
 from aiogram.utils.formatting import Text
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
-from gel import AsyncIOExecutor as GelClient, create_async_client
+from gel import create_async_client
 
 from letta_bot.agent import agent_commands_router, agent_router
 from letta_bot.auth import auth_router
@@ -18,34 +18,11 @@ from letta_bot.config import CONFIG
 from letta_bot.info import info_router, load_info_command_content
 from letta_bot.middlewares import setup_middlewares
 from letta_bot.notification import notification_router
-from letta_bot.queries.is_registered_async_edgeql import (
-    is_registered as is_registered_query,
-)
-from letta_bot.queries.register_user_async_edgeql import (
-    register_user as register_user_query,
-)
 
 LOGGER = logging.getLogger(__name__)
 
 
-async def register_user(user: User, gel_client: GelClient) -> None:
-    is_registered = await is_registered_query(gel_client, telegram_id=user.id)
-    if is_registered:
-        return
-    # TODO: Add user update logic
-    user_model = {
-        'telegram_id': user.id,
-        'is_bot': user.is_bot,
-        'first_name': user.first_name,
-        'last_name': user.last_name,
-        'username': user.username,
-        'language_code': user.language_code,
-    }
-    id_ = (await register_user_query(gel_client, **user_model)).telegram_id
-    LOGGER.info(f'New user registered: {id_}')
-
-
-def register_start_command(dp: Dispatcher, gel_client: GelClient) -> None:
+def start_command(dp: Dispatcher) -> None:
     @dp.message(CommandStart())
     async def welcome_handler(message: Message) -> None:
         """Display welcome information."""
@@ -53,17 +30,14 @@ def register_start_command(dp: Dispatcher, gel_client: GelClient) -> None:
             await message.answer(Text("Can't identify user").as_markdown())
             LOGGER.warning('User invoked start command cant be identified')
             return
-        await register_user(message.from_user, gel_client)
         content = load_info_command_content('welcome')
         await message.answer(content)
 
 
-def setup_bot_handlers(
-    dp: Dispatcher, bot: Bot, gel_client: GelClient, args: argparse.Namespace
-) -> None:
+def setup_bot_handlers(dp: Dispatcher) -> None:
     """Register all common bot handlers (commands, routers, etc.)."""
     # Register /start command
-    register_start_command(dp, gel_client)
+    start_command(dp)
     # Privacy, help, about, contact commands
     dp.include_router(info_router)
     LOGGER.info('Info handlers initialized')
@@ -91,7 +65,7 @@ def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
     setup_middlewares(dp, gel_client)
 
     # Register all common bot handlers
-    setup_bot_handlers(dp, bot, gel_client, args)
+    setup_bot_handlers(dp, bot)
 
     # Webhook-specific setup
     dp.startup.register(on_startup)  # register webhook
@@ -110,7 +84,7 @@ async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
     setup_middlewares(dp, gel_client)
 
     # Register all common bot handlers
-    setup_bot_handlers(dp, bot, gel_client, args)
+    setup_bot_handlers(dp)
 
     # Polling-specific setup - start polling loop
     await dp.start_polling(bot)
