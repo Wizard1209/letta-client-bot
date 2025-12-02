@@ -65,7 +65,7 @@ def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
     setup_middlewares(dp, gel_client)
 
     # Register all common bot handlers
-    setup_bot_handlers(dp, bot)
+    setup_bot_handlers(dp)
 
     # Webhook-specific setup
     dp.startup.register(on_startup)  # register webhook
