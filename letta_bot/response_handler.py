@@ -414,11 +414,15 @@ def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> str
 
 def _format_memory_replace(args_obj: dict[str, Any]) -> str | None:
     """Format memory_replace tool call."""
+    path = _escape_markdown_v2(args_obj.get('path', ''))
     old_str = _escape_markdown_v2(args_obj.get('old_str', ''))
     new_str = _escape_markdown_v2(args_obj.get('new_str', ''))
 
     diff = _get_diff_text(old_str, new_str)
-    return f'🔧 _Modifying memory block\\.\\.\\._\n```diff\n{diff}```'
+    header = '🔧 _Modifying memory block\\.\\.\\._\n'
+    if path:
+        header += f'*Path:* {path}\n'
+    return f'{header}```diff\n{diff}```'
 
 
 def _format_memory_rename(args_obj: dict[str, Any]) -> str:
