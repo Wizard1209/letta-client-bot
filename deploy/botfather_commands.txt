@@ -1,5 +1,7 @@
 newassistant - Request a new AI assistant
 switch - Switch between your assistants
+current - View current assistant info and memory usage
+context - Show context window breakdown for current assistant
 botaccess - Request or restore bot access
 notify - Enable proactive assistant behavior
 help - How to use the bot

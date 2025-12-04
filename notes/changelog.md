@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 **[Latest additions]**
 
+**Added:**
+• /current command to view current assistant's information and memory usage statistics
+• /context command to see detailed context window breakdown (how tokens are distributed across message history, core memory, archival memory, and system prompts)
+
 **[1.0.0] - 2025-11-29**
 
 **Added:**
