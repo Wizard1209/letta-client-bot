@@ -69,29 +69,32 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ## Planned features
 
+### Very High Priority
+
+- Migrate to self-hosted Gel <https://github.com/geldata/gel-docker>
+
 ### High Priority
 
-- Update keyboard after action on switching agent and creating from the template <https://core.telegram.org/bots/api#editmessagereplymarkup>
+- Agent content output configuration
+  - Toggle verbose/brief tool execution display
+  - Toggle reasoning messages on/off
+- Clear messages command (for testing clean assistants)
+- Strict Telegram error handling (timeouts, message length limits, invalid characters)
 
 ### Medium Priority
 
+- Fix rapid message handling (many messages in a row from Telegram)
+- Multi-user agent from personal assistant
+  - Clone personal agent
+  - Shared memory blocks (some read-only)
 - Run gel schema migrations automatically
-- `/status` command (identity and agent info)
-- **Voice/audio transcription** (OpenAI Whisper API)
-  - Detect voice/audio messages in Telegram
-  - Download and send to Whisper API
-  - Process transcribed text as regular message
-  - Optionally show transcription to user
 - Images support
 - LaTeX support
 - Memory block viewing and editing
-- Conversation management
-- User preferences and custom names
+- Agent rename
 - Agent tags for filtering
 - Usage analytics per identity
-- Bulk admin operations
 - Add message editing support
-- Telegram reply support
 
 ## Technical TODOs
 
@@ -100,6 +103,7 @@ Local TODOs are still in code
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>
 - Wrap auth logic with multiple db queries into transactions <https://docs.geldata.com/reference/using/python#transactions>
 - Implement global error handling for agent message sending using aiogram middlewares <https://docs.aiogram.dev/en/v3.22.0/dispatcher/middlewares.html>
+- Replace manual MarkdownV2 escaping with automatic conversion
 
 ## GEL
 
