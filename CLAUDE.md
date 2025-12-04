@@ -644,123 +644,108 @@ Be specific: "Agent not found" vs "Agent not found or you don't have access" - h
 **Tags for Agents:**
 Recommend tagging all agents with `["telegram", "user:{telegram_id}"]` for additional filtering/analytics even beyond identity system.
 
-## MarkdownV2 for Long Notes and Info Commands
+## Formatting Info Notes (notes/ directory)
 
-When creating content for info commands (`/help`, `/privacy`, `/about`, `/contact`) stored in the `notes/` directory, understand that **Telegram MarkdownV2 is NOT standard Markdown**. Notes are loaded as raw text and sent directly to Telegram, so you must **manually write proper MarkdownV2 escaping** in the source `.md` files.
+Info command files (`/help`, `/privacy`, `/about`, `/contact`, `/welcome`, `/changelog`) are stored in the `notes/` directory using **standard Markdown**. Files are automatically converted to Telegram MarkdownV2 via `telegramify-markdown` library when sent to users.
 
-### Critical Differences from Standard Markdown
+### Formatting Rules
 
-**Unsupported Features** (do NOT use these in notes):
+**Write standard Markdown - NO manual escaping needed:**
 
-1. **Headers** (`#`, `##`, etc.) - Use `*bold text*` instead
-2. **Tables** (pipe-based) - Use code blocks with aligned text
-3. **Standard lists** (`-`, `*`, `+`, `1.`) - Use Unicode bullets (•) or emoji
-4. **Nested formatting** (`***text***`) - Cannot combine bold+italic
+- Regular punctuation (periods, exclamation marks, hyphens, parentheses) - use as-is
+- Commands like `/command` - write normally, no underscore escaping
+- URLs in links - use standard format `[text](https://example.com/)`
+- Math expressions - write naturally: `x = y + 5`
 
-**Supported Features**:
+**Section Headers:**
 
-- `*bold*` - Bold text
-- `_italic_` - Italic text
-- `__underline__` - Underlined text
-- `~strikethrough~` - Strikethrough
-- `` `code` `` - Inline code
-- ` ```code block``` ` - Code blocks
-- `[text](url)` - Links
+- Use `**Bold Text**` for section titles (NOT `#` or `##`)
+- Example: `**Available Commands**`
 
-### Special Character Escaping in Note Files
+**Lists:**
 
-These 17 characters **must be escaped** with backslash in `.md` note files:
+- Use bullet symbol `•` for unordered lists (NOT `-`, `*`, or `+`)
+- Example:
+  ```markdown
+  • First item
+  • Second item
+  • Third item
+  ```
 
-```
-\ _ * [ ] ( ) ~ ` > # + - = | { } . !
-```
+**Formatting Styles:**
 
-**Examples:**
+- Bold: `**text**`
+- Italic: `*text*`
+- Inline code: `` `code` ``
+- Code blocks: ` ```code block``` `
+- Links: `[text](url)`
 
-```markdown
-Regular sentence ends with period\.
-Price is $9\.99\!
-Date range: 2024\-01\-15
-Email: user@example\.com
-Math: x \= y \+ 5
-```
+**Visual Elements:**
 
-**Escaping in Links:**
-
-```markdown
-Visit [our site](https://example.com/) for info\.
-```
+- Emoji: Use emoji for visual emphasis (✅, 🔒, 🐛, 💡, etc.)
+- Horizontal separators: Use line of en-dashes `──────────────────────────────`
 
 **Line Breaks:**
 
 - Single line break: Just use newline in file
-- Paragraph break: Use blank line in file (converted to `\n\n` when loaded)
+- Paragraph break: Use blank line
 
-### Writing Note Files
+### Examples from Existing Files
 
-**Structure example** (`notes/help.md`):
+**Section with list** (`help.md`):
 
 ```markdown
-_Welcome to Bot_
+**Available Commands**
 
-This bot helps you manage agents\. Here are the key features:
-
-• Request agent access via /request_resource
-• Send messages directly to your agent
-• View privacy policy with /privacy
-
-_Getting Started_
-
-1\. Register with /start
-2\. Request an agent
-3\. Wait for admin approval
-4\. Start chatting\!
-
-Visit [documentation](https://docs.example.com/) for more details\.
+**Information**
+/help - Display this help message
+/privacy - View privacy policy and data handling practices
+/about - Information about this bot
 ```
 
-**Key points:**
+**Bullet list with emoji** (`welcome.md`):
 
-- Escape ALL periods, exclamation marks, hyphens, etc.
-- Use `*bold*` instead of `# headers`
-- Use `•` or emoji instead of `-` for lists
-- Use plain newlines for line breaks (file I/O handles conversion)
-- Escape underscores in commands: `/request\_resource`
+```markdown
+This bot connects you with a modern stateful AI assistant that:
+• Remembers your conversations and preferences
+• Learns from interactions and adapts to you
+• Grows smarter over time through continuous memory
+```
 
-### Common Pitfalls
+**Section with separator** (`contact.md`):
 
-1. **Forgetting to escape periods** - Most common error
-   - Wrong: `This is a sentence.`
-   - Right: `This is a sentence\.`
+```markdown
+**Contact & Support**
 
-2. **Using markdown headers** - They render as literal `# Title`
-   - Wrong: `## Section Title`
-   - Right: `*Section Title*`
+We use GitHub Issues as our primary communication channel.
 
-3. **Standard list syntax** - Renders as plain text with dashes
-   - Wrong: `- Item one`
-   - Right: `• Item one`
+──────────────────────────────
 
-4. **Unescaped underscores in commands** - Triggers italic formatting
-   - Wrong: `/request_resource`
-   - Right: `/request\_resource`
+We're committed to keeping this bot flexible!
+```
 
-5. **URLs without escaping** - Breaks link parsing
-   - Wrong: `[link](http://example.com/)`
-   - Right: `[link](http://example\.com/)`
+**Link formatting** (`privacy.md`):
+
+```markdown
+View Letta's privacy policy: [https://www.letta.com/privacy-policy](https://www.letta.com/privacy-policy)
+```
 
 ### Testing Notes
 
-Always test note rendering in Telegram before committing:
+Always test note rendering in Telegram:
 
-1. Start bot in polling mode: `uv run python letta_bot/main.py -p`
-2. Send info command (e.g., `/help`)
+1. Start bot: `uv run python letta_bot/main.py -p`
+2. Send command (e.g., `/help`)
 3. Verify formatting renders correctly
-4. Check for "can't parse entities" errors
+4. Check for parsing errors
 
-### Reference
+### Key Points
 
-- Telegram MarkdownV2 docs: https://core.telegram.org/bots/api#markdownv2-style
+- **Standard Markdown only** - write naturally, no manual escaping
+- **Use `**bold**` for headers** - not `#` syntax
+- **Use `•` for lists** - not `-` or `*`
+- **Automatic conversion** - `convert_to_telegram_markdown()` handles MarkdownV2 escaping via `telegramify-markdown` library
+- **Same pipeline as agent responses** - info notes use identical formatting as agent message responses
 
 ## EdgeQL Quick Reference
 
