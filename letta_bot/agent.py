@@ -5,7 +5,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.chat_action import ChatActionSender
-from aiogram.utils.formatting import Text
+from aiogram.utils.formatting import Bold, Code, Text, as_list, as_marked_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor
 from httpx import ReadTimeout
@@ -13,7 +13,7 @@ from letta_client import APIError
 
 from letta_bot.client import client, get_default_agent
 from letta_bot.config import CONFIG
-from letta_bot.letta_sdk_extensions import list_templates
+from letta_bot.letta_sdk_extensions import context_window_overview, list_templates
 from letta_bot.queries.check_pending_request_async_edgeql import (
     check_pending_request as check_pending_request_query,
 )
@@ -293,6 +293,128 @@ async def handle_switch_assistant(
 
     # Toast notification for success
     await callback.answer('✅ Assistant switched')
+
+
+@agent_commands_router.message(Command('current'), flags={'require_identity': True})
+async def assistant_info_handler(message: Message, identity: GetIdentityResult) -> None:
+    """Show assistant info with memory blocks."""
+    if not message.from_user:
+        return
+
+    if not identity.selected_agent:
+        await message.answer(
+            Text(
+                '❌ No assistant selected. Use /switch to select one.',
+            ).as_markdown()
+        )
+        return
+
+    # Send loading indicator
+    status_msg = await message.answer(Text('⏳ Fetching assistant info...').as_markdown())
+
+    try:
+        # Fetch agent data
+        agent = await client.agents.retrieve(
+            identity.selected_agent, include=['agent.blocks', 'agent.tools']
+        )
+
+        # Build memory blocks list
+        memory_blocks = []
+        for block in agent.blocks:
+            block_size = len(block.value or '')
+            utilization = (block_size / block.limit * 100) if block.limit > 0 else 0
+            warning = ' ⚠️' if utilization > 100 else ''
+            memory_blocks.append(
+                Text(
+                    f'{block.label}: {block_size}/{block.limit} '
+                    f'({utilization:.1f}%){warning}'
+                )
+            )
+
+        # Build complete message
+        content = as_list(
+            Text('🤖 ', Bold(agent.name)),
+            Text(),  # Empty line
+            as_list(
+                Text(Bold('ID: '), Code(agent.id)),
+                Text(Bold('Model: '), agent.model),
+            ),
+            Text(),  # Empty line
+            Text('📝 ', Bold('Memory Blocks (chars):')),
+            as_marked_list(*memory_blocks, marker='  • '),
+            Text(),  # Empty line
+            Text('💬 ', Bold('Message History: '), f'{len(agent.message_ids)} messages'),
+            Text('🔧 ', Bold('Tools: '), str(len(agent.tools))),
+        )
+
+        # Delete loading message and send result
+        await status_msg.delete()
+        await message.answer(**content.as_kwargs())
+
+    except Exception as e:
+        LOGGER.error(f'Error fetching assistant info: {e}')
+        await status_msg.edit_text(Text('❌ Error fetching assistant info').as_markdown())
+
+
+@agent_commands_router.message(Command('context'), flags={'require_identity': True})
+async def context_handler(message: Message, identity: GetIdentityResult) -> None:
+    """Show assistant context window breakdown."""
+    if not message.from_user:
+        return
+
+    if not identity.selected_agent:
+        await message.answer(
+            Text('❌ No assistant selected. Use /switch to select one.').as_markdown()
+        )
+        return
+
+    # Send loading indicator
+    status_msg = await message.answer(Text('⏳ Fetching context info...').as_markdown())
+
+    try:
+        # Fetch context window overview
+        context = await context_window_overview(client, identity.selected_agent)
+
+        # Calculate context window usage
+        current = context.context_window_size_current
+        max_size = context.context_window_size_max
+        ctx_percentage = (current / max_size * 100) if max_size > 0 else 0
+        warning = ' ⚠️' if ctx_percentage > 100 else ''
+
+        # Build component breakdown list
+        components = [
+            ('System instruction', context.num_tokens_system),
+            ('Tool description', context.num_tokens_functions_definitions),
+            ('External summary', context.num_tokens_external_memory_summary),
+            ('Core memory', context.num_tokens_core_memory),
+            ('Recursive Memory', context.num_tokens_summary_memory),
+            ('Messages', context.num_tokens_messages),
+        ]
+
+        component_items = []
+        for name, tokens in components:
+            percentage = (tokens / max_size * 100) if max_size > 0 else 0
+            component_items.append(Text(f'{name}: {tokens} ({percentage:.1f}%)'))
+
+        # Build complete message
+        content = as_list(
+            Text(
+                '🪟 ',
+                Bold('Context Window: '),
+                f'{current}/{max_size} tokens ({ctx_percentage:.1f}%){warning}',
+            ),
+            Text(),  # Empty line
+            Text(Bold('Context Breakdown (tokens):')),
+            as_marked_list(*component_items, marker='  • '),
+        )
+
+        # Delete loading message and send result
+        await status_msg.delete()
+        await message.answer(**content.as_kwargs())
+
+    except Exception as e:
+        LOGGER.error(f'Error fetching context info: {e}')
+        await status_msg.edit_text(Text('❌ Error fetching context info').as_markdown())
 
 
 @agent_router.message(flags={'require_identity': True})
