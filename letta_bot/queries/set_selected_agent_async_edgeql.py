@@ -32,14 +32,14 @@ class SetSelectedAgentResult(NoPydanticValidation):
 async def set_selected_agent(
     executor: gel.AsyncIOExecutor,
     *,
-    agent_id: str,
+    agent_id: str | None = None,
     identity_id: str,
 ) -> SetSelectedAgentResult | None:
     return await executor.query_single(
         """\
         update Identity
         filter .identity_id = <str>$identity_id
-        set { selected_agent := <str>$agent_id };\
+        set { selected_agent := <optional str>$agent_id };\
         """,
         agent_id=agent_id,
         identity_id=identity_id,
