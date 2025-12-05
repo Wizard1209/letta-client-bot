@@ -67,7 +67,7 @@ async def get_or_create_letta_identity(identifier_key: str, name: str) -> Identi
         return identity
     except ConflictError:
         LOGGER.critical(
-            f'Identity already exists but couldnt be retrieved {identifier_key}'
+            f"Identity already exists but couldn't be retrieved {identifier_key}"
         )
         raise
     except APIError:
@@ -80,7 +80,9 @@ async def get_or_create_letta_identity(identifier_key: str, name: str) -> Identi
 # =============================================================================
 
 
-async def create_agent_from_template(template_id: str, identity_id: str) -> None:
+async def create_agent_from_template(
+    template_id: str, identity_id: str, tags: list[str] | None = None
+) -> None:
     """Create agent from template in Letta API."""
     # Local import to avoid circular dependency
     from letta_bot.agent import NewAssistantCallback
@@ -91,10 +93,14 @@ async def create_agent_from_template(template_id: str, identity_id: str) -> None
     # Client is already configured with project, so it auto-scopes
     template_version = f'{info.template_name}:{info.version}'
 
-    # TODO: mb tags for creator, mb custom name
-    await client.templates.agents.create(
-        template_version=template_version, identity_ids=[identity_id]
-    )
+    if tags is None:
+        await client.templates.agents.create(
+            template_version=template_version, identity_ids=[identity_id]
+        )
+    else:
+        await client.templates.agents.create(
+            template_version=template_version, identity_ids=[identity_id], tags=tags
+        )
 
 
 async def get_default_agent(identity_id: str) -> str:
@@ -114,6 +120,99 @@ async def get_default_agent(identity_id: str) -> str:
         identity_id=identity_id, limit=1, order='asc'
     )
     return page.items[0].id
+
+
+async def attach_identity_to_agent(agent_id: str, identity_id: str) -> None:
+    """Attach an identity to an existing agent.
+
+    Args:
+        agent_id: The ID of the agent to attach identity to
+        identity_id: The ID of the identity to attach
+
+    Raises:
+        APIError: If the attach operation fails
+    """
+    await client.agents.identities.attach(agent_id=agent_id, identity_id=identity_id)
+
+
+async def detach_identity_from_agent(agent_id: str, identity_id: str) -> None:
+    """Detach an identity from an existing agent.
+
+    Args:
+        agent_id: The ID of the agent to detach identity from
+        identity_id: The ID of the identity to detach
+
+    Raises:
+        APIError: If the detach operation fails
+    """
+    await client.agents.identities.detach(agent_id=agent_id, identity_id=identity_id)
+
+
+async def agent_belongs_to_identity(agent_id: str, identity_id: str) -> bool:
+    """Check if an agent belongs to a specific identity.
+
+    Args:
+        agent_id: The ID of the agent to check
+        identity_id: The ID of the identity to verify ownership
+
+    Returns:
+        True if agent belongs to the identity, False otherwise
+
+    Raises:
+        APIError: If the retrieve operation fails
+    """
+    agent = await client.agents.retrieve(agent_id=agent_id)
+    # Check if identity_id is in the agent's identities list
+    if agent.identities is None:
+        return False
+    return any(identity.id == identity_id for identity in agent.identities)
+
+
+async def get_agent_identity_ids(agent_id: str) -> list[str]:
+    """Get all identity IDs associated with an agent.
+
+    Args:
+        agent_id: The ID of the agent
+
+    Returns:
+        List of identity IDs attached to the agent (empty list if none)
+
+    Raises:
+        APIError: If the retrieve operation fails
+    """
+    agent = await client.agents.retrieve(agent_id=agent_id)
+    if agent.identities is None:
+        return []
+    return [identity.id for identity in agent.identities]
+
+
+async def get_agent_creator_telegram_id(agent_id: str) -> int | None:
+    """Extract creator's telegram_id from agent tags.
+
+    Args:
+        agent_id: The ID of the agent
+
+    Returns:
+        Creator's telegram_id if found, None otherwise
+
+    Raises:
+        APIError: If the retrieve operation fails
+    """
+    agent = await client.agents.retrieve(agent_id=agent_id)
+    if agent.tags is None:
+        return None
+
+    # Search for tag with format: creator-tg-{telegram_id}
+    for tag in agent.tags:
+        if tag.startswith('creator-tg-'):
+            try:
+                telegram_id_str = tag.removeprefix('creator-tg-')
+                return int(telegram_id_str)
+            except ValueError:
+                LOGGER.warning(f'Invalid creator tag format: {tag}')
+                continue
+
+    return None
 
 
 # =============================================================================

@@ -7,8 +7,16 @@ from aiogram.filters.command import Command
 from aiogram.types import Message
 from aiogram.utils.formatting import Code, Text, as_list
 from gel import AsyncIOExecutor
+from letta_client import APIError
 
-from letta_bot.client import create_agent_from_template, get_or_create_letta_identity
+from letta_bot.client import (
+    agent_belongs_to_identity,
+    attach_identity_to_agent,
+    client,
+    create_agent_from_template,
+    detach_identity_from_agent,
+    get_or_create_letta_identity,
+)
 from letta_bot.filters import AdminOnlyFilter
 from letta_bot.queries.create_identity_async_edgeql import (
     create_identity as create_identity_query,
@@ -25,9 +33,16 @@ from letta_bot.queries.resolve_auth_request_async_edgeql import (
     ResourceType,
     resolve_auth_request as resolve_auth_request_query,
 )
+from letta_bot.queries.revoke_agent_access_async_edgeql import (
+    revoke_agent_access as revoke_agent_access_query,
+)
 from letta_bot.queries.revoke_user_access_async_edgeql import (
     revoke_user_access as revoke_user_access_query,
 )
+from letta_bot.queries.set_selected_agent_async_edgeql import (
+    set_selected_agent as set_selected_agent_query,
+)
+from letta_bot.utils import validate_agent_id
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +68,9 @@ async def pending_command(message: Message, gel_client: AsyncIOExecutor) -> None
         response_lines.append(
             Text(
                 f'• User: {user.full_name or user.first_name} ({username_str})\n',
-                f'  Telegram ID: {user.telegram_id}\n',
+                '  Telegram ID: ',
+                Code(user.telegram_id),
+                '\n',
                 '  Request ID: ',
                 Code(req.id),
                 '\n',
@@ -130,7 +147,59 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                     'Cannot create agent from template without identity'
                 )
             await create_agent_from_template(
-                template_id=resource_id, identity_id=identity_result[0].identity_id
+                template_id=resource_id,
+                identity_id=identity_result[0].identity_id,
+                tags=[f'creator-tg-{result.user.telegram_id}'],
+            )
+        case ResourceType.ACCESS_AGENT:
+            # Attach agent to requester's identity
+            identity_result = await get_identity_query(
+                gel_client, telegram_id=result.user.telegram_id
+            )
+            if not identity_result:
+                await message.answer(
+                    Text(
+                        f'❌ User {result.user.telegram_id} does not have an identity. '
+                        'They must request identity access first.'
+                    ).as_markdown()
+                )
+                return
+
+            # Check if agent still exists before attaching
+            try:
+                agent = await client.agents.retrieve(agent_id=resource_id)
+            except APIError as e:
+                LOGGER.error(f'Agent {resource_id} not found during approval: {e}')
+                await message.answer(
+                    Text(
+                        f'❌ Agent {resource_id} no longer exists. Cannot grant access.'
+                    ).as_markdown()
+                )
+                return
+
+            # Check if agent has a creator tag
+            has_creator_tag = False
+            if agent.tags:
+                has_creator_tag = any(tag.startswith('creator-tg-') for tag in agent.tags)
+
+            # If no creator tag, assign first requester as creator
+            if not has_creator_tag:
+                creator_tag = f'creator-tg-{result.user.telegram_id}'
+                existing_tags = list(agent.tags) if agent.tags else []
+                new_tags = existing_tags + [creator_tag]
+
+                try:
+                    await client.agents.update(agent_id=resource_id, tags=new_tags)
+                    LOGGER.info(
+                        f'Assigned creator tag {creator_tag} to agent {resource_id} '
+                        f'for first requester'
+                    )
+                except APIError as e:
+                    LOGGER.error(f'Failed to update agent tags: {e}')
+                    # Continue with attachment even if tagging fails
+
+            await attach_identity_to_agent(
+                agent_id=resource_id, identity_id=identity_result[0].identity_id
             )
 
     await message.answer(
@@ -143,6 +212,12 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
             user_message = (
                 '✅ Your request for identity access has been approved!\n\n'
                 'Once your assistant will be available I will let you know'
+            )
+        elif resource_type == ResourceType.ACCESS_AGENT:
+            user_message = (
+                f'✅ Your assistant access request has been approved!\n\n'
+                f'Agent ID: {resource_id}\n\n'
+                'You can now use /switch to select this assistant.'
             )
         else:
             user_message = (
@@ -258,6 +333,158 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
         LOGGER.error(f'Failed to notify user {telegram_id} about revocation: {e}')
 
 
+@auth_router.message(Command('detach'), AdminOnlyFilter)
+async def detach_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) -> None:
+    """Detach an agent from a user's identity."""
+    if not message.text:
+        return
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer(Text('Usage: /detach <telegram_id> <agent_id>').as_markdown())
+        return
+
+    # Parse telegram_id
+    try:
+        telegram_id = int(parts[1])
+    except ValueError:
+        await message.answer(Text('Invalid telegram_id. Must be an integer.').as_markdown())
+        return
+
+    agent_id = parts[2].strip()
+
+    # Validate agent_id format: agent-{uuid}
+    if not validate_agent_id(agent_id):
+        await message.answer(
+            Text('Invalid agent ID format. Must be agent-{uuid}.').as_markdown()
+        )
+        return
+
+    # Get user's identity
+    identity_result = await get_identity_query(gel_client, telegram_id=telegram_id)
+
+    if not identity_result:
+        await message.answer(
+            Text(f'❌ User {telegram_id} does not have an identity.').as_markdown()
+        )
+        return
+
+    identity = identity_result[0]
+
+    # Check if agent is attached to this identity
+    if not await agent_belongs_to_identity(agent_id, identity.identity_id):
+        await message.answer(
+            Text(
+                f'❌ Agent {agent_id} is not attached to user {telegram_id}.'
+            ).as_markdown()
+        )
+        return
+
+    # Saga Pattern: Step 1 - Revoke authorization request in database FIRST
+    revoked_requests = await revoke_agent_access_query(
+        gel_client,
+        telegram_id=telegram_id,
+        agent_id=agent_id,
+        resource_type=ResourceType.ACCESS_AGENT,
+        current_status=AuthStatus.ALLOWED,
+        new_status=AuthStatus.REVOKED,
+    )
+    if revoked_requests:
+        LOGGER.info(
+            f'Revoked {len(revoked_requests)} authorization request(s) '
+            f'for user {telegram_id} and agent {agent_id}'
+        )
+    else:
+        LOGGER.warning(
+            f'No authorization request found to revoke for user {telegram_id} '
+            f'and agent {agent_id}'
+        )
+
+    # Saga Pattern: Step 2 - Detach agent from identity in Letta
+    try:
+        await detach_identity_from_agent(
+            agent_id=agent_id, identity_id=identity.identity_id
+        )
+    except Exception as e:
+        LOGGER.error(
+            f'Failed to detach agent {agent_id} from identity {identity.identity_id}: {e}'
+        )
+        # Saga Pattern: Compensating transaction - restore ALLOWED status
+        if revoked_requests:
+            try:
+                await revoke_agent_access_query(
+                    gel_client,
+                    telegram_id=telegram_id,
+                    agent_id=agent_id,
+                    resource_type=ResourceType.ACCESS_AGENT,
+                    current_status=AuthStatus.REVOKED,
+                    new_status=AuthStatus.ALLOWED,
+                )
+                LOGGER.info(
+                    f'Compensating transaction: restored ALLOWED status for '
+                    f'user {telegram_id} and agent {agent_id}'
+                )
+            except Exception as rollback_error:
+                LOGGER.critical(
+                    f'Failed to rollback authorization status after detach failure: '
+                    f'{rollback_error}. Manual intervention required.'
+                )
+        await message.answer(
+            Text('❌ Failed to detach assistant. Please check logs.').as_markdown()
+        )
+        return
+
+    # Switch selected_agent if detaching the currently selected agent
+    if identity.selected_agent == agent_id:
+        # Get oldest remaining agent (limit=1 for performance)
+        page = await client.identities.agents.list(
+            identity_id=identity.identity_id, limit=1, order='asc'
+        )
+        # Agent is already detached, so page.items won't include it
+        remaining_agents = page.items
+
+        if remaining_agents:
+            # Switch to the oldest remaining agent
+            new_agent_id = remaining_agents[0].id
+            await set_selected_agent_query(
+                gel_client, identity_id=identity.identity_id, agent_id=new_agent_id
+            )
+            LOGGER.info(
+                f'Switched selected_agent to {new_agent_id} for user {telegram_id} '
+                f'after detaching {agent_id}'
+            )
+        else:
+            # No agents left - reset selected_agent to None
+            await set_selected_agent_query(
+                gel_client, identity_id=identity.identity_id, agent_id=None
+            )
+            LOGGER.info(
+                f'User {telegram_id} has no agents left after detaching {agent_id}. '
+                f'Reset selected_agent to None.'
+            )
+
+    await message.answer(
+        Text(
+            f'✅ Assistant detached successfully\n\n'
+            f'User: {telegram_id}\n'
+            f'Agent ID: {agent_id}'
+        ).as_markdown()
+    )
+
+    # Notify user
+    try:
+        await bot.send_message(
+            chat_id=telegram_id,
+            text=Text(
+                f'🚫 Your access to an assistant has been revoked.\n\n'
+                f'Agent ID: {agent_id}\n\n'
+                'If you believe this was done in error, please contact the administrator.'
+            ).as_markdown(),
+        )
+    except Exception as e:
+        LOGGER.error(f'Failed to notify user {telegram_id} about detachment: {e}')
+
+
 @auth_router.message(Command('users'), AdminOnlyFilter)
 async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
     """List active users."""
@@ -269,7 +496,7 @@ async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
         await message.answer(Text('No active users.').as_markdown())
         return
 
-    response_lines = ['👥 Active Users:\n']
+    response_parts = [Text('👥 Active Users:')]
 
     # Group by telegram_id (DB already returns sorted by telegram_id)
     for _, requests in groupby(all_requests, key=lambda r: r.user.telegram_id):
@@ -277,13 +504,17 @@ async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
         requests_list = list(requests)
         user = requests_list[0].user
         username_str = f'@{user.username}' if user.username else 'no username'
-        response_lines.append(
-            f'• {user.full_name or user.first_name} ({username_str})\n'
-            f'  Telegram ID: {user.telegram_id}\n'
+        response_parts.append(
+            Text(
+                f'• {user.full_name or user.first_name} ({username_str})\n  Telegram ID: ',
+                Code(str(user.telegram_id)),
+            )
         )
 
         # List all accesses for this user
         for req in requests_list:
-            response_lines.append(f'  └─ {req.resource_type.value}: {req.resource_id}\n')
+            response_parts.append(
+                Text(f'  └─ {req.resource_type.value}: ', Code(req.resource_id))
+            )
 
-    await message.answer(Text(''.join(response_lines)).as_markdown())
+    await message.answer(as_list(*response_parts).as_markdown())

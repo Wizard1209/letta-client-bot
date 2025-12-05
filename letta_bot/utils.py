@@ -2,6 +2,7 @@ from collections.abc import Callable
 from functools import wraps
 import time
 from typing import Any, ParamSpec, TypeVar
+from uuid import UUID
 
 P = ParamSpec('P')
 R = TypeVar('R')
@@ -39,3 +40,21 @@ def async_cache(ttl: int = 300) -> Callable[[Callable[P, R]], Callable[P, R]]:
         return wrapper  # type: ignore[return-value]
 
     return decorator
+
+
+def validate_agent_id(agent_id: str) -> UUID | None:
+    """Validate agent_id format and return UUID if valid.
+
+    Args:
+        agent_id: Agent ID string (expected format: "agent-{uuid}")
+
+    Returns:
+        UUID object if valid, None otherwise
+    """
+    if not agent_id.startswith('agent-'):
+        return None
+    try:
+        uuid_part = agent_id.removeprefix('agent-')
+        return UUID(uuid_part)
+    except ValueError:
+        return None

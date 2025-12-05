@@ -1,4 +1,5 @@
 import logging
+from uuid import UUID
 
 from aiogram import Bot, Router
 from aiogram.filters.callback_data import CallbackData
@@ -11,9 +12,17 @@ from gel import AsyncIOExecutor
 from httpx import ReadTimeout
 from letta_client import APIError
 
-from letta_bot.client import client, get_default_agent
+from letta_bot.client import (
+    attach_identity_to_agent,
+    client,
+    get_agent_creator_telegram_id,
+    get_default_agent,
+)
 from letta_bot.config import CONFIG
 from letta_bot.letta_sdk_extensions import context_window_overview, list_templates
+from letta_bot.queries.check_pending_agent_access_request_async_edgeql import (
+    check_pending_agent_access_request as check_pending_agent_access_request_query,
+)
 from letta_bot.queries.check_pending_request_async_edgeql import (
     check_pending_request as check_pending_request_query,
 )
@@ -24,15 +33,29 @@ from letta_bot.queries.create_auth_request_async_edgeql import (
 from letta_bot.queries.get_allowed_identity_async_edgeql import (
     get_allowed_identity as get_allowed_identity_query,
 )
-from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
+from letta_bot.queries.get_auth_request_by_id_async_edgeql import (
+    get_auth_request_by_id as get_auth_request_by_id_query,
+)
+from letta_bot.queries.get_identity_async_edgeql import (
+    GetIdentityResult,
+    get_identity as get_identity_query,
+)
+from letta_bot.queries.get_user_by_telegram_id_async_edgeql import (
+    get_user_by_telegram_id as get_user_by_telegram_id_query,
+)
 from letta_bot.queries.is_registered_async_edgeql import (
     is_registered as is_registered_query,
+)
+from letta_bot.queries.resolve_auth_request_async_edgeql import (
+    AuthStatus,
+    resolve_auth_request as resolve_auth_request_query,
 )
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
 )
 from letta_bot.response_handler import AgentStreamHandler
 from letta_bot.transcription import TranscriptionError, get_transcription_service
+from letta_bot.utils import validate_agent_id
 
 LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +72,13 @@ class NewAssistantCallback(CallbackData, prefix='newassistant'):
 
 class SwitchAssistantCallback(CallbackData, prefix='switch'):
     agent_id: str
+
+
+class AgentAccessCallback(CallbackData, prefix='agentaccess'):
+    """Callback data for agent access request approval/denial by owners."""
+
+    request_id: str
+    action: str
 
 
 @agent_commands_router.message(Command('botaccess'))
@@ -293,6 +323,388 @@ async def handle_switch_assistant(
 
     # Toast notification for success
     await callback.answer('✅ Assistant switched')
+
+
+@agent_commands_router.message(Command('accessassistant'), flags={'require_identity': True})
+async def request_agent_access(
+    message: Message,
+    bot: Bot,
+    gel_client: AsyncIOExecutor,
+    identity: GetIdentityResult,
+) -> None:
+    """Request access to another user's agent or unowned agent."""
+    if not message.from_user:
+        return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer(Text('Usage: /accessassistant <agent_id>').as_markdown())
+        return
+
+    agent_id = parts[1]
+
+    # Validate agent_id format: agent-{uuid}
+    if not validate_agent_id(agent_id):
+        await message.answer(
+            Text('Invalid agent ID format. Must be agent-{uuid}.').as_markdown()
+        )
+        return
+
+    # First, check if agent exists and get identities
+    try:
+        agent = await client.agents.retrieve(
+            agent_id=agent_id, include=['agent.identities']
+        )
+    except APIError as e:
+        LOGGER.error(f'Failed to retrieve agent {agent_id}: {e}')
+        if 'not found' in str(e).lower() or '404' in str(e):
+            await message.answer(
+                Text(
+                    f'❌ Assistant with ID {agent_id} not found.\n\n'
+                    'Please check the agent ID and try again.'
+                ).as_markdown()
+            )
+        else:
+            await message.answer(
+                Text(
+                    '❌ API error while checking assistant. Please try again later.'
+                ).as_markdown()
+            )
+        return
+
+    try:
+        # Check if user already has access to this agent
+        user_has_access = agent.identities is not None and any(
+            ident.id == identity.identity_id for ident in agent.identities
+        )
+        if user_has_access:
+            await message.answer(
+                Text('✅ You already have access to this assistant.').as_markdown()
+            )
+            return
+
+        # Check if user already has a pending request for this agent
+        if await check_pending_agent_access_request_query(
+            gel_client,
+            telegram_id=message.from_user.id,
+            agent_id=agent_id,
+            resource_type=ResourceType.ACCESS_AGENT,
+            status=AuthStatus.PENDING,
+        ):
+            await message.answer(
+                Text(
+                    '⏳ You already have a pending request for this assistant. '
+                    'Please wait for approval.'
+                ).as_markdown()
+            )
+            return
+
+        # Get creator's telegram_id from agent tags
+        creator_telegram_id = await get_agent_creator_telegram_id(agent_id)
+
+        # Check for invalid state: agent has identities but no creator tag
+        agent_has_identities = agent.identities is not None and len(agent.identities) > 0
+        if agent_has_identities and not creator_telegram_id:
+            LOGGER.error(
+                f'Agent {agent_id} has {len(agent.identities)} identities '
+                f'but no creator tag. Invalid state.'
+            )
+            await message.answer(
+                Text(
+                    '❌ This assistant is in an invalid state:\n\n'
+                    'It has users but no owner. Please contact an administrator '
+                    'to fix this issue.'
+                ).as_markdown()
+            )
+            return
+
+        # Case 1: Agent has no creator tag - send request to admins
+        if not creator_telegram_id:
+            await create_auth_request_query(
+                gel_client,
+                telegram_id=message.from_user.id,
+                resource_type=ResourceType.ACCESS_AGENT,
+                resource_id=agent_id,
+            )
+
+            await message.answer(
+                Text(
+                    '✅ Access request submitted to admins '
+                    'for unowned assistant.\n\n'
+                    'Pending admin approval.'
+                ).as_markdown()
+            )
+
+            # Notify admins
+            if CONFIG.admin_ids is not None:
+                for admin_id in CONFIG.admin_ids:
+                    await bot.send_message(
+                        admin_id,
+                        Text(
+                            f'📬 New assistant access request\n\n'
+                            f'User: {message.from_user.full_name} '
+                            f'(@{message.from_user.username})\n'
+                            f'Telegram ID: {message.from_user.id}\n'
+                            f'Agent ID: {agent_id}\n\n'
+                            'This assistant has no creator tag. '
+                            'Use /pending to review.'
+                        ).as_markdown(),
+                    )
+            return
+
+        # Case 2: Agent has creator tag - send request to creator
+        # Check if creator exists in database
+        creator_user = await get_user_by_telegram_id_query(
+            gel_client, telegram_id=creator_telegram_id
+        )
+
+        if not creator_user:
+            # Fallback to admins if creator not found in database
+            LOGGER.warning(
+                f'Creator with telegram_id {creator_telegram_id} not found in database '
+                f'for agent {agent_id}. Falling back to admins.'
+            )
+
+            await create_auth_request_query(
+                gel_client,
+                telegram_id=message.from_user.id,
+                resource_type=ResourceType.ACCESS_AGENT,
+                resource_id=agent_id,
+            )
+
+            await message.answer(
+                Text(
+                    '✅ Access request submitted to admins '
+                    '(assistant creator unavailable).\n\n'
+                    'Pending admin approval.'
+                ).as_markdown()
+            )
+
+            # Notify admins
+            if CONFIG.admin_ids is not None:
+                for admin_id in CONFIG.admin_ids:
+                    await bot.send_message(
+                        admin_id,
+                        Text(
+                            f'📬 New assistant access request\n\n'
+                            f'User: {message.from_user.full_name} '
+                            f'(@{message.from_user.username})\n'
+                            f'Telegram ID: {message.from_user.id}\n'
+                            f'Agent ID: {agent_id}\n\n'
+                            'Assistant creator not found in database. '
+                            'Use /pending to review.'
+                        ).as_markdown(),
+                    )
+            return
+
+        # Create authorization request in database
+        request_result = await create_auth_request_query(
+            gel_client,
+            telegram_id=message.from_user.id,
+            resource_type=ResourceType.ACCESS_AGENT,
+            resource_id=agent_id,
+        )
+
+        # Build inline keyboard for approval/denial
+        builder = InlineKeyboardBuilder()
+        builder.button(
+            text='✅ Approve',
+            callback_data=AgentAccessCallback(
+                request_id=str(request_result.id), action='approve'
+            ).pack(),
+        )
+        builder.button(
+            text='❌ Deny',
+            callback_data=AgentAccessCallback(
+                request_id=str(request_result.id), action='deny'
+            ).pack(),
+        )
+        builder.adjust(2)  # Two buttons per row
+
+        # Notify creator only
+        try:
+            await bot.send_message(
+                creator_telegram_id,
+                Text(
+                    f'📬 Assistant Access Request\n\n'
+                    f'User: {message.from_user.full_name} '
+                    f'(@{message.from_user.username or "no username"})\n'
+                    f'Telegram ID: {message.from_user.id}\n'
+                    f'Agent ID: {agent_id}\n\n'
+                    'Do you want to grant access to this user?'
+                ).as_markdown(),
+                reply_markup=builder.as_markup(),
+            )
+        except Exception as e:
+            LOGGER.error(f'Failed to notify creator {creator_telegram_id}: {e}')
+            await message.answer(
+                Text(
+                    '❌ Failed to notify assistant creator. Please try again later.'
+                ).as_markdown()
+            )
+            return
+
+        await message.answer(
+            Text(
+                '✅ Access request sent to assistant creator.\n\n'
+                'You will be notified when they respond.'
+            ).as_markdown()
+        )
+
+    except Exception as e:
+        LOGGER.error(f'Error in request_agent_access: {e}')
+        await message.answer(
+            Text('❌ An error occurred while processing your request.').as_markdown()
+        )
+        raise
+
+
+@agent_commands_router.callback_query(AgentAccessCallback.filter())
+async def handle_agent_access_callback(
+    callback: CallbackQuery,
+    callback_data: AgentAccessCallback,
+    bot: Bot,
+    gel_client: AsyncIOExecutor,
+) -> None:
+    """Handle owner's approval/denial of agent access request."""
+    if not callback.from_user or not callback.message:
+        return
+
+    try:
+        request_id = UUID(callback_data.request_id)
+
+        # Get request data without modifying it
+        request = await get_auth_request_by_id_query(gel_client, id=request_id)
+
+        if not request:
+            await callback.answer('❌ Request not found or already processed')
+            return
+
+        # Get agent_id from request (always ACCESS_AGENT for this callback)
+        agent_id = request.resource_id
+
+        # Verify ownership: check if caller is creator of the agent or admin
+        creator_telegram_id = await get_agent_creator_telegram_id(agent_id)
+
+        if not creator_telegram_id:
+            # Agent has no creator - only admins can approve
+            if CONFIG.admin_ids is None or callback.from_user.id not in CONFIG.admin_ids:
+                await callback.answer('❌ Only admins can approve unowned agents')
+                LOGGER.warning(
+                    f'User {callback.from_user.id} attempted to approve/deny '
+                    f'agent access request {request_id} '
+                    f'for unowned agent {agent_id} without being admin'
+                )
+                return
+        else:
+            # Agent has creator - only creator can approve
+            if callback.from_user.id != creator_telegram_id:
+                await callback.answer('❌ You are not the creator of this assistant')
+                LOGGER.warning(
+                    f'User {callback.from_user.id} attempted to approve/deny '
+                    f'agent access request {request_id} without being creator. '
+                    f'Actual creator: {creator_telegram_id}'
+                )
+                return
+
+        # Process the action
+        if callback_data.action == 'approve':
+            # Resolve the authorization request
+            result = await resolve_auth_request_query(
+                gel_client, id=request_id, auth_status=AuthStatus.ALLOWED
+            )
+
+            if not result:
+                await callback.answer('❌ Request not found or already processed')
+                return
+
+            # Get requester's identity
+            requester_identity = await get_identity_query(
+                gel_client, telegram_id=result.user.telegram_id
+            )
+
+            if not requester_identity:
+                await callback.answer('❌ Requester identity not found')
+                return
+
+            # Attach agent to requester's identity
+            try:
+                await attach_identity_to_agent(
+                    agent_id=agent_id,
+                    identity_id=requester_identity[0].identity_id,
+                )
+            except Exception as attach_error:
+                # Critical: request approved in DB but agent not attached
+                LOGGER.critical(
+                    f'Failed to attach agent {agent_id} to identity '
+                    f'{requester_identity[0].identity_id} '
+                    f'after approving request {request_id}: {attach_error}'
+                )
+                await callback.answer('❌ Failed to attach assistant (contact admin)')
+                return
+
+            # Update callback message to show approval
+            if isinstance(callback.message, Message):
+                await callback.message.edit_text(
+                    Text(
+                        f'✅ Access granted\n\n'
+                        f'User: {result.user.full_name or result.user.first_name}\n'
+                        f'Agent ID: {agent_id}'
+                    ).as_markdown()
+                )
+
+            # Notify requester
+            try:
+                await bot.send_message(
+                    result.user.telegram_id,
+                    Text(
+                        f'✅ Your assistant access request has been approved!\n\n'
+                        f'Agent ID: {agent_id}\n\n'
+                        'You can now use /switch to select this assistant.'
+                    ).as_markdown(),
+                )
+            except Exception as e:
+                LOGGER.error(f'Failed to notify requester: {e}')
+
+            await callback.answer('✅ Access granted')
+
+        elif callback_data.action == 'deny':
+            result = await resolve_auth_request_query(
+                gel_client, id=request_id, auth_status=AuthStatus.DENIED
+            )
+
+            if not result:
+                await callback.answer('❌ Request not found or already processed')
+                return
+
+            # Update callback message to show denial
+            if isinstance(callback.message, Message):
+                await callback.message.edit_text(
+                    Text(
+                        f'❌ Access denied\n\n'
+                        f'User: {result.user.full_name or result.user.first_name}\n'
+                        f'Agent ID: {agent_id}'
+                    ).as_markdown()
+                )
+
+            # Notify requester
+            try:
+                await bot.send_message(
+                    result.user.telegram_id,
+                    Text(
+                        f'❌ Your assistant access request was denied.\n\n'
+                        f'Agent ID: {agent_id}'
+                    ).as_markdown(),
+                )
+            except Exception as e:
+                LOGGER.error(f'Failed to notify requester: {e}')
+
+            await callback.answer('❌ Access denied')
+
+    except Exception as e:
+        LOGGER.error(f'Error in handle_agent_access_callback: {e}')
+        await callback.answer('❌ Error processing request')
+        raise
 
 
 @agent_commands_router.message(Command('current'), flags={'require_identity': True})
