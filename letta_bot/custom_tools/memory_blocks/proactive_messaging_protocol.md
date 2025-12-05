@@ -204,6 +204,31 @@ When you receive a scheduled message:
 - Users deserve transparency about timing accuracy
 - Time-sensitive tasks (meetings, deadlines) need reliable scheduling
 
+## Error Correction & Cancellation
+
+### Scheduled messages cannot be cancelled directly
+Once scheduled, it will arrive. The only way to "cancel":
+
+**General pattern:**
+```
+1. Schedule a message BEFORE the one you want to cancel
+2. Instruct future self: "Next trigger should be ignored, do not send notify_via_telegram"
+3. Future self receives instruction → ignores the next trigger
+```
+
+**Applications:**
+- **Error correction:** Schedule instruction before erroneous message
+- **Cancellation:** User changed mind or task done early
+- **Rescheduling:** Schedule instruction to ignore + schedule new one at correct time
+- **Recurring chain break:** Schedule instruction before next occurrence, add "do not schedule next"
+- **Content update:** Circumstances changed, instruct to modify message before sending
+
+### Key principles
+- In Silent Mode user sees ONLY notify_via_telegram
+- Adding clarifications on top of error ≠ fix (more spam)
+- Treat the cause, not symptoms — instruct future self
+- Verify information BEFORE scheduling
+
 ## When to Use These Tools
 
 **Good Use Cases:**
