@@ -1,7 +1,7 @@
-"""Tag all agents with creator-tg-<telegram_id> based on identity identifier_key.
+"""Tag all agents with owner and creator tags based on identity identifier_key.
 
 Usage:
-    uv run python -m devscripts.tag_agents_with_creator
+    uv run python -m devscripts.tag_agents_with_owner
 """
 
 import asyncio
@@ -41,10 +41,12 @@ async def process_identity(identity: Identity) -> int:
         return 0
 
     telegram_id = identifier_key.removeprefix('tg-')
+    owner_tag = f'owner-tg-{telegram_id}'
     creator_tag = f'creator-tg-{telegram_id}'
 
     print(f'Processing identity: {identity.name}')
     print(f'  Identifier: {identifier_key}')
+    print(f'  Owner tag: {owner_tag}')
     print(f'  Creator tag: {creator_tag}')
 
     try:
@@ -60,33 +62,45 @@ async def process_identity(identity: Identity) -> int:
 
         # Prepare tagging tasks
         tag_tasks = []
-        agents_to_tag = []
 
         for agent in agents:
             current_tags = agent.tags if agent.tags else []
+            has_owner = owner_tag in current_tags
+            has_creator = creator_tag in current_tags
 
-            # Skip if already has creator tag
-            if creator_tag in current_tags:
-                print(f'    ✓ {agent.name}: already has creator tag')
+            # Skip if already has both tags
+            if has_owner and has_creator:
+                print(f'    ✓ {agent.name}: already has both tags')
                 continue
 
-            # Add creator tag
-            new_tags = [*current_tags, creator_tag]
-            tag_tasks.append(tag_agent(agent.id, agent.name, new_tags))
-            agents_to_tag.append(agent.name)
+            # Add missing tags
+            new_tags = list(current_tags)
+            tags_to_add = []
+            if not has_owner:
+                new_tags.append(owner_tag)
+                tags_to_add.append('owner')
+            if not has_creator:
+                new_tags.append(creator_tag)
+                tags_to_add.append('creator')
+
+            tag_tasks.append((agent.id, agent.name, new_tags, tags_to_add))
 
         if not tag_tasks:
             print()
             return 0
 
         # Tag all agents in parallel
-        results = await asyncio.gather(*tag_tasks)
+        results = await asyncio.gather(
+            *[tag_agent(aid, name, tags) for aid, name, tags, _ in tag_tasks]
+        )
 
         # Print results
         tagged_count = 0
-        for agent_name, success, error in results:
+        for (_, agent_name, _, tags_added), (_, success, error) in zip(
+            tag_tasks, results, strict=True
+        ):
             if success:
-                print(f'    ✅ {agent_name}: tagged with {creator_tag}')
+                print(f'    ✅ {agent_name}: added {", ".join(tags_added)} tag(s)')
                 tagged_count += 1
             else:
                 print(f'    ❌ {agent_name}: failed to tag - {error}')
@@ -100,7 +114,7 @@ async def process_identity(identity: Identity) -> int:
 
 
 async def main() -> None:
-    """Tag all agents with creator-tg-<telegram_id>."""
+    """Tag all agents with owner and creator tags."""
     try:
         # Fetch all identities
         page = await client.identities.list(project_id=CONFIG.letta_project_id)

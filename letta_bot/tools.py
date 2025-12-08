@@ -1,4 +1,4 @@
-"""Proactive assistant behavior: notifications and scheduling tool management."""
+"""Tool management: attach, detach, and configure tools for agents."""
 
 import logging
 from pathlib import Path
@@ -45,10 +45,10 @@ def _load_memory_block_content() -> str:
     return memo_path.read_text(encoding='utf-8')
 
 
-notification_router = Router(name=f'{__name__}.commands')
+tools_router = Router(name=f'{__name__}.commands')
 
 
-@notification_router.message(Command('notify'), flags={'require_identity': True})
+@tools_router.message(Command('notify'), flags={'require_identity': True})
 async def notify_command(message: Message, identity: GetIdentityResult) -> None:
     """Handle /notify command - manage proactive assistant behavior."""
     if not message.from_user:
@@ -63,9 +63,7 @@ async def notify_command(message: Message, identity: GetIdentityResult) -> None:
     await handle_notify_status(message, identity.selected_agent)
 
 
-@notification_router.callback_query(
-    NotifyCallback.filter(), flags={'require_identity': True}
-)
+@tools_router.callback_query(NotifyCallback.filter(), flags={'require_identity': True})
 async def handle_notify_callback(
     callback: CallbackQuery,
     callback_data: NotifyCallback,

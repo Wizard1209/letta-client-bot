@@ -86,7 +86,7 @@ async def create_agent_from_template(
 ) -> None:
     """Create agent from template in Letta API."""
     # Local import to avoid circular dependency
-    from letta_bot.agent import NewAssistantCallback
+    from letta_bot.auth import NewAssistantCallback
 
     info = NewAssistantCallback.unpack(template_id)
 
@@ -154,28 +154,28 @@ async def get_agent_identity_ids(agent_id: str) -> list[str]:
     return [identity.id for identity in agent.identities]
 
 
-async def get_agent_creator_telegram_id(agent_id: str) -> int | None:
-    """Extract creator's telegram_id from agent tags.
+async def get_agent_owner_telegram_id(agent_id: str) -> int | None:
+    """Extract owner's telegram_id from agent tags.
 
     Args:
         agent_id: The ID of the agent
 
     Returns:
-        Creator's telegram_id if found, None otherwise
+        Owner's telegram_id if found, None otherwise
 
     Raises:
         APIError: If the retrieve operation fails
     """
     agent = await client.agents.retrieve(agent_id=agent_id)
     if agent.tags is not None:
-        # Search for tag with format: creator-tg-{telegram_id}
+        # Search for tag with format: owner-tg-{telegram_id}
         for tag in agent.tags:
-            if tag.startswith('creator-tg-'):
+            if tag.startswith('owner-tg-'):
                 try:
-                    telegram_id_str = tag.removeprefix('creator-tg-')
+                    telegram_id_str = tag.removeprefix('owner-tg-')
                     return int(telegram_id_str)
                 except ValueError:
-                    LOGGER.warning(f'Invalid creator tag format: {tag}')
+                    LOGGER.warning(f'Invalid owner tag format: {tag}')
                     continue
 
     return None

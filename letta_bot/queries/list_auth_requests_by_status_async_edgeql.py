@@ -44,11 +44,11 @@ class AuthStatus02(enum.Enum):
 class ListAuthRequestsByStatusResult(NoPydanticValidation):
     id: uuid.UUID
     status: AuthStatus
-    created_at: datetime.datetime
     message: str | None
     resource_id: str
     resource_type: ResourceType
     response: str | None
+    created_at: datetime.datetime
     updated_by: int | None
     user: ListAuthRequestsByStatusResultUser
 
@@ -61,9 +61,9 @@ class ListAuthRequestsByStatusResultUser(NoPydanticValidation):
     first_name: str
     last_name: str | None
     full_name: str | None
-    first_seen: datetime.datetime
     is_bot: bool
     language_code: str | None
+    first_seen: datetime.datetime
 
 
 class ResourceType(enum.Enum):

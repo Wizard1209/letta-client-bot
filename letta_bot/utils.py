@@ -4,10 +4,6 @@ import time
 from typing import Any, ParamSpec, TypeVar
 from uuid import UUID
 
-from aiogram import Bot
-
-from letta_bot.config import CONFIG
-
 P = ParamSpec('P')
 R = TypeVar('R')
 
@@ -62,16 +58,3 @@ def validate_uuid(uuid_str: str) -> bool:
         return True
     except ValueError:
         return False
-
-
-async def notify_admins(bot: Bot, message: str) -> None:
-    """Send notification message to all configured admins.
-
-    Args:
-        bot: Telegram Bot instance
-        message: Message text to send (supports MarkdownV2)
-    """
-
-    if CONFIG.admin_ids is not None:
-        for admin_id in CONFIG.admin_ids:
-            await bot.send_message(admin_id, message)

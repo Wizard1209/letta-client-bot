@@ -9,6 +9,7 @@
 
 **Assistants**
 /newassistant - Request a new AI assistant
+/attach - Request access to an existing assistant by ID
 /switch - Switch between your assistants
 /current - View current assistant info and memory status
 /context - View assistant context window breakdown

@@ -17,7 +17,7 @@ from letta_bot.auth import auth_router
 from letta_bot.config import CONFIG
 from letta_bot.info import info_router, load_info_command_content
 from letta_bot.middlewares import setup_middlewares
-from letta_bot.notification import notification_router
+from letta_bot.tools import tools_router
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,10 +46,10 @@ def setup_bot_handlers(dp: Dispatcher) -> None:
     LOGGER.info('Auth handlers initialized')
     # Agent messages and management commands
     # NOTE: all other messages fall to the agent
-    agent_commands_router.include_router(notification_router)
+    agent_commands_router.include_router(tools_router)
     agent_commands_router.include_router(agent_router)
     dp.include_router(agent_commands_router)
-    LOGGER.info('Notification handlers initialized')
+    LOGGER.info('Tools handlers initialized')
     LOGGER.info('Agent handlers initialized')
 
 
