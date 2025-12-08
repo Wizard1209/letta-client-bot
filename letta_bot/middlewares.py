@@ -49,8 +49,8 @@ class UserMiddleware(BaseMiddleware):
             LOGGER.error('gel_client not found in middleware data')
             return None
 
-        # Get user from event
-        from_user = event.from_user
+        # Get user from event (only Message and CallbackQuery have from_user)
+        from_user = getattr(event, 'from_user', None)
 
         if not from_user:
             return await handler(event, data)
@@ -125,6 +125,24 @@ class IdentityMiddleware(BaseMiddleware):
 
         # Inject identity into handler data
         data['identity'] = identity_list[0]
+
+        # FIXME: make it work...
+        # # Validate that the selected agent still belongs to the identity
+        # agent_identity_ids = await get_agent_identity_ids(identity.selected_agent)
+        # if identity.identity_id not in agent_identity_ids:
+        #     LOGGER.warning(
+        #         f'Selected agent {identity.selected_agent} no longer belongs to identity '
+        #         f'{identity.identity_id}. Resetting selected_agent.'
+        #     )
+        #     await reset_selected_agent_query(gel_client, identity_id=identity.identity_id)
+        #     await message.answer(
+        #         Text(
+        #             '❌ Your selected assistant is no longer available. '
+        #             'Use /switch to select another one.'
+        #         ).as_markdown()
+        #     )
+        #     return
+
         return await handler(event, data)
 
 

@@ -7,11 +7,21 @@ from aiogram.filters.command import Command
 from aiogram.types import Message
 from aiogram.utils.formatting import Code, Text, as_list
 from gel import AsyncIOExecutor
+from letta_client import APIError
 
-from letta_bot.client import create_agent_from_template, get_or_create_letta_identity
+from letta_bot.client import (
+    attach_identity_to_agent,
+    client,
+    create_agent_from_template,
+    get_or_create_letta_identity,
+)
 from letta_bot.filters import AdminOnlyFilter
 from letta_bot.queries.create_identity_async_edgeql import (
     create_identity as create_identity_query,
+)
+from letta_bot.queries.get_auth_request_by_id_async_edgeql import (
+    AuthStatus as AuthStatus03,
+    get_auth_request_by_id as get_auth_request_by_id_query,
 )
 from letta_bot.queries.get_identity_async_edgeql import (
     get_identity as get_identity_query,
@@ -28,6 +38,10 @@ from letta_bot.queries.resolve_auth_request_async_edgeql import (
 from letta_bot.queries.revoke_user_access_async_edgeql import (
     revoke_user_access as revoke_user_access_query,
 )
+from letta_bot.queries.update_auth_request_status_async_edgeql import (
+    update_auth_request_status as update_auth_request_status_query,
+)
+from letta_bot.utils import validate_uuid
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +67,9 @@ async def pending_command(message: Message, gel_client: AsyncIOExecutor) -> None
         response_lines.append(
             Text(
                 f'• User: {user.full_name or user.first_name} ({username_str})\n',
-                f'  Telegram ID: {user.telegram_id}\n',
+                '  Telegram ID: ',
+                Code(user.telegram_id),
+                '\n',
                 '  Request ID: ',
                 Code(req.id),
                 '\n',
@@ -79,20 +95,32 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
         await message.answer(Text('Usage: /allow <request_uuid>').as_markdown())
         return
 
-    try:
-        request_id = UUID(parts[1])
-    except (ValueError, IndexError):
+    request_uuid = parts[1].strip()
+
+    # Validate request_uuid format
+    if not validate_uuid(request_uuid):
         await message.answer(
             Text('Invalid request_uuid. Must be a valid UUID.').as_markdown()
         )
         return
 
-    result = await resolve_auth_request_query(
-        gel_client, id=request_id, auth_status=AuthStatus.ALLOWED
-    )
+    request_id = UUID(request_uuid)
+
+    # Fetch request data WITHOUT modifying it
+    result = await get_auth_request_by_id_query(gel_client, id=request_id)
 
     if not result:
         await message.answer(Text(f'Request {request_id} not found').as_markdown())
+        return
+
+    # Check if request is still pending
+    if result.status != AuthStatus03.PENDING:
+        await message.answer(
+            Text(
+                f'Request {request_id} has already been processed '
+                f'(status: {result.status.value})'
+            ).as_markdown()
+        )
         return
 
     resource_type, resource_id = result.resource_type, result.resource_id
@@ -119,6 +147,12 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                     # the first one is optional in SDK and used for access"
                     identity_id=letta_identity.id or letta_identity.identifier_key,
                 )
+
+            # Update status to ALLOWED only after successful identity creation
+            await update_auth_request_status_query(
+                gel_client, id=request_id, auth_status=AuthStatus.ALLOWED
+            )
+
         case ResourceType.CREATE_AGENT_FROM_TEMPLATE:
             identity_result = await get_identity_query(
                 gel_client, telegram_id=result.user.telegram_id
@@ -130,7 +164,86 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                     'Cannot create agent from template without identity'
                 )
             await create_agent_from_template(
-                template_id=resource_id, identity_id=identity_result[0].identity_id
+                template_id=resource_id,
+                identity_id=identity_result[0].identity_id,
+                tags=[f'creator-tg-{result.user.telegram_id}'],
+            )
+
+            # Update status to ALLOWED only after successful agent creation
+            await update_auth_request_status_query(
+                gel_client, id=request_id, auth_status=AuthStatus.ALLOWED
+            )
+
+        case ResourceType.ACCESS_AGENT:
+            # Attach agent to requester's identity
+            identity_result = await get_identity_query(
+                gel_client, telegram_id=result.user.telegram_id
+            )
+            if not identity_result:
+                await message.answer(
+                    Text(
+                        f'❌ User {result.user.telegram_id} does not have an identity. '
+                        'They must request identity access first.'
+                    ).as_markdown()
+                )
+                return
+
+            # Check if agent still exists before attaching
+            try:
+                agent = await client.agents.retrieve(agent_id=resource_id)
+            except APIError as e:
+                LOGGER.error(f'Agent {resource_id} not found during approval: {e}')
+                await message.answer(
+                    Text(
+                        f'❌ Agent {resource_id} no longer exists. Cannot grant access.'
+                    ).as_markdown()
+                )
+                return
+
+            # Check if agent has a creator tag
+            has_creator_tag = False
+            if agent.tags:
+                has_creator_tag = any(tag.startswith('creator-tg-') for tag in agent.tags)
+
+            # If no creator tag, assign first requester as creator
+            if not has_creator_tag:
+                creator_tag = f'creator-tg-{result.user.telegram_id}'
+                existing_tags = list(agent.tags) if agent.tags else []
+                new_tags = existing_tags + [creator_tag]
+
+                try:
+                    await client.agents.update(agent_id=resource_id, tags=new_tags)
+                    LOGGER.info(
+                        f'Assigned creator tag {creator_tag} to agent {resource_id} '
+                        f'for first requester'
+                    )
+                except APIError as e:
+                    LOGGER.error(f'Failed to update agent tags: {e}')
+                    await message.answer(
+                        Text('❌ Failed to update agent tags').as_markdown()
+                    )
+                    return
+            else:
+                creator_tag = f'creator-tg-{result.user.telegram_id}'
+                if agent.tags and creator_tag not in agent.tags:
+                    LOGGER.warning(
+                        f'User {result.user.telegram_id} attempted to access agent '
+                        f'{resource_id} without being the creator'
+                    )
+                    await message.answer(
+                        Text(
+                            '⚠️ Cannot approve request: You are not the owner of this '
+                            'assistant. Only the creator can grant access to other users.'
+                        ).as_markdown()
+                    )
+                    return
+
+            await attach_identity_to_agent(
+                agent_id=resource_id, identity_id=identity_result[0].identity_id
+            )
+
+            await update_auth_request_status_query(
+                gel_client, id=request_id, auth_status=AuthStatus.ALLOWED
             )
 
     await message.answer(
@@ -143,6 +256,12 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
             user_message = (
                 '✅ Your request for identity access has been approved!\n\n'
                 'Once your assistant will be available I will let you know'
+            )
+        elif resource_type == ResourceType.ACCESS_AGENT:
+            user_message = (
+                f'✅ Your assistant access request has been approved!\n\n'
+                f'Agent ID: {resource_id}\n\n'
+                'You can now use /switch to select this assistant.'
             )
         else:
             user_message = (
@@ -167,9 +286,10 @@ async def deny_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) 
         await message.answer(Text('Usage: /deny <request_uuid> [reason]').as_markdown())
         return
 
-    try:
-        request_id = UUID(parts[1])
-    except (ValueError, IndexError):
+    request_uuid = parts[1].strip()
+
+    # Validate request_uuid format
+    if not validate_uuid(request_uuid):
         await message.answer(
             Text('Invalid request_uuid. Must be a valid UUID.').as_markdown()
         )
@@ -178,6 +298,7 @@ async def deny_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) 
     reason = parts[2] if len(parts) > 2 else None
 
     # Update request status to denied
+    request_id = UUID(request_uuid)
     result = await resolve_auth_request_query(
         gel_client, id=request_id, auth_status=AuthStatus.DENIED
     )
@@ -269,7 +390,7 @@ async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
         await message.answer(Text('No active users.').as_markdown())
         return
 
-    response_lines = ['👥 Active Users:\n']
+    response_parts = [Text('👥 Active Users:')]
 
     # Group by telegram_id (DB already returns sorted by telegram_id)
     for _, requests in groupby(all_requests, key=lambda r: r.user.telegram_id):
@@ -277,13 +398,17 @@ async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
         requests_list = list(requests)
         user = requests_list[0].user
         username_str = f'@{user.username}' if user.username else 'no username'
-        response_lines.append(
-            f'• {user.full_name or user.first_name} ({username_str})\n'
-            f'  Telegram ID: {user.telegram_id}\n'
+        response_parts.append(
+            Text(
+                f'• {user.full_name or user.first_name} ({username_str})\n  Telegram ID: ',
+                Code(str(user.telegram_id)),
+            )
         )
 
         # List all accesses for this user
         for req in requests_list:
-            response_lines.append(f'  └─ {req.resource_type.value}: {req.resource_id}\n')
+            response_parts.append(
+                Text(f'  └─ {req.resource_type.value}: ', req.resource_id)
+            )
 
-    await message.answer(Text(''.join(response_lines)).as_markdown())
+    await message.answer(as_list(*response_parts).as_markdown())

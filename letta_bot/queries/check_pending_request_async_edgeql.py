@@ -7,6 +7,13 @@ import enum
 import gel
 
 
+class AuthStatus(enum.Enum):
+    PENDING = "pending"
+    ALLOWED = "allowed"
+    DENIED = "denied"
+    REVOKED = "revoked"
+
+
 class ResourceType(enum.Enum):
     ACCESS_IDENTITY = "access_identity"
     CREATE_AGENT_FROM_TEMPLATE = "create_agent_from_template"
@@ -18,6 +25,8 @@ async def check_pending_request(
     *,
     telegram_id: int,
     resource_type: ResourceType,
+    status: AuthStatus | None = None,
+    resource_id: str | None = None,
 ) -> bool:
     return await executor.query_single(
         """\
@@ -26,9 +35,15 @@ async def check_pending_request(
             filter
                 .user.telegram_id = <int64>$telegram_id
                 and .resource_type = <ResourceType>$resource_type
-                and .status = AuthStatus.pending
+                and .status = <optional AuthStatus>$status ?? AuthStatus.pending
+                and (
+                    <optional str>$resource_id ?? '' = ''
+                    or .resource_id = <optional str>$resource_id
+                )
         )\
         """,
         telegram_id=telegram_id,
         resource_type=resource_type,
+        status=status,
+        resource_id=resource_id,
     )
