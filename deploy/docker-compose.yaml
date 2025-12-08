@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       # Authorization
-      GEL_SERVER_PASSWORD: ${GEL_SERVER_PASSWORD}
+      GEL_SERVER_PASSWORD: ${GEL_PASSWORD}
       # Allow plain HTTP from Traefik (TLS terminated at proxy)
       GEL_SERVER_HTTP_ENDPOINT_SECURITY: optional
       # Allow non-TLS binary connections for internal bot connection
