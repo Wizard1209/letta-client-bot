@@ -25,7 +25,8 @@ services:
       - 5656
     healthcheck:
       test: ["CMD", "curl", "-f", "http://gel:5656/server/status/ready"]
-      interval: 30s
+      interval: 120s
+      start_interval: 5s
       timeout: 10s
       retries: 3
       start_period: 60s
