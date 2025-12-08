@@ -1,5 +1,40 @@
 
 services:
+  gel:
+    image: geldata/gel
+    container_name: gel
+    restart: unless-stopped
+    environment:
+      # Authorization
+      GEL_SERVER_PASSWORD: ${GEL_SERVER_PASSWORD}
+      # Allow plain HTTP from Traefik (TLS terminated at proxy)
+      GEL_SERVER_HTTP_ENDPOINT_SECURITY: optional
+      # Enable web-based admin UI
+      GEL_SERVER_ADMIN_UI: enabled
+      # Apply migrations from /dbschema/migrations on startup
+      GEL_DOCKER_APPLY_MIGRATIONS: always
+    volumes:
+      # Schema and migrations from repository
+      - ../dbschema:/dbschema:ro
+      # Persistent data storage
+      - gel-data:/var/lib/gel/data
+    expose:
+      - 5656
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5656/server/status/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.gel.rule=Host(`db.ltgmc.space`)
+      - traefik.http.routers.gel.tls=true
+      - traefik.http.routers.gel.tls.certResolver=lets-encrypt-ssl
+      - traefik.http.services.gel.loadbalancer.server.port=5656
+    networks:
+      - monitoring
+
   letta-bot:
     build:
       context: ..
@@ -16,10 +51,15 @@ services:
       - "traefik.http.routers.letta-bot.rule=Host(`${WEBHOOK_HOST}`) && PathPrefix(`${WEBHOOK_PATH}`)"
       - "traefik.http.routers.letta-bot.tls=true"
       - "traefik.http.routers.letta-bot.tls.certResolver=lets-encrypt-ssl"
+    depends_on:
+      gel:
+        condition: service_healthy
     networks:
       - monitoring
 
 volumes:
+  gel-data:
+    driver: local
   bot-storage:
     driver: local
 
