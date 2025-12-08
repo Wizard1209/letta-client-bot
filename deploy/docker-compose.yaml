@@ -9,6 +9,8 @@ services:
       GEL_SERVER_PASSWORD: ${GEL_SERVER_PASSWORD}
       # Allow plain HTTP from Traefik (TLS terminated at proxy)
       GEL_SERVER_HTTP_ENDPOINT_SECURITY: optional
+      # Allow non-TLS binary connections for internal bot connection
+      GEL_SERVER_BINARY_ENDPOINT_SECURITY: optional
       GEL_SERVER_TLS_CERT_MODE: generate_self_signed
       # Enable web-based admin UI
       GEL_SERVER_ADMIN_UI: enabled
@@ -22,7 +24,7 @@ services:
     expose:
       - 5656
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5656/server/status/ready"]
+      test: ["CMD", "curl", "-f", "http://gel/server/status/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
