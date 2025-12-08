@@ -25,10 +25,6 @@ class Config(BaseSettings):
     letta_project_id: str
     letta_api_key: str
 
-    # Gel/EdgeDB configuration
-    gel_instance: str | None = None
-    gel_secret_key: str | None = None
-
     # Scheduler configuration for schedule_message tool
     scheduler_url: str | None = None
     scheduler_api_key: str | None = None
