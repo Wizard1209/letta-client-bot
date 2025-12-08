@@ -9,6 +9,7 @@ services:
       GEL_SERVER_PASSWORD: ${GEL_SERVER_PASSWORD}
       # Allow plain HTTP from Traefik (TLS terminated at proxy)
       GEL_SERVER_HTTP_ENDPOINT_SECURITY: optional
+      GEL_SERVER_TLS_CERT_MODE: generate_self_signed
       # Enable web-based admin UI
       GEL_SERVER_ADMIN_UI: enabled
       # Apply migrations from /dbschema/migrations on startup
