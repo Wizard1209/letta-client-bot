@@ -170,6 +170,12 @@ async def assistant_info_handler(
         message_count = len(agent.message_ids) if agent.message_ids else 0
         tools_count = len(agent.tools) if agent.tools else 0
 
+        memory_section = (
+            as_marked_list(*memory_blocks, marker='  • ')
+            if memory_blocks
+            else Text('  No memory blocks')
+        )
+
         content = as_list(
             Text('🤖 ', Bold(agent.name)),
             Text(),  # Empty line
@@ -179,7 +185,7 @@ async def assistant_info_handler(
             ),
             Text(),  # Empty line
             Text('📝 ', Bold('Memory Blocks (chars):')),
-            as_marked_list(*memory_blocks, marker='  • '),
+            memory_section,
             Text(),  # Empty line
             Text('💬 ', Bold('Message History: '), f'{message_count} messages'),
             Text('🔧 ', Bold('Tools: '), str(tools_count)),

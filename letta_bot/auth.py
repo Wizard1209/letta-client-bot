@@ -106,6 +106,18 @@ async def request_owner_permission(
     )
     builder.adjust(2)
 
+    # Fetch agent details for richer notification
+    agent_info = f'Agent ID: {agent_id}'
+    try:
+        agent = await client.agents.retrieve(agent_id)
+        agent_info = (
+            f'Assistant: {agent.name}\n'
+            f'Model: {agent.model}\n'
+            f'ID: {agent_id}'
+        )
+    except APIError as e:
+        LOGGER.warning(f'Could not fetch agent {agent_id} details: {e}')
+
     try:
         await bot.send_message(
             owner_telegram_id,
@@ -113,8 +125,8 @@ async def request_owner_permission(
                 f'📬 Assistant Access Request\n\n'
                 f'User: {requester_name} '
                 f'(@{requester_username or "no username"})\n'
-                f'Telegram ID: {requester_telegram_id}\n'
-                f'Agent ID: {agent_id}\n\n'
+                f'Telegram ID: {requester_telegram_id}\n\n'
+                f'{agent_info}\n\n'
                 'Do you want to grant access to this user?'
             ).as_markdown(),
             reply_markup=builder.as_markup(),
