@@ -321,8 +321,8 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 
 **Phase 2: Resource Request**
 
-- **Identity-only request**: User runs `/request_identity` to request identity access without agent
-- **Agent request**: User runs `/new_agent_from_template` to see available agent templates
+- **Identity-only request**: User runs `/botaccess` to request identity access without agent
+- **Agent request**: User runs `/newassistant` to see available agent templates
 - User selects template from inline keyboard
 - System creates authorization requests:
   - Identity access request (if user doesn't have one) - resource_type: `ACCESS_IDENTITY`
@@ -382,7 +382,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 
 **Phase 5: Agent Management**
 
-- **Switch agents**: `/switch_agent` command lists user's agents with checkmark on selected agent
+- **Switch agents**: `/switch` command lists user's agents with checkmark on selected agent
 - User selects agent from inline keyboard
 - System updates `selected_agent` in database
 - All subsequent messages route to newly selected agent
@@ -514,14 +514,15 @@ letta_bot/
   config.py            # Configuration management (Pydantic settings)
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
-  auth.py              # Admin authorization handlers (/pending, /allow, /deny, /users, /revoke)
-  agent.py             # Agent request handlers, message routing, and Letta API integration
-  client.py            # Shared Letta client instance and Letta API operations
+  auth.py              # All authorization: user requests (/botaccess, /newassistant, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
+  agent.py             # Agent operations: /switch, /current, /context, and message routing to Letta agents
+  client.py            # Shared Letta client instance and Letta API operations (identity, agent, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
-  notification.py      # Notification and scheduling tool management handlers
+  tools.py             # Tool management: attach/detach/configure agent tools (/notify for proactive mode)
+  broadcast.py         # Bot-level messaging: admin notifications, user broadcasts
   response_handler.py  # Agent response stream processing and message formatting
   letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
-  utils.py             # Utility functions (async cache decorator with TTL)
+  utils.py             # Utility functions (async cache decorator with TTL, UUID validation)
   queries/             # EdgeQL queries and auto-generated Python modules
     upsert_user.edgeql                      # Register/update user (upsert on telegram_id)
     is_registered.edgeql                    # Check if user is registered

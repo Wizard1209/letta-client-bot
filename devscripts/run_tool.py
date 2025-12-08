@@ -2,20 +2,20 @@
 """CLI script to test custom Letta tools with .env loaded.
 
 Usage:
-    uv run python development_scripts/run_tool.py <tool_name> [args...]
+    uv run python -m devscripts.run_tool <tool_name> [args...]
 
 Examples:
-    uv run python development_scripts/run_tool.py get_x_user_posts elonmusk 12 10
-    uv run python development_scripts/run_tool.py notify_via_telegram "Hello world"
-    uv run python development_scripts/run_tool.py schedule_message "Reminder" 3600
+    uv run python -m devscripts.run_tool get_x_user_posts elonmusk 12 10
+    uv run python -m devscripts.run_tool notify_via_telegram "Hello world"
+    uv run python -m devscripts.run_tool schedule_message "Reminder" 3600
 """
 
 import argparse
 import importlib.util
 import json
 import os
-import sys
 from pathlib import Path
+import sys
 
 
 def load_env(env_path: Path) -> None:
@@ -115,12 +115,14 @@ def main():
         help='Arguments to pass to the tool function',
     )
     parser.add_argument(
-        '-l', '--list',
+        '-l',
+        '--list',
         action='store_true',
         help='List available tools',
     )
     parser.add_argument(
-        '-e', '--env',
+        '-e',
+        '--env',
         default=str(env_path),
         help=f'Path to .env file (default: {env_path})',
     )

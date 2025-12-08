@@ -9,6 +9,7 @@ Isolating the client here prevents circular import issues.
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from letta_client import APIError, AsyncLetta as LettaClient, ConflictError
 from letta_client.types.identity import Identity
@@ -67,7 +68,7 @@ async def get_or_create_letta_identity(identifier_key: str, name: str) -> Identi
         return identity
     except ConflictError:
         LOGGER.critical(
-            f'Identity already exists but couldnt be retrieved {identifier_key}'
+            f"Identity already exists but couldn't be retrieved {identifier_key}"
         )
         raise
     except APIError:
@@ -80,10 +81,12 @@ async def get_or_create_letta_identity(identifier_key: str, name: str) -> Identi
 # =============================================================================
 
 
-async def create_agent_from_template(template_id: str, identity_id: str) -> None:
+async def create_agent_from_template(
+    template_id: str, identity_id: str, tags: list[str] | None = None
+) -> None:
     """Create agent from template in Letta API."""
     # Local import to avoid circular dependency
-    from letta_bot.agent import NewAssistantCallback
+    from letta_bot.auth import NewAssistantCallback
 
     info = NewAssistantCallback.unpack(template_id)
 
@@ -91,10 +94,14 @@ async def create_agent_from_template(template_id: str, identity_id: str) -> None
     # Client is already configured with project, so it auto-scopes
     template_version = f'{info.template_name}:{info.version}'
 
-    # TODO: mb tags for creator, mb custom name
-    await client.templates.agents.create(
-        template_version=template_version, identity_ids=[identity_id]
-    )
+    # Prepare kwargs with optional tags
+    kwargs: dict[str, Any] = {
+        'template_version': template_version,
+        'identity_ids': [identity_id],
+    }
+    if tags is not None:
+        kwargs['tags'] = tags
+    await client.templates.agents.create(**kwargs)
 
 
 async def get_default_agent(identity_id: str) -> str:
@@ -114,6 +121,64 @@ async def get_default_agent(identity_id: str) -> str:
         identity_id=identity_id, limit=1, order='asc'
     )
     return page.items[0].id
+
+
+async def attach_identity_to_agent(agent_id: str, identity_id: str) -> None:
+    """Attach an identity to an existing agent.
+
+    Args:
+        agent_id: The ID of the agent to attach identity to
+        identity_id: The ID of the identity to attach
+
+    Raises:
+        APIError: If the attach operation fails
+    """
+    await client.agents.identities.attach(agent_id=agent_id, identity_id=identity_id)
+
+
+async def get_agent_identity_ids(agent_id: str) -> list[str]:
+    """Get all identity IDs associated with an agent.
+
+    Args:
+        agent_id: The ID of the agent
+
+    Returns:
+        List of identity IDs attached to the agent (empty list if none)
+
+    Raises:
+        APIError: If the retrieve operation fails
+    """
+    agent = await client.agents.retrieve(agent_id=agent_id)
+    if agent.identities is None:
+        return []
+    return [identity.id for identity in agent.identities]
+
+
+async def get_agent_owner_telegram_id(agent_id: str) -> int | None:
+    """Extract owner's telegram_id from agent tags.
+
+    Args:
+        agent_id: The ID of the agent
+
+    Returns:
+        Owner's telegram_id if found, None otherwise
+
+    Raises:
+        APIError: If the retrieve operation fails
+    """
+    agent = await client.agents.retrieve(agent_id=agent_id)
+    if agent.tags is not None:
+        # Search for tag with format: owner-tg-{telegram_id}
+        for tag in agent.tags:
+            if tag.startswith('owner-tg-'):
+                try:
+                    telegram_id_str = tag.removeprefix('owner-tg-')
+                    return int(telegram_id_str)
+                except ValueError:
+                    LOGGER.warning(f'Invalid owner tag format: {tag}')
+                    continue
+
+    return None
 
 
 # =============================================================================

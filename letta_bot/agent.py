@@ -11,22 +11,11 @@ from gel import AsyncIOExecutor
 from httpx import ReadTimeout
 from letta_client import APIError
 
-from letta_bot.client import client, get_default_agent
-from letta_bot.config import CONFIG
-from letta_bot.letta_sdk_extensions import context_window_overview, list_templates
-from letta_bot.queries.check_pending_request_async_edgeql import (
-    check_pending_request as check_pending_request_query,
-)
-from letta_bot.queries.create_auth_request_async_edgeql import (
-    ResourceType,
-    create_auth_request as create_auth_request_query,
-)
-from letta_bot.queries.get_allowed_identity_async_edgeql import (
-    get_allowed_identity as get_allowed_identity_query,
-)
+from letta_bot.client import client, get_agent_identity_ids, get_default_agent
+from letta_bot.letta_sdk_extensions import context_window_overview
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
-from letta_bot.queries.is_registered_async_edgeql import (
-    is_registered as is_registered_query,
+from letta_bot.queries.reset_selected_agent_async_edgeql import (
+    reset_selected_agent as reset_selected_agent_query,
 )
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
@@ -41,168 +30,8 @@ agent_commands_router = Router(name=f'{__name__}.commands')
 agent_router = Router(name=f'{__name__}.messaging')
 
 
-# NOTE: Callback should fit in 64 chars
-class NewAssistantCallback(CallbackData, prefix='newassistant'):
-    template_name: str
-    version: str = 'latest'
-
-
 class SwitchAssistantCallback(CallbackData, prefix='switch'):
     agent_id: str
-
-
-@agent_commands_router.message(Command('botaccess'))
-async def botaccess(message: Message, bot: Bot, gel_client: AsyncIOExecutor) -> None:
-    """Request or restore bot access without requesting an agent."""
-    if not message.from_user:
-        return
-
-    # Check if user already has identity access
-    if await get_allowed_identity_query(gel_client, telegram_id=message.from_user.id):
-        await message.answer(Text('✅ You already have identity access').as_markdown())
-        return
-
-    # Check if user already has a pending identity request
-    has_pending = await check_pending_request_query(
-        gel_client,
-        telegram_id=message.from_user.id,
-        resource_type=ResourceType.ACCESS_IDENTITY,
-    )
-    if has_pending:
-        await message.answer(
-            Text(
-                '⏳ You already have a pending identity access request. '
-                'Please wait for admin approval.'
-            ).as_markdown()
-        )
-        return
-
-    # Create identity access request
-    await create_auth_request_query(
-        gel_client,
-        telegram_id=message.from_user.id,
-        resource_type=ResourceType.ACCESS_IDENTITY,
-        resource_id=f'{message.from_user.first_name}:{message.from_user.id}',
-    )
-
-    # Notify user
-    await message.answer(
-        Text(
-            '✅ Your identity access request has been submitted '
-            'and is pending admin approval'
-        ).as_markdown()
-    )
-
-    # Notify admins
-    if CONFIG.admin_ids is not None:
-        for tg_id in CONFIG.admin_ids:
-            await bot.send_message(tg_id, Text('New identity access request').as_markdown())
-
-
-@agent_commands_router.message(Command('newassistant'))
-async def newassistant(message: Message) -> None:
-    # TODO: if no pending requests
-
-    # List available templates using SDK extension
-    paginator = await list_templates(client, CONFIG.letta_project_id)
-    page = await paginator
-    templates = page.templates
-
-    builder = InlineKeyboardBuilder()
-    for t in templates:
-        data = NewAssistantCallback(template_name=t.name, version=t.latest_version)
-        builder.button(text=f'{t.name}', callback_data=data.pack())
-    builder.adjust(1)  # One button per row for vertical layout
-    await message.answer(
-        Text(
-            'Choose a template for your assistant\n\n'
-            'See /about for detailed template descriptions'
-        ).as_markdown(),
-        reply_markup=builder.as_markup(),
-    )
-
-
-@agent_commands_router.callback_query(NewAssistantCallback.filter())
-async def register_assistant_request(
-    callback: CallbackQuery,
-    callback_data: NewAssistantCallback,
-    bot: Bot,
-    gel_client: AsyncIOExecutor,
-) -> None:
-    # Check if user is registered
-    if not await is_registered_query(gel_client, telegram_id=callback.from_user.id):
-        LOGGER.error(
-            f'User {callback.from_user.id} attempted '
-            'to request resource without being registered'
-        )
-        await callback.answer(
-            Text('You must use /start command first to register').as_markdown(),
-        )
-        return
-
-    # Check if user already has a pending assistant request
-    has_pending = await check_pending_request_query(
-        gel_client,
-        telegram_id=callback.from_user.id,
-        resource_type=ResourceType.CREATE_AGENT_FROM_TEMPLATE,
-    )
-    if has_pending:
-        await callback.answer(
-            Text(
-                '⏳ You already have a pending assistant request. '
-                'Please wait for admin approval.'
-            ).as_markdown()
-        )
-        return
-
-    if not await get_allowed_identity_query(gel_client, telegram_id=callback.from_user.id):
-        # TODO: maybe identity name could be customed
-        # Check if user already has a pending identity request
-        has_pending = await check_pending_request_query(
-            gel_client,
-            telegram_id=callback.from_user.id,
-            resource_type=ResourceType.ACCESS_IDENTITY,
-        )
-        if has_pending:
-            await callback.answer(
-                Text(
-                    '⏳ You already have a pending identity access request. '
-                    'Please wait for admin approval.'
-                ).as_markdown()
-            )
-            return
-
-        await create_auth_request_query(
-            gel_client,
-            telegram_id=callback.from_user.id,
-            resource_type=ResourceType.ACCESS_IDENTITY,
-            # NOTE: name:id
-            resource_id=f'{callback.from_user.first_name}:{callback.from_user.id}',
-        )
-    await create_auth_request_query(
-        gel_client,
-        telegram_id=callback.from_user.id,
-        resource_type=ResourceType.CREATE_AGENT_FROM_TEMPLATE,
-        resource_id=callback_data.pack(),
-    )
-
-    # Update original message to show selection and remove keyboard
-    if isinstance(callback.message, Message):
-        await callback.message.edit_text(
-            Text(
-                f'✅ Request submitted for: {callback_data.template_name}\n\n'
-                'Pending admin approval'
-            ).as_markdown(),
-        )
-
-    # Acknowledge the callback
-    await callback.answer()
-
-    # notify admins
-    if CONFIG.admin_ids is None:
-        return
-    for tg_id in CONFIG.admin_ids:
-        await bot.send_message(tg_id, Text('New assistant request').as_markdown())
 
 
 @agent_commands_router.message(Command('switch'), flags={'require_identity': True})
@@ -296,7 +125,9 @@ async def handle_switch_assistant(
 
 
 @agent_commands_router.message(Command('current'), flags={'require_identity': True})
-async def assistant_info_handler(message: Message, identity: GetIdentityResult) -> None:
+async def assistant_info_handler(
+    message: Message, gel_client: AsyncIOExecutor, identity: GetIdentityResult
+) -> None:
     """Show assistant info with memory blocks."""
     if not message.from_user:
         return
@@ -322,7 +153,11 @@ async def assistant_info_handler(message: Message, identity: GetIdentityResult) 
         memory_blocks = []
         for block in agent.blocks:
             block_size = len(block.value or '')
-            utilization = (block_size / block.limit * 100) if block.limit > 0 else 0
+            utilization = (
+                (block_size / block.limit * 100)
+                if block.limit is not None and block.limit > 0
+                else 0
+            )
             warning = ' ⚠️' if utilization > 100 else ''
             memory_blocks.append(
                 Text(
@@ -332,6 +167,15 @@ async def assistant_info_handler(message: Message, identity: GetIdentityResult) 
             )
 
         # Build complete message
+        message_count = len(agent.message_ids) if agent.message_ids else 0
+        tools_count = len(agent.tools) if agent.tools else 0
+
+        memory_section = (
+            as_marked_list(*memory_blocks, marker='  • ')
+            if memory_blocks
+            else Text('  No memory blocks')
+        )
+
         content = as_list(
             Text('🤖 ', Bold(agent.name)),
             Text(),  # Empty line
@@ -341,10 +185,10 @@ async def assistant_info_handler(message: Message, identity: GetIdentityResult) 
             ),
             Text(),  # Empty line
             Text('📝 ', Bold('Memory Blocks (chars):')),
-            as_marked_list(*memory_blocks, marker='  • '),
+            memory_section,
             Text(),  # Empty line
-            Text('💬 ', Bold('Message History: '), f'{len(agent.message_ids)} messages'),
-            Text('🔧 ', Bold('Tools: '), str(len(agent.tools))),
+            Text('💬 ', Bold('Message History: '), f'{message_count} messages'),
+            Text('🔧 ', Bold('Tools: '), str(tools_count)),
         )
 
         # Delete loading message and send result
@@ -357,7 +201,9 @@ async def assistant_info_handler(message: Message, identity: GetIdentityResult) 
 
 
 @agent_commands_router.message(Command('context'), flags={'require_identity': True})
-async def context_handler(message: Message, identity: GetIdentityResult) -> None:
+async def context_handler(
+    message: Message, gel_client: AsyncIOExecutor, identity: GetIdentityResult
+) -> None:
     """Show assistant context window breakdown."""
     if not message.from_user:
         return
@@ -489,21 +335,42 @@ async def message_handler(
         )
         return
 
-    # NOTE: select the most recent agent if user hasn't selected
+    # Get or auto-select agent
     if not identity.selected_agent:
         try:
             agent_id = await get_default_agent(identity.identity_id)
+            await set_selected_agent_query(
+                gel_client, identity_id=identity.identity_id, agent_id=agent_id
+            )
         except IndexError:
             await message.answer(
                 Text('You have no assistants yet. Use /newassistant').as_markdown()
             )
             return
-        await set_selected_agent_query(
-            gel_client, identity_id=identity.identity_id, agent_id=agent_id
-        )
-        # TODO: notify user about default agent select
     else:
         agent_id = identity.selected_agent
+
+        # Validate that the selected agent still belongs to the identity
+        if identity.identity_id not in await get_agent_identity_ids(agent_id):
+            LOGGER.warning(
+                f'Selected agent {agent_id} no longer belongs to identity '
+                f'{identity.identity_id}. Auto-selecting new agent.'
+            )
+            # Reset and try to get the default agent
+            try:
+                agent_id = await get_default_agent(identity.identity_id)
+                await set_selected_agent_query(
+                    gel_client, identity_id=identity.identity_id, agent_id=agent_id
+                )
+            except IndexError:
+                # No agents left - reset selected_agent to NULL
+                await reset_selected_agent_query(
+                    gel_client, identity_id=identity.identity_id
+                )
+                await message.answer(
+                    Text('You have no assistants yet. Use /newassistant').as_markdown()
+                )
+                return
 
     # Should I let agent know that message came through telegram?
     request = [{'type': 'text', 'text': message_text}]

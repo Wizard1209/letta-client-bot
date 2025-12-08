@@ -5,8 +5,13 @@ All notable changes to this project will be documented in this file.
 **[Latest additions]**
 
 **Added:**
+• /attach command to request access to an existing assistant by ID
+• Agent ownership system with owner-based approval for access requests
 • /current command to view current assistant's information and memory usage statistics
 • /context command to see detailed context window breakdown (how tokens are distributed across message history, core memory, archival memory, and system prompts)
+
+**Changed:**
+• Agent creation now tags agents with owner and creator information
 
 **[1.0.0] - 2025-11-29**
 
