@@ -504,6 +504,21 @@ The project maintains a changelog at `notes/changelog.md` in **standard Markdown
 - Agent responses now render with proper Telegram-compatible markdown formatting
 ```
 
+**Versioning Policy:**
+
+- Keep `**[Latest additions]**` section at the top as a staging area for unreleased changes
+- When releasing a version, move content from `[Latest additions]` to a new versioned section (e.g., `**[1.1.0] - 2025-12-09**`)
+- Leave `[Latest additions]` empty after release to collect future changes
+- Update version in three places: `notes/changelog.md`, `pyproject.toml`, `letta_bot/__init__.py`
+
+## Adding New Commands
+
+When adding a new bot command, update these locations:
+
+1. **`notes/help.md`** - User-facing help documentation
+2. **`notes/about.md`** - About page (if command changes "How It Works" flow)
+3. **`deploy/botfather_commands.txt`** - BotFather command list for Telegram menu
+
 ## Project Structure
 
 Current module organization:

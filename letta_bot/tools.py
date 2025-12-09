@@ -1,5 +1,6 @@
 """Tool management: attach, detach, and configure tools for agents."""
 
+from enum import Enum
 import logging
 from pathlib import Path
 
@@ -13,19 +14,28 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from letta_bot.client import client, register_notify_tool, register_schedule_message_tool
 from letta_bot.config import CONFIG
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
+from letta_bot.utils import version_needs_update
 
 LOGGER = logging.getLogger(__name__)
 
 
+class NotifyAction(str, Enum):
+    """Actions for notify callback."""
+
+    ENABLE = 'enable'
+    DISABLE = 'disable'
+    UPDATE = 'update'
+
+
 class NotifyCallback(CallbackData, prefix='notify'):
-    """Callback data for notification enable/disable buttons."""
+    """Callback data for notification buttons."""
 
-    enable: bool
+    action: NotifyAction
 
 
-# Memory block label for agent notification tools guidance
+# Memory block configuration
 NOTIFICATION_TOOL_BLOCK_LABEL = 'proactive_messaging_protocol'
-
+NOTIFICATION_TOOL_BLOCK_VERSION = '1.1.0'
 NOTIFICATION_MEMORY_BLOCK_DESC = (
     'How to use scheduling and notification tools to enable proactive behavior: '
     'scheduling reminders and follow-ups, sending notifications at specific times '
@@ -69,7 +79,7 @@ async def handle_notify_callback(
     callback_data: NotifyCallback,
     identity: GetIdentityResult,
 ) -> None:
-    """Handle enable/disable button clicks."""
+    """Handle notify button clicks."""
     if not callback.from_user:
         return
 
@@ -83,12 +93,13 @@ async def handle_notify_callback(
 
     await callback.answer()
 
-    if callback_data.enable:
-        await handle_notify_enable(
-            callback.message, identity.selected_agent, str(callback.from_user.id)
-        )
-    else:
-        await handle_notify_disable(callback.message, identity.selected_agent)
+    match callback_data.action:
+        case NotifyAction.ENABLE:
+            await handle_notify_enable(callback.message, identity.selected_agent)
+        case NotifyAction.DISABLE:
+            await handle_notify_disable(callback.message, identity.selected_agent)
+        case NotifyAction.UPDATE:
+            await handle_notify_update(callback.message, identity.selected_agent)
 
 
 async def handle_notify_status(message: Message, agent_id: str) -> None:
@@ -120,8 +131,11 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
         has_bot_token = any(
             v.key == 'TELEGRAM_BOT_TOKEN' for v in env_vars if hasattr(v, 'key')
         )
-        has_chat_id = any(
-            v.key == 'TELEGRAM_CHAT_ID' for v in env_vars if hasattr(v, 'key')
+
+        # Check if agent has identities with tg-* identifier_key
+        identities = getattr(agent, 'identities', []) or []
+        has_telegram_identities = any(
+            getattr(i, 'identifier_key', '').startswith('tg-') for i in identities
         )
 
         schedule_configured = (
@@ -130,37 +144,73 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
             and has_scheduler_token
             and has_agent_id
         )
-        notify_configured = notify_tool_attached and has_bot_token and has_chat_id
+        notify_configured = (
+            notify_tool_attached and has_bot_token and has_telegram_identities
+        )
 
-        overall_status = '✅' if (schedule_configured and notify_configured) else '⚠️'
+        is_enabled = schedule_configured and notify_configured
 
-        # Build inline keyboard with Enable/Disable buttons
+        # Check if update is needed (only if already enabled)
+        update_available = False
+        block_version = None
+        if is_enabled:
+            async for block in client.agents.blocks.list(agent_id=agent_id):
+                if block.label == NOTIFICATION_TOOL_BLOCK_LABEL:
+                    metadata = getattr(block, 'metadata_', None) or {}
+                    block_version = metadata.get('version')
+                    update_available = version_needs_update(
+                        block_version, NOTIFICATION_TOOL_BLOCK_VERSION
+                    )
+                    break
+
+        overall_status = '✅' if is_enabled else '⚠️'
+        tools_attached = schedule_tool_attached or notify_tool_attached
+
+        # Build inline keyboard with action buttons
         builder = InlineKeyboardBuilder()
-        builder.button(text='✅ Enable', callback_data=NotifyCallback(enable=True))
-        builder.button(text='❌ Disable', callback_data=NotifyCallback(enable=False))
-        builder.adjust(2)
+        builder.button(
+            text='✅ Enable', callback_data=NotifyCallback(action=NotifyAction.ENABLE)
+        )
+        if tools_attached:
+            builder.button(
+                text='❌ Disable', callback_data=NotifyCallback(action=NotifyAction.DISABLE)
+            )
+        if update_available:
+            builder.button(
+                text='🔄 Update', callback_data=NotifyCallback(action=NotifyAction.UPDATE)
+            )
+        builder.adjust(3)
+
+        status_lines = [
+            Text(overall_status, ' ', Bold('Proactive Mode')),
+            '',
+            Text(Bold('Agent: '), agent.name),
+            '',
+            Text(Bold('📅 Reminders & Follow-ups:')),
+            Text('  Tool attached: ', '✅ Yes' if schedule_tool_attached else '❌ No'),
+            Text(
+                '  Environment configured: ',
+                '✅ Yes' if schedule_configured else '❌ No',
+            ),
+            '',
+            Text(Bold('📢 Proactive Messaging:')),
+            Text('  Tool attached: ', '✅ Yes' if notify_tool_attached else '❌ No'),
+            Text('  Bot token: ', '✅ Yes' if has_bot_token else '❌ No'),
+            Text(
+                '  Identities: ',
+                f'✅ {len(identities)} users' if has_telegram_identities else '❌ None',
+            ),
+        ]
+
+        if update_available:
+            version_info = f' ({block_version} → {NOTIFICATION_TOOL_BLOCK_VERSION})'
+            status_lines.extend([
+                '',
+                Text('🔄 ', Bold('Update available'), version_info),
+            ])
 
         await message.answer(
-            as_list(
-                Text(overall_status, ' ', Bold('Proactive Mode')),
-                '',
-                Text(Bold('Agent: '), agent.name),
-                '',
-                Text(Bold('📅 Reminders & Follow-ups:')),
-                Text('  Tool attached: ', '✅ Yes' if schedule_tool_attached else '❌ No'),
-                Text(
-                    '  Environment configured: ',
-                    '✅ Yes' if schedule_configured else '❌ No',
-                ),
-                '',
-                Text(Bold('📢 Proactive Messaging:')),
-                Text('  Tool attached: ', '✅ Yes' if notify_tool_attached else '❌ No'),
-                Text(
-                    '  Environment configured: ',
-                    '✅ Yes' if notify_configured else '❌ No',
-                ),
-                sep='\n',
-            ).as_markdown(),
+            as_list(*status_lines, sep='\n').as_markdown(),
             reply_markup=builder.as_markup(),
         )
 
@@ -169,7 +219,7 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
         await message.answer(Text('❌ Error checking status: ', str(e)).as_markdown())
 
 
-async def handle_notify_enable(message: Message, agent_id: str, chat_id: str) -> None:
+async def handle_notify_enable(message: Message, agent_id: str) -> None:
     """Enable proactive behavior for the agent (reminders, follow-ups, notifications)."""
     try:
         # Check if Scheduler API key is configured
@@ -194,7 +244,7 @@ async def handle_notify_enable(message: Message, agent_id: str, chat_id: str) ->
         await message.edit_text(
             Text('📢 Configuring ', Code('notify_via_telegram'), ' tool...').as_markdown()
         )
-        await _enable_notify_tool(agent_id, chat_id)
+        await _enable_notify_tool(agent_id)
 
         # STEP 3: Attach Memory Block (agent_communication_tools_memo)
         await message.edit_text(
@@ -217,6 +267,22 @@ async def handle_notify_enable(message: Message, agent_id: str, chat_id: str) ->
     except Exception as e:
         LOGGER.error(f'Error enabling communication tools: {e}')
         await message.edit_text(Text('❌ Error enabling tools: ', str(e)).as_markdown())
+
+
+async def handle_notify_update(message: Message, agent_id: str) -> None:
+    """Update proactive tools by re-enabling (disable + enable)."""
+    await message.edit_text(
+        Text(
+            '🔄 Updating tools...\n\n',
+            '⚠️ Note: ',
+            Code(NOTIFICATION_TOOL_BLOCK_LABEL),
+            ' memory block will be reset to factory defaults.',
+        ).as_markdown()
+    )
+    await _disable_schedule_tool(agent_id)
+    await _disable_notify_tool(agent_id)
+    await _detach_tool_memory_block(agent_id)
+    await handle_notify_enable(message, agent_id)
 
 
 async def _enable_schedule_tool(agent_id: str) -> None:
@@ -261,12 +327,15 @@ async def _enable_schedule_tool(agent_id: str) -> None:
     await client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env_dict)
 
 
-async def _enable_notify_tool(agent_id: str, chat_id: str) -> None:
-    """Enable notify_via_telegram tool - completely separate logic."""
-    # Check if tool exists and register/attach it
+async def _enable_notify_tool(agent_id: str) -> None:
+    """Enable notify_via_telegram tool.
+
+    Note: Tool uses agent_state injection to get telegram IDs from identities,
+    so only TELEGRAM_BOT_TOKEN env var is needed.
+    """
     notify_tool = await register_notify_tool()
 
-    # Attach tool if not already attached (check ALL tools)
+    # Attach tool if not already attached
     if notify_tool.id:
         tool_already_attached = False
         async for tool in client.agents.tools.list(agent_id=agent_id):
@@ -280,7 +349,7 @@ async def _enable_notify_tool(agent_id: str, chat_id: str) -> None:
                 f'Attached notify_via_telegram tool {notify_tool.id} to agent {agent_id}'
             )
 
-    # Set up environment variables for notifications
+    # Set up environment variable for bot token
     agent = await client.agents.retrieve(agent_id=agent_id)
     current_env_vars = agent.tool_exec_environment_variables or []
 
@@ -290,9 +359,7 @@ async def _enable_notify_tool(agent_id: str, chat_id: str) -> None:
         if hasattr(var, 'key') and hasattr(var, 'value') and var.value is not None
     }
 
-    # Add notification env vars
     env_dict['TELEGRAM_BOT_TOKEN'] = CONFIG.bot_token
-    env_dict['TELEGRAM_CHAT_ID'] = chat_id
 
     await client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env_dict)
 
@@ -362,8 +429,8 @@ async def _disable_schedule_tool(agent_id: str) -> None:
 
 
 async def _disable_notify_tool(agent_id: str) -> None:
-    """Disable notify_via_telegram tool - completely separate logic."""
-    # Detach the tool (search ALL tools)
+    """Disable notify_via_telegram tool."""
+    # Detach the tool
     notify_tool = None
     async for tool in client.agents.tools.list(agent_id=agent_id):
         if tool.name == 'notify_via_telegram':
@@ -374,7 +441,7 @@ async def _disable_notify_tool(agent_id: str) -> None:
         await client.agents.tools.detach(agent_id=agent_id, tool_id=notify_tool.id)
         LOGGER.info(f'Detached notify_via_telegram tool from agent {agent_id}')
 
-    # Remove environment variables
+    # Remove environment variable
     agent = await client.agents.retrieve(agent_id=agent_id)
     current_env_vars = agent.tool_exec_environment_variables or []
 
@@ -384,7 +451,7 @@ async def _disable_notify_tool(agent_id: str) -> None:
         if hasattr(var, 'key')
         and hasattr(var, 'value')
         and var.value is not None
-        and var.key not in ('TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID')
+        and var.key != 'TELEGRAM_BOT_TOKEN'
     }
 
     await client.agents.update(
@@ -412,11 +479,12 @@ async def _attach_tool_memory_block(agent_id: str) -> None:
         # Load memory block content from markdown file
         block_content = _load_memory_block_content()
 
-        # Create new memory block
+        # Create new memory block with version metadata
         block = await client.blocks.create(
             label=NOTIFICATION_TOOL_BLOCK_LABEL,
             description=NOTIFICATION_MEMORY_BLOCK_DESC,
             value=block_content,
+            metadata={'version': NOTIFICATION_TOOL_BLOCK_VERSION},
         )
 
         LOGGER.info(

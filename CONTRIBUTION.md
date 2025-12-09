@@ -53,7 +53,13 @@ make check  # Runs linting, formatting, and type checking
 2. Implement feature
 3. Test with `make poll`
 4. Run `make check`
-5. Update `notes/changelog.md`
+5. Update `notes/changelog.md` (add to `[Latest additions]` section)
+
+**Releasing a version:**
+
+1. Move content from `[Latest additions]` to new versioned section (e.g., `[1.1.0] - 2025-12-09`)
+2. Leave `[Latest additions]` empty for future changes
+3. Update version in `pyproject.toml` and `letta_bot/__init__.py`
 
 **Database schema changes:**
 

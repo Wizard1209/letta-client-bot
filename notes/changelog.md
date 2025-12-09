@@ -4,11 +4,15 @@ All notable changes to this project will be documented in this file.
 
 **[Latest additions]**
 
+**[1.1.0] - 2025-12-09**
+
 **Added:**
 • /attach command to request access to an existing assistant by ID
 • Agent ownership system with owner-based approval for access requests
 • /current command to view current assistant's information and memory usage statistics
 • /context command to see detailed context window breakdown (how tokens are distributed across message history, core memory, archival memory, and system prompts)
+• Multi-user proactive notifications: notify_via_telegram now sends to all users attached to an agent, with optional owner_only mode
+• /notify shows 🔄 Update button to upgrade proactive messaging protocol to latest version
 
 **Changed:**
 • Agent creation now tags agents with owner and creator information

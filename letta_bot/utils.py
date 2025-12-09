@@ -58,3 +58,18 @@ def validate_uuid(uuid_str: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def parse_version(version: str) -> tuple[int, ...]:
+    """Parse version string to comparable tuple."""
+    return tuple(int(x) for x in version.split('.'))
+
+
+def version_needs_update(current: str | None, required: str) -> bool:
+    """Check if current version is missing or lower than required."""
+    if not current:
+        return True
+    try:
+        return parse_version(current) < parse_version(required)
+    except ValueError:
+        return True

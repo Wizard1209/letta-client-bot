@@ -1,34 +1,38 @@
-"""Twitter/X posts retrieval tool for Letta agents.
+"""Twitter/X account posts retrieval tool for Letta agents.
 
 NOTE: This file is excluded from linting/formatting and designed to be
 loaded as a Letta custom tool via source_code registration.
 
-This tool enables agents to fetch recent posts from a specific X/Twitter user
-using the X API v2 search/recent endpoint.
+This tool enables agents to fetch recent posts from one or more X/Twitter accounts
+using the X API v2 search/recent endpoint. Use this to follow specific accounts.
 """
 
 from datetime import datetime, timedelta, timezone
 import os
 
 
-def fetch_x_posts(username: str, hours_ago: int = 24, max_results: int = 10) -> str:
-    """Retrieve recent posts from a specific X/Twitter user.
+def get_x_account_posts(
+    usernames: list[str],
+    hours_ago: int = 24,
+    max_results: int = 10,
+) -> str:
+    """Retrieve recent posts from one or more X/Twitter accounts you follow.
 
-    This tool fetches posts from the X API v2 search/recent endpoint,
-    filtering by username and time window. It authenticates using OAuth 2.0
-    App-Only flow (generates bearer token from API key and secret).
+    Use this tool to check for new posts from specific X/Twitter accounts.
+    Authenticates using OAuth 2.0 App-Only flow.
 
     Environment variables required:
     - X_API_KEY: X/Twitter API Key (consumer key)
     - X_API_KEY_SECRET: X/Twitter API Key Secret (consumer secret)
 
     Args:
-        username (str): X/Twitter username to fetch posts from (without @ symbol)
+        usernames (list[str]): List of X/Twitter usernames to fetch posts from
+            (without @ symbol). Example: ["elonmusk", "OpenAI", "AnthropicAI"]
         hours_ago (int): How many hours back to search (default: 24, max: 168 / 7 days)
         max_results (int): Maximum number of posts to return (default: 10, range: 10-100)
 
     Returns:
-        str: Formatted list of posts with timestamps and engagement metrics, or error message
+        str: Formatted list of posts with timestamps, engagement metrics, and links
     """
     import base64
     import requests
@@ -43,23 +47,21 @@ def fetch_x_posts(username: str, hours_ago: int = 24, max_results: int = 10) -> 
         return 'Error: X_API_KEY_SECRET environment variable is not set'
 
     # Validate parameters
-    if not username:
-        return 'Error: username is required'
+    if not usernames:
+        return 'Error: at least one username is required'
 
-    # Remove @ if provided
-    username = username.lstrip('@')
+    # Clean usernames: remove @ and filter empty
+    cleaned_usernames = [u.lstrip('@').strip() for u in usernames if u and u.strip()]
+    if not cleaned_usernames:
+        return 'Error: at least one valid username is required'
 
-    # Clamp hours_ago to API limit (7 days = 168 hours for recent search)
-    if hours_ago < 1:
-        hours_ago = 1
-    elif hours_ago > 168:
-        hours_ago = 168
+    # Validate hours_ago (API limit: 7 days = 168 hours for recent search)
+    if not 1 <= hours_ago <= 168:
+        return f'Error: hours_ago must be between 1 and 168, got {hours_ago}'
 
-    # Clamp max_results to API limits
-    if max_results < 10:
-        max_results = 10
-    elif max_results > 100:
-        max_results = 100
+    # Validate max_results (API limit: 10-100)
+    if not 10 <= max_results <= 100:
+        return f'Error: max_results must be between 10 and 100, got {max_results}'
 
     # --- Step 1: Generate Bearer Token using OAuth 2.0 App-Only ---
     credentials = f'{api_key}:{api_secret}'
@@ -92,7 +94,9 @@ def fetch_x_posts(username: str, hours_ago: int = 24, max_results: int = 10) -> 
     start_time = now_utc - timedelta(hours=hours_ago)
     start_time_str = start_time.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    query = f'from:{username}'
+    # Build query with OR for multiple accounts: "from:user1 OR from:user2"
+    query_parts = [f'from:{u}' for u in cleaned_usernames]
+    query = ' OR '.join(query_parts)
     url = 'https://api.x.com/2/tweets/search/recent'
 
     params = {
@@ -123,19 +127,39 @@ def fetch_x_posts(username: str, hours_ago: int = 24, max_results: int = 10) -> 
 
         data = response.json()
 
+        # Format accounts list for display
+        accounts_display = ', '.join(f'@{u}' for u in cleaned_usernames)
+
         if 'data' not in data or not data['data']:
-            return f'No posts found from @{username} in the last {hours_ago} hours'
+            return f'No posts found from {accounts_display} in the last {hours_ago} hours'
 
         posts = data['data']
         meta = data.get('meta', {})
         result_count = meta.get('result_count', len(posts))
 
-        output_lines = [f'Found {result_count} post(s) from @{username} (last {hours_ago}h):\n']
+        # Build author_id -> username map from includes.users
+        users_map: dict[str, str] = {}
+        includes = data.get('includes', {})
+        for user in includes.get('users', []):
+            user_id = user.get('id')
+            user_username = user.get('username')
+            if user_id and user_username:
+                users_map[user_id] = user_username
+
+        output_lines = [f'Found {result_count} post(s) from {accounts_display} (last {hours_ago}h):\n']
 
         for i, post in enumerate(posts, 1):
             text = post.get('text', '')
             created_at = post.get('created_at', '')
             metrics = post.get('public_metrics', {})
+            tweet_id = post.get('id', '')
+            author_id = post.get('author_id', '')
+
+            # Get username from includes or fall back to first requested username
+            post_username = users_map.get(author_id, cleaned_usernames[0])
+
+            # Construct direct link to the post
+            post_link = f'https://x.com/{post_username}/status/{tweet_id}'
 
             if created_at:
                 try:
@@ -150,9 +174,10 @@ def fetch_x_posts(username: str, hours_ago: int = 24, max_results: int = 10) -> 
             retweets = metrics.get('retweet_count', 0)
             replies = metrics.get('reply_count', 0)
 
-            output_lines.append(f'--- Post {i} ({time_str}) ---')
+            output_lines.append(f'--- Post {i} by @{post_username} ({time_str}) ---')
             output_lines.append(text)
             output_lines.append(f'[Likes: {likes} | Retweets: {retweets} | Replies: {replies}]')
+            output_lines.append(f'Link: {post_link}')
             output_lines.append('')
 
         return '\n'.join(output_lines)

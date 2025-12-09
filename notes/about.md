@@ -26,7 +26,7 @@ Both assistant templates include:
 
 **How It Works**
 
-1. Request an assistant using /newassistant
+1. Request an assistant using /newassistant or /attach <agent_id> to join an existing one
 2. Wait for admin approval
 3. Start chatting with your personal AI assistant
 4. Your assistant remembers everything and organizes information automatically
