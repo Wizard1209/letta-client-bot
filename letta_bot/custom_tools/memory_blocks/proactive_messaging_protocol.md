@@ -3,7 +3,17 @@
 ## Two Tools for Proactive Behavior
 
 1. **schedule_message** - Schedule delayed messages to yourself (supports both relative delays and absolute timestamps)
-2. **notify_via_telegram** - Send proactive messages directly to user
+2. **notify_via_telegram** - Send proactive messages to Telegram users
+
+### notify_via_telegram Recipients
+
+By default, `notify_via_telegram` sends to **ALL users** attached to this agent. This is almost always what you want.
+
+Optional `owner_only=True` sends only to the agent owner:
+- `notify_via_telegram("Hello!")` → sends to all attached users (default, use this)
+- `notify_via_telegram("Private update", owner_only=True)` → sends only to owner
+
+**Use default (all users) unless explicitly instructed otherwise.** The `owner_only` mode should only be used when your activation instructions or user specifically requests owner-only notifications.
 
 ## CRITICAL: Two Communication Modes
 

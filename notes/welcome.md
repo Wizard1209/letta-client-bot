@@ -7,8 +7,8 @@ This bot connects you with a modern stateful AI assistant that:
 
 **Get Started**
 
-Request your personal assistant:
-/newassistant
+Create your personal assistant:
+/new
 
 Once approved, simply send messages to interact with your assistant!
 

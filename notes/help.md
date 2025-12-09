@@ -8,7 +8,7 @@
 /changelog - View project changelog and version history
 
 **Assistants**
-/newassistant - Request a new AI assistant
+/new - Request a new AI assistant
 /attach - Request access to an existing assistant by ID
 /switch - Switch between your assistants
 /current - View current assistant info and memory status
@@ -20,7 +20,7 @@
 
 **How to Use**
 
-Use /newassistant to browse available AI assistant templates and request access. An administrator will review and approve your request.
+Use /new to browse available AI assistant templates and create yours. An administrator will review and approve your request.
 
 **Proactive Notifications**
 

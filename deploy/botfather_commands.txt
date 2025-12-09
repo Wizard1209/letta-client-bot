@@ -1,4 +1,4 @@
-newassistant - Request a new AI assistant
+new - Request a new AI assistant
 attach - Request access to an existing assistant
 switch - Switch between your assistants
 current - View current assistant info and memory usage

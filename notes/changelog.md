@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 • /notify shows 🔄 Update button to upgrade proactive messaging protocol to latest version
 
 **Changed:**
+• Renamed `/newassistant` command to `/new` for brevity
 • Agent creation now tags agents with owner and creator information
 
 **[1.0.0] - 2025-11-29**

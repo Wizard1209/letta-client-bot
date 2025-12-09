@@ -50,7 +50,7 @@ async def switch(message: Message, identity: GetIdentityResult) -> None:
         if not all_agents:
             await message.answer(
                 Text(
-                    "You don't have any assistants yet. Use /newassistant to request one."
+                    "You don't have any assistants yet. Use /new to request one."
                 ).as_markdown()
             )
             return
@@ -344,7 +344,7 @@ async def message_handler(
             )
         except IndexError:
             await message.answer(
-                Text('You have no assistants yet. Use /newassistant').as_markdown()
+                Text('You have no assistants yet. Use /new').as_markdown()
             )
             return
     else:
@@ -368,7 +368,7 @@ async def message_handler(
                     gel_client, identity_id=identity.identity_id
                 )
                 await message.answer(
-                    Text('You have no assistants yet. Use /newassistant').as_markdown()
+                    Text('You have no assistants yet. Use /new').as_markdown()
                 )
                 return
 

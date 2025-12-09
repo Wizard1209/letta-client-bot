@@ -138,7 +138,7 @@ async def request_owner_permission(
 
 
 # NOTE: Callback should fit in 64 chars
-class NewAssistantCallback(CallbackData, prefix='newassistant'):
+class NewAssistantCallback(CallbackData, prefix='new'):
     template_name: str
     version: str = 'latest'
 
@@ -194,8 +194,8 @@ async def botaccess(message: Message, bot: Bot, gel_client: AsyncIOExecutor) -> 
     await notify_admins(bot, Text('New identity access request').as_markdown())
 
 
-@auth_router.message(Command('newassistant'))
-async def newassistant(message: Message) -> None:
+@auth_router.message(Command('new'))
+async def new_assistant(message: Message) -> None:
     # TODO: if no pending requests
 
     # List available templates using SDK extension
@@ -594,7 +594,7 @@ async def deny_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) 
         if reason:
             user_message_parts.append(f'\n\nReason: {reason}')
         user_message_parts.append(
-            '\n\nYou can submit a new request using /newassistant or /botaccess if needed.'
+            '\n\nYou can submit a new request using /new or /botaccess if needed.'
         )
 
         await bot.send_message(
@@ -645,7 +645,7 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
                 '🚫 Your access to the bot has been revoked.\n\n'
                 'If you believe this was done in error, '
                 'please contact the administrator.\n'
-                'You can submit a new request using /newassistant or '
+                'You can submit a new request using /new or '
                 '/botaccess if you wish to regain access.'
             ).as_markdown(),
         )

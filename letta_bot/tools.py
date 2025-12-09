@@ -1,8 +1,10 @@
 """Tool management: attach, detach, and configure tools for agents."""
 
 from enum import Enum
+import hashlib
 import logging
 from pathlib import Path
+from typing import NamedTuple
 
 from aiogram import Router
 from aiogram.filters.callback_data import CallbackData
@@ -10,6 +12,7 @@ from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, InaccessibleMessage, Message
 from aiogram.utils.formatting import Bold, Code, Text, as_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from letta_client.types.agent_state import AgentState
 
 from letta_bot.client import client, register_notify_tool, register_schedule_message_tool
 from letta_bot.config import CONFIG
@@ -17,6 +20,129 @@ from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
 from letta_bot.utils import version_needs_update
 
 LOGGER = logging.getLogger(__name__)
+
+# Memory block configuration (must be before functions that use them)
+NOTIFICATION_TOOL_BLOCK_LABEL = 'proactive_messaging_protocol'
+NOTIFICATION_TOOL_BLOCK_VERSION = '1.1.1'
+NOTIFICATION_MEMORY_BLOCK_DESC = (
+    'How to use scheduling and notification tools to enable proactive behavior: '
+    'scheduling reminders and follow-ups, sending notifications at specific times '
+    'across timezones, creating recurring check-ins, understanding conversational '
+    'vs silent communication modes, context preservation, and timing verification'
+)
+
+
+# =============================================================================
+# Status NamedTuple
+# =============================================================================
+
+
+class ToolUpdateStatus(NamedTuple):
+    """Update status for a tool (code and env vars)."""
+
+    code_match: bool
+    env_match: bool
+
+
+# =============================================================================
+# Connection Check Functions
+# =============================================================================
+
+
+def _is_schedule_connected(agent: AgentState) -> bool:
+    """Check if schedule_message tool is attached."""
+    tools = agent.tools or []
+    return any(t.name == 'schedule_message' for t in tools)
+
+
+def _is_notify_connected(agent: AgentState) -> bool:
+    """Check if notify_via_telegram tool is attached."""
+    tools = agent.tools or []
+    return any(t.name == 'notify_via_telegram' for t in tools)
+
+
+def _is_memory_block_exists(agent: AgentState) -> bool:
+    """Check if proactive messaging memory block exists."""
+    blocks = agent.blocks or []
+    return any(b.label == NOTIFICATION_TOOL_BLOCK_LABEL for b in blocks)
+
+
+def _get_identity_count(agent: AgentState) -> int:
+    """Count telegram identities (tg-* format)."""
+    identities = agent.identities or []
+    return sum(1 for i in identities if (i.identifier_key or '').startswith('tg-'))
+
+
+# =============================================================================
+# Update Check Functions (only call if connected)
+# =============================================================================
+
+
+def _compute_code_hash(source_code: str) -> str:
+    """Compute hash of source code for comparison."""
+    return hashlib.sha256(source_code.encode()).hexdigest()
+
+
+def _check_code_match(agent: AgentState, tool_name: str) -> bool:
+    """Check if tool source code matches local file."""
+    tools = agent.tools or []
+    tool = next((t for t in tools if t.name == tool_name), None)
+    if not tool or not tool.source_code:
+        return False
+    local_code = _load_tool_code(tool_name)
+    return _compute_code_hash(tool.source_code) == _compute_code_hash(local_code)
+
+
+def _check_schedule_current(agent: AgentState) -> ToolUpdateStatus:
+    """Check if schedule_message tool code and env vars are current."""
+    env_vars = agent.tool_exec_environment_variables or []
+    env_dict = {v.key: v.value for v in env_vars}
+
+    code_match = _check_code_match(agent, 'schedule_message')
+    env_match = (
+        env_dict.get('LETTA_API_KEY') == CONFIG.letta_api_key
+        and env_dict.get('SCHEDULER_URL') == CONFIG.scheduler_url
+        and env_dict.get('SCHEDULER_API_KEY') == CONFIG.scheduler_api_key
+        and env_dict.get('AGENT_ID') == agent.id
+    )
+
+    return ToolUpdateStatus(code_match=code_match, env_match=env_match)
+
+
+def _check_notify_current(agent: AgentState) -> ToolUpdateStatus:
+    """Check if notify_via_telegram tool code and env vars are current."""
+    env_vars = agent.tool_exec_environment_variables or []
+    env_dict = {v.key: v.value for v in env_vars}
+
+    code_match = _check_code_match(agent, 'notify_via_telegram')
+    env_match = env_dict.get('TELEGRAM_BOT_TOKEN') == CONFIG.bot_token
+
+    return ToolUpdateStatus(code_match=code_match, env_match=env_match)
+
+
+def _check_memory_current(agent: AgentState) -> bool:
+    """Check if memory block version is current."""
+    blocks = agent.blocks or []
+    for block in blocks:
+        if block.label == NOTIFICATION_TOOL_BLOCK_LABEL:
+            raw_version = (block.metadata or {}).get('version')
+            current_version = str(raw_version) if raw_version else None
+            needs_update = version_needs_update(
+                current_version, NOTIFICATION_TOOL_BLOCK_VERSION
+            )
+            return not needs_update
+    return False
+
+
+# =============================================================================
+# Code Loading Helper
+# =============================================================================
+
+
+def _load_tool_code(tool_name: str) -> str:
+    """Load tool source code by name."""
+    path = Path(__file__).parent / 'custom_tools' / f'{tool_name}.py'
+    return path.read_text(encoding='utf-8')
 
 
 class NotifyAction(str, Enum):
@@ -31,17 +157,6 @@ class NotifyCallback(CallbackData, prefix='notify'):
     """Callback data for notification buttons."""
 
     action: NotifyAction
-
-
-# Memory block configuration
-NOTIFICATION_TOOL_BLOCK_LABEL = 'proactive_messaging_protocol'
-NOTIFICATION_TOOL_BLOCK_VERSION = '1.1.0'
-NOTIFICATION_MEMORY_BLOCK_DESC = (
-    'How to use scheduling and notification tools to enable proactive behavior: '
-    'scheduling reminders and follow-ups, sending notifications at specific times '
-    'across timezones, creating recurring check-ins, understanding conversational '
-    'vs silent communication modes, context preservation, and timing verification'
-)
 
 
 def _load_memory_block_content() -> str:
@@ -70,7 +185,9 @@ async def notify_command(message: Message, identity: GetIdentityResult) -> None:
         )
         return
 
-    await handle_notify_status(message, identity.selected_agent)
+    # Show checking message first, then edit with status
+    status_msg = await message.answer(Text('🔍 Checking status...').as_markdown())
+    await handle_notify_status(status_msg, identity.selected_agent)
 
 
 @tools_router.callback_query(NotifyCallback.filter(), flags={'require_identity': True})
@@ -103,120 +220,242 @@ async def handle_notify_callback(
 
 
 async def handle_notify_status(message: Message, agent_id: str) -> None:
-    """Check proactive behavior status for the agent."""
+    """Check proactive behavior status for the agent.
+
+    Flow:
+    1. Retrieve agent state (single API call)
+    2. Check if connected (any tools attached)
+    3. If connected → show "Checking for updates..." → compare code/env/version
+    4. Display status with appropriate action buttons
+    """
     try:
-        # Check if tools are attached (check ALL tools across all pages)
-        schedule_tool_attached = False
-        notify_tool_attached = False
-        async for tool in client.agents.tools.list(agent_id=agent_id):
-            if tool.name == 'schedule_message':
-                schedule_tool_attached = True
-            if tool.name == 'notify_via_telegram':
-                notify_tool_attached = True
-            if schedule_tool_attached and notify_tool_attached:
-                break  # Found both, can stop early
-
-        # Check environment variables
+        # Step 1: Retrieve agent state
         agent = await client.agents.retrieve(agent_id=agent_id)
-        env_vars = agent.tool_exec_environment_variables or []
 
-        # Scheduling env vars
-        has_letta_key = any(v.key == 'LETTA_API_KEY' for v in env_vars if hasattr(v, 'key'))
-        has_scheduler_token = any(
-            v.key == 'SCHEDULER_API_KEY' for v in env_vars if hasattr(v, 'key')
-        )
-        has_agent_id = any(v.key == 'AGENT_ID' for v in env_vars if hasattr(v, 'key'))
+        # Step 2: Check connection status
+        schedule_connected = _is_schedule_connected(agent)
+        notify_connected = _is_notify_connected(agent)
+        memory_exists = _is_memory_block_exists(agent)
+        identity_count = _get_identity_count(agent)
 
-        # Notification env vars
-        has_bot_token = any(
-            v.key == 'TELEGRAM_BOT_TOKEN' for v in env_vars if hasattr(v, 'key')
-        )
+        any_connected = schedule_connected or notify_connected or memory_exists
 
-        # Check if agent has identities with tg-* identifier_key
-        identities = getattr(agent, 'identities', []) or []
-        has_telegram_identities = any(
-            getattr(i, 'identifier_key', '').startswith('tg-') for i in identities
-        )
+        # Step 3: If connected, check for updates
+        schedule_update: ToolUpdateStatus | None = None
+        notify_update: ToolUpdateStatus | None = None
+        memory_current: bool | None = None
 
-        schedule_configured = (
-            schedule_tool_attached
-            and has_letta_key
-            and has_scheduler_token
-            and has_agent_id
-        )
-        notify_configured = (
-            notify_tool_attached and has_bot_token and has_telegram_identities
-        )
+        if any_connected:
+            await message.edit_text(Text('🔄 Checking for updates...').as_markdown())
 
-        is_enabled = schedule_configured and notify_configured
+            if schedule_connected:
+                schedule_update = _check_schedule_current(agent)
+            if notify_connected:
+                notify_update = _check_notify_current(agent)
+            if memory_exists:
+                memory_current = _check_memory_current(agent)
 
-        # Check if update is needed (only if already enabled)
-        update_available = False
-        block_version = None
-        if is_enabled:
-            async for block in client.agents.blocks.list(agent_id=agent_id):
-                if block.label == NOTIFICATION_TOOL_BLOCK_LABEL:
-                    metadata = getattr(block, 'metadata_', None) or {}
-                    block_version = metadata.get('version')
-                    update_available = version_needs_update(
-                        block_version, NOTIFICATION_TOOL_BLOCK_VERSION
-                    )
-                    break
-
-        overall_status = '✅' if is_enabled else '⚠️'
-        tools_attached = schedule_tool_attached or notify_tool_attached
-
-        # Build inline keyboard with action buttons
-        builder = InlineKeyboardBuilder()
-        builder.button(
-            text='✅ Enable', callback_data=NotifyCallback(action=NotifyAction.ENABLE)
-        )
-        if tools_attached:
-            builder.button(
-                text='❌ Disable', callback_data=NotifyCallback(action=NotifyAction.DISABLE)
-            )
-        if update_available:
-            builder.button(
-                text='🔄 Update', callback_data=NotifyCallback(action=NotifyAction.UPDATE)
-            )
-        builder.adjust(3)
-
-        status_lines = [
-            Text(overall_status, ' ', Bold('Proactive Mode')),
-            '',
-            Text(Bold('Agent: '), agent.name),
-            '',
-            Text(Bold('📅 Reminders & Follow-ups:')),
-            Text('  Tool attached: ', '✅ Yes' if schedule_tool_attached else '❌ No'),
-            Text(
-                '  Environment configured: ',
-                '✅ Yes' if schedule_configured else '❌ No',
-            ),
-            '',
-            Text(Bold('📢 Proactive Messaging:')),
-            Text('  Tool attached: ', '✅ Yes' if notify_tool_attached else '❌ No'),
-            Text('  Bot token: ', '✅ Yes' if has_bot_token else '❌ No'),
-            Text(
-                '  Identities: ',
-                f'✅ {len(identities)} users' if has_telegram_identities else '❌ None',
-            ),
-        ]
-
-        if update_available:
-            version_info = f' ({block_version} → {NOTIFICATION_TOOL_BLOCK_VERSION})'
-            status_lines.extend([
-                '',
-                Text('🔄 ', Bold('Update available'), version_info),
-            ])
-
-        await message.answer(
-            as_list(*status_lines, sep='\n').as_markdown(),
-            reply_markup=builder.as_markup(),
+        # Step 4: Display status with buttons
+        await _display_notify_status(
+            message,
+            agent,
+            schedule_connected,
+            notify_connected,
+            memory_exists,
+            identity_count,
+            schedule_update,
+            notify_update,
+            memory_current,
         )
 
     except Exception as e:
         LOGGER.error(f'Error checking notification status: {e}')
-        await message.answer(Text('❌ Error checking status: ', str(e)).as_markdown())
+        await message.edit_text(Text('❌ Error checking status: ', str(e)).as_markdown())
+
+
+def _get_status_icon(
+    connected: bool, update_status: ToolUpdateStatus | ToolUpdateStatus | None
+) -> str:
+    """Get status icon based on connection and update status.
+
+    Returns:
+        ❌ = not connected
+        🔄 = connected, update available (code or env mismatch)
+        ✅ = connected and current
+    """
+    if not connected:
+        return '❌'
+    if update_status is None:
+        return '❌'  # Shouldn't happen, but safe fallback
+    if update_status.code_match and update_status.env_match:
+        return '✅'
+    return '🔄'
+
+
+def _get_memory_block_version(agent: AgentState) -> str | None:
+    """Get the current version of the memory block on agent, or None if not found."""
+    blocks = agent.blocks or []
+    for block in blocks:
+        if block.label == NOTIFICATION_TOOL_BLOCK_LABEL:
+            raw_version = (block.metadata or {}).get('version')
+            return str(raw_version) if raw_version else None
+    return None
+
+
+async def _display_notify_status(
+    message: Message,
+    agent: AgentState,
+    schedule_connected: bool,
+    notify_connected: bool,
+    memory_exists: bool,
+    identity_count: int,
+    schedule_update: ToolUpdateStatus | None,
+    notify_update: ToolUpdateStatus | None,
+    memory_current: bool | None,
+) -> None:
+    """Display proactive mode status with action buttons.
+
+    Icons:
+        ❌ = not connected
+        🔄 = connected, update available
+        ✅ = connected and current
+
+    Buttons:
+        Enable = if any ❌
+        Disable = if any ✅
+        Update = if any 🔄
+    """
+    # Determine status icons
+    schedule_icon = _get_status_icon(schedule_connected, schedule_update)
+    notify_icon = _get_status_icon(notify_connected, notify_update)
+
+    # Memory block icon
+    if not memory_exists:
+        memory_icon = '❌'
+    elif memory_current:
+        memory_icon = '✅'
+    else:
+        memory_icon = '🔄'
+
+    # Collect all icons to determine buttons
+    all_icons = [schedule_icon, notify_icon, memory_icon]
+    has_cross = '❌' in all_icons
+    has_check = '✅' in all_icons
+    has_update = '🔄' in all_icons
+
+    # Overall status
+    if all(icon == '✅' for icon in all_icons):
+        overall_icon = '✅'
+    elif has_update or has_cross:
+        overall_icon = '⚠️'
+    else:
+        overall_icon = '❌'
+
+    # Build buttons based on icons
+    builder = InlineKeyboardBuilder()
+    if has_cross:
+        builder.button(
+            text='✅ Enable', callback_data=NotifyCallback(action=NotifyAction.ENABLE)
+        )
+    if has_check:
+        builder.button(
+            text='❌ Disable', callback_data=NotifyCallback(action=NotifyAction.DISABLE)
+        )
+    if has_update:
+        builder.button(
+            text='🔄 Update', callback_data=NotifyCallback(action=NotifyAction.UPDATE)
+        )
+    builder.adjust(3)
+
+    # Render status display
+    await message.edit_text(
+        _render_status(
+            overall_icon=overall_icon,
+            agent_name=agent.name,
+            schedule_connected=schedule_connected,
+            schedule_update=schedule_update,
+            notify_connected=notify_connected,
+            notify_update=notify_update,
+            identity_count=identity_count,
+            memory_exists=memory_exists,
+            memory_current=memory_current,
+            current_memory_version=_get_memory_block_version(agent),
+        ),
+        reply_markup=builder.as_markup(),
+    )
+
+
+def _render_tool_status(update: ToolUpdateStatus) -> Text:
+    """Render code/env status line for a tool."""
+    code_icon = '✅' if update.code_match else '🔄'
+    env_icon = '✅' if update.env_match else '🔄'
+    return Text('   code: ', code_icon, '  env: ', env_icon)
+
+
+def _render_memory_status(
+    exists: bool,
+    current: bool | None,
+    current_version: str | None,
+) -> Text:
+    """Render memory block status line."""
+    if not exists:
+        return Text('   ❌ not attached')
+
+    target = NOTIFICATION_TOOL_BLOCK_VERSION
+    if current:
+        return Text('   ✅ v', target)
+
+    # Version mismatch
+    current_str = f'v{current_version}' if current_version else 'unknown'
+    return Text('   🔄 ', current_str, ' → v', target)
+
+
+def _render_status(
+    *,
+    overall_icon: str,
+    agent_name: str,
+    schedule_connected: bool,
+    schedule_update: ToolUpdateStatus | None,
+    notify_connected: bool,
+    notify_update: ToolUpdateStatus | None,
+    identity_count: int,
+    memory_exists: bool,
+    memory_current: bool | None,
+    current_memory_version: str | None,
+) -> str:
+    """Render the full proactive mode status message."""
+    # Header
+    lines: list[Text | str] = [
+        Text(overall_icon, ' ', Bold('Proactive Mode')),
+        '',
+        Text(Bold('Agent: '), agent_name),
+        '',
+    ]
+
+    # Scheduler section
+    lines.append(Text('📅 ', Bold('Scheduler')))
+    if schedule_connected and schedule_update:
+        lines.append(_render_tool_status(schedule_update))
+    else:
+        lines.append(Text('   ❌ not connected'))
+    lines.append('')
+
+    # Notifier section
+    users_suffix = f' ({identity_count} users)' if identity_count > 0 else ''
+    lines.append(Text('📢 ', Bold('Notifier'), users_suffix))
+    if notify_connected and notify_update:
+        lines.append(_render_tool_status(notify_update))
+    else:
+        lines.append(Text('   ❌ not connected'))
+    lines.append('')
+
+    # Guidelines section
+    lines.append(Text('📝 ', Bold('Guidelines')))
+    lines.append(
+        _render_memory_status(memory_exists, memory_current, current_memory_version)
+    )
+
+    return as_list(*lines, sep='\n').as_markdown()
 
 
 async def handle_notify_enable(message: Message, agent_id: str) -> None:
@@ -271,17 +510,8 @@ async def handle_notify_enable(message: Message, agent_id: str) -> None:
 
 async def handle_notify_update(message: Message, agent_id: str) -> None:
     """Update proactive tools by re-enabling (disable + enable)."""
-    await message.edit_text(
-        Text(
-            '🔄 Updating tools...\n\n',
-            '⚠️ Note: ',
-            Code(NOTIFICATION_TOOL_BLOCK_LABEL),
-            ' memory block will be reset to factory defaults.',
-        ).as_markdown()
-    )
-    await _disable_schedule_tool(agent_id)
-    await _disable_notify_tool(agent_id)
-    await _detach_tool_memory_block(agent_id)
+    await message.edit_text(Text('🔄 Updating tools...').as_markdown())
+    await handle_notify_disable(message, agent_id)
     await handle_notify_enable(message, agent_id)
 
 

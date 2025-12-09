@@ -148,7 +148,7 @@ async def get_agent_identity_ids(agent_id: str) -> list[str]:
     Raises:
         APIError: If the retrieve operation fails
     """
-    agent = await client.agents.retrieve(agent_id=agent_id)
+    agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.identities'])
     if agent.identities is None:
         return []
     return [identity.id for identity in agent.identities]

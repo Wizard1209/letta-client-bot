@@ -322,7 +322,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 **Phase 2: Resource Request**
 
 - **Identity-only request**: User runs `/botaccess` to request identity access without agent
-- **Agent request**: User runs `/newassistant` to see available agent templates
+- **Agent request**: User runs `/new` to see available agent templates
 - User selects template from inline keyboard
 - System creates authorization requests:
   - Identity access request (if user doesn't have one) - resource_type: `ACCESS_IDENTITY`
@@ -529,7 +529,7 @@ letta_bot/
   config.py            # Configuration management (Pydantic settings)
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
-  auth.py              # All authorization: user requests (/botaccess, /newassistant, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
+  auth.py              # All authorization: user requests (/botaccess, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
   agent.py             # Agent operations: /switch, /current, /context, and message routing to Letta agents
   client.py            # Shared Letta client instance and Letta API operations (identity, agent, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
@@ -867,4 +867,4 @@ select active_users {
 5. **Consistent Typing**: Maintain clear, strict type definitions in schemas
 
 - always use make check for mandatory pipeline
-- we have development_scripts folder for this project scripting
+- we have `devscripts/` folder for project development scripts and testing

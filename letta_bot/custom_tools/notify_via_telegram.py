@@ -6,13 +6,68 @@ loaded as a Letta custom tool via source_code registration.
 
 import os
 import re
+import time
+
+
+# =============================================================================
+# WORKAROUND: Fetch agent data via API (injected agent_state is incomplete)
+# TODO: Remove when Letta fixes injected AgentState to include all fields
+# =============================================================================
+def _fetch_agent_via_api(agent_id: str) -> 'Agent | None':
+    """Fetch full agent data via Letta API.
+
+    Workaround for agent_state fields being empty/incomplete in injected state.
+    Requires LETTA_API_KEY environment variable.
+
+    Returns:
+        Agent object or None if API call fails
+    """
+    from letta_client import Letta
+
+    api_key = os.environ.get('LETTA_API_KEY')
+    if not api_key:
+        return None
+
+    client = Letta(api_key=api_key)
+    return client.agents.retrieve(agent_id=agent_id, include=['agent.identities'])
+
+
+def _fetch_identifier_keys_via_api(agent_id: str) -> list[str]:
+    """Fetch identifier_keys from agent's identities via Letta API.
+
+    Returns:
+        List of identifier_key strings (e.g., ['tg-123456789'])
+    """
+    agent = _fetch_agent_via_api(agent_id)
+    if not agent:
+        return []
+
+    identifier_keys = []
+    for identity in agent.identities or []:
+        if hasattr(identity, 'identifier_key') and identity.identifier_key:
+            identifier_keys.append(identity.identifier_key)
+
+    return identifier_keys
+
+
+def _fetch_tags_via_api(agent_id: str) -> list[str]:
+    """Fetch tags from agent via Letta API.
+
+    Returns:
+        List of tag strings (e.g., ['owner-tg-123456789'])
+    """
+    agent = _fetch_agent_via_api(agent_id)
+    if not agent:
+        return []
+
+    return agent.tags or []
+# =============================================================================
 
 
 def notify_via_telegram(
     message: str,
-    *,
-    owner_only: bool = False,
     agent_state: 'AgentState',
+    owner_only: bool = False,
 ) -> str:
     """Send proactive notification to Telegram user(s).
 
@@ -41,37 +96,28 @@ def notify_via_telegram(
     """
     import requests
 
-    if not (bot_token := os.environ.get('TELEGRAM_BOT_TOKEN')):
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if not bot_token:
         return 'Error: TELEGRAM_BOT_TOKEN environment variable is not set'
 
-    # Extract telegram IDs from identities (identifier_key format: tg-{telegram_id})
-    identities = getattr(agent_state, 'identities', []) or []
-    chat_ids = [
-        key[3:]
-        for identity in identities
-        if (key := getattr(identity, 'identifier_key', ''))
-        and key.startswith('tg-')
-        and key[3:].isdigit()
-    ]
-
-    # Fallback to legacy env var for backwards compatibility
-    if not chat_ids:
-        if legacy_id := os.environ.get('TELEGRAM_CHAT_ID'):
-            chat_ids = [legacy_id]
-        else:
-            return 'Error: No telegram users found (no identities with tg-* identifier_key)'
-
-    # Filter to owner only if requested
+    # Determine recipients
     if owner_only:
-        tags = getattr(agent_state, 'tags', []) or []
+        # WORKAROUND: Fetch tags via API (agent_state.tags may be empty)
+        tags = _fetch_tags_via_api(agent_state.id)
         owner_ids = [tag[9:] for tag in tags if tag.startswith('owner-tg-')]
-
         if not owner_ids:
             return 'Error: owner_only=True but no owner-tg-* tag found on agent'
-        if owner_ids[0] not in chat_ids:
-            return f'Error: Owner {owner_ids[0]} not in attached identities'
-
         chat_ids = owner_ids[:1]
+    else:
+        # WORKAROUND: Fetch all identities via API (agent_state.identities is empty)
+        identifier_keys = _fetch_identifier_keys_via_api(agent_state.id)
+        chat_ids = [
+            key[3:]
+            for key in identifier_keys
+            if key.startswith('tg-') and key[3:].isdigit()
+        ]
+        if not chat_ids:
+            return 'Error: No telegram users found (no identities with tg-* identifier_key)'
 
     # Escape MarkdownV2 special characters
     escaped = re.sub(r'([_*\[\]()~`>#+=|{}.!-])', r'\\\1', message)
@@ -86,8 +132,9 @@ def notify_via_telegram(
                 'chat_id': chat_id,
                 'text': escaped,
                 'parse_mode': 'MarkdownV2',
-            }, timeout=10)
+            }, timeout=30)
             results.append((chat_id, resp.ok))
+            time.sleep(3)
         except requests.exceptions.RequestException:
             results.append((chat_id, False))
 

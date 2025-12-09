@@ -198,7 +198,7 @@ def _format_tool_by_name(
             return _format_schedule_message(args_obj)
 
         case 'notify_via_telegram':
-            return _format_notify_via_telegram()
+            return _format_notify_via_telegram(args_obj)
 
         # Generic tool
         case _:
@@ -283,8 +283,11 @@ def _format_schedule_message(args_obj: dict[str, Any]) -> str:
     return header
 
 
-def _format_notify_via_telegram() -> str:
+def _format_notify_via_telegram(args_obj: dict[str, Any]) -> str:
     """Format notify_via_telegram tool call."""
+    owner_only = args_obj.get('owner_only', False)
+    if owner_only:
+        return '📲 _Sending message to owner\\.\\.\\._'
     return '📲 _Sending message to Telegram\\.\\.\\._'
 
 
