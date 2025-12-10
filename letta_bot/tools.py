@@ -94,7 +94,10 @@ def _check_code_match(agent: AgentState, tool_name: str) -> bool:
 
 
 def _check_schedule_current(agent: AgentState) -> ToolUpdateStatus:
-    """Check if schedule_message tool code and env vars are current."""
+    """Check if schedule_message tool code and env vars are current.
+
+    Note: LETTA_AGENT_ID is injected by Letta runtime, not by us.
+    """
     env_vars = agent.tool_exec_environment_variables or []
     env_dict = {v.key: v.value for v in env_vars}
 
@@ -103,7 +106,6 @@ def _check_schedule_current(agent: AgentState) -> ToolUpdateStatus:
         env_dict.get('LETTA_API_KEY') == CONFIG.letta_api_key
         and env_dict.get('SCHEDULER_URL') == CONFIG.scheduler_url
         and env_dict.get('SCHEDULER_API_KEY') == CONFIG.scheduler_api_key
-        and env_dict.get('AGENT_ID') == agent.id
     )
 
     return ToolUpdateStatus(code_match=code_match, env_match=env_match)
@@ -539,6 +541,7 @@ async def _enable_schedule_tool(agent_id: str) -> None:
             )
 
     # Set up environment variables for scheduling
+    # Note: LETTA_AGENT_ID is injected by Letta runtime, not by us
     agent = await client.agents.retrieve(agent_id=agent_id)
     current_env_vars = agent.tool_exec_environment_variables or []
 
@@ -548,11 +551,10 @@ async def _enable_schedule_tool(agent_id: str) -> None:
         if hasattr(var, 'key') and hasattr(var, 'value') and var.value is not None
     }
 
-    # Add scheduling env vars
+    # Add scheduling env vars (LETTA_AGENT_ID is injected by Letta runtime)
     env_dict['LETTA_API_KEY'] = CONFIG.letta_api_key
     env_dict['SCHEDULER_URL'] = CONFIG.scheduler_url
     env_dict['SCHEDULER_API_KEY'] = CONFIG.scheduler_api_key
-    env_dict['AGENT_ID'] = agent_id
 
     await client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env_dict)
 
@@ -640,7 +642,7 @@ async def _disable_schedule_tool(agent_id: str) -> None:
         await client.agents.tools.detach(agent_id=agent_id, tool_id=schedule_tool.id)
         LOGGER.info(f'Detached schedule_message tool from agent {agent_id}')
 
-    # Remove environment variables
+    # Remove environment variables (LETTA_AGENT_ID is injected by Letta runtime, not ours)
     agent = await client.agents.retrieve(agent_id=agent_id)
     current_env_vars = agent.tool_exec_environment_variables or []
 
@@ -650,8 +652,7 @@ async def _disable_schedule_tool(agent_id: str) -> None:
         if hasattr(var, 'key')
         and hasattr(var, 'value')
         and var.value is not None
-        and var.key
-        not in ('LETTA_API_KEY', 'SCHEDULER_URL', 'SCHEDULER_API_KEY', 'AGENT_ID')
+        and var.key not in ('LETTA_API_KEY', 'SCHEDULER_URL', 'SCHEDULER_API_KEY')
     }
     await client.agents.update(
         agent_id=agent_id, tool_exec_environment_variables=filtered_vars

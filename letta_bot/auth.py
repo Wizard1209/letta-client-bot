@@ -110,11 +110,7 @@ async def request_owner_permission(
     agent_info = f'Agent ID: {agent_id}'
     try:
         agent = await client.agents.retrieve(agent_id)
-        agent_info = (
-            f'Assistant: {agent.name}\n'
-            f'Model: {agent.model}\n'
-            f'ID: {agent_id}'
-        )
+        agent_info = f'Assistant: {agent.name}\nModel: {agent.model}\nID: {agent_id}'
     except APIError as e:
         LOGGER.warning(f'Could not fetch agent {agent_id} details: {e}')
 

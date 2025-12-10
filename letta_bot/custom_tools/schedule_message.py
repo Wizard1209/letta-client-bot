@@ -5,6 +5,9 @@ loaded as a Letta custom tool via source_code registration.
 
 This tool enables agents to schedule messages to themselves for delayed execution
 using Scheduler's delay/queue service (https://scheduler.io).
+
+Uses injected Letta context:
+- `LETTA_AGENT_ID`: Agent's own ID (available via os.getenv, injected by runtime)
 """
 
 from datetime import datetime, timedelta, timezone
@@ -28,8 +31,10 @@ def schedule_message(message_to_self: str, delay_seconds: int = 0, schedule_at: 
     - LETTA_API_KEY: Letta API authentication token
     - SCHEDULER_URL: Scheduler service base URL
     - SCHEDULER_API_KEY: Scheduler service API token
-    - AGENT_ID: The agent's ID (for self-messaging)
     - LETTA_BASE_URL: Letta API base URL (optional, defaults to https://api.letta.com)
+
+    Injected by Letta runtime:
+    - LETTA_AGENT_ID: This agent's ID (for self-messaging)
 
     Args:
         message_to_self (str): The system message to send to yourself after the delay
@@ -45,8 +50,10 @@ def schedule_message(message_to_self: str, delay_seconds: int = 0, schedule_at: 
     letta_api_key = os.environ.get('LETTA_API_KEY')
     scheduler_url = os.environ.get('SCHEDULER_URL')
     scheduler_api_key = os.environ.get('SCHEDULER_API_KEY')
-    agent_id = os.environ.get('AGENT_ID')
     base_url = os.environ.get('LETTA_BASE_URL', 'https://api.letta.com')
+
+    # Get agent ID from injected environment (provided by Letta runtime)
+    agent_id = os.environ.get('LETTA_AGENT_ID')
 
     # Validate environment variables
     if not letta_api_key:
@@ -56,7 +63,7 @@ def schedule_message(message_to_self: str, delay_seconds: int = 0, schedule_at: 
     if not scheduler_api_key:
         return 'Error: SCHEDULER_API_KEY environment variable is not set'
     if not agent_id:
-        return 'Error: AGENT_ID environment variable is not set'
+        return 'Error: LETTA_AGENT_ID not available in execution environment'
 
     # Validate scheduling parameters - exactly one must be provided
     has_delay = delay_seconds > 0

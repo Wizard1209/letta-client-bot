@@ -343,9 +343,7 @@ async def message_handler(
                 gel_client, identity_id=identity.identity_id, agent_id=agent_id
             )
         except IndexError:
-            await message.answer(
-                Text('You have no assistants yet. Use /new').as_markdown()
-            )
+            await message.answer(Text('You have no assistants yet. Use /new').as_markdown())
             return
     else:
         agent_id = identity.selected_agent

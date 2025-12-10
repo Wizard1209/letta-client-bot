@@ -2,6 +2,10 @@
 
 NOTE: This file is excluded from linting/formatting and designed to be
 loaded as a Letta custom tool via source_code registration.
+
+Uses injected Letta context:
+- `client`: Pre-authenticated Letta SDK client (injected by runtime)
+- `LETTA_AGENT_ID`: Agent's own ID (available via os.getenv)
 """
 
 import os
@@ -9,64 +13,8 @@ import re
 import time
 
 
-# =============================================================================
-# WORKAROUND: Fetch agent data via API (injected agent_state is incomplete)
-# TODO: Remove when Letta fixes injected AgentState to include all fields
-# =============================================================================
-def _fetch_agent_via_api(agent_id: str) -> 'Agent | None':
-    """Fetch full agent data via Letta API.
-
-    Workaround for agent_state fields being empty/incomplete in injected state.
-    Requires LETTA_API_KEY environment variable.
-
-    Returns:
-        Agent object or None if API call fails
-    """
-    from letta_client import Letta
-
-    api_key = os.environ.get('LETTA_API_KEY')
-    if not api_key:
-        return None
-
-    client = Letta(api_key=api_key)
-    return client.agents.retrieve(agent_id=agent_id, include=['agent.identities'])
-
-
-def _fetch_identifier_keys_via_api(agent_id: str) -> list[str]:
-    """Fetch identifier_keys from agent's identities via Letta API.
-
-    Returns:
-        List of identifier_key strings (e.g., ['tg-123456789'])
-    """
-    agent = _fetch_agent_via_api(agent_id)
-    if not agent:
-        return []
-
-    identifier_keys = []
-    for identity in agent.identities or []:
-        if hasattr(identity, 'identifier_key') and identity.identifier_key:
-            identifier_keys.append(identity.identifier_key)
-
-    return identifier_keys
-
-
-def _fetch_tags_via_api(agent_id: str) -> list[str]:
-    """Fetch tags from agent via Letta API.
-
-    Returns:
-        List of tag strings (e.g., ['owner-tg-123456789'])
-    """
-    agent = _fetch_agent_via_api(agent_id)
-    if not agent:
-        return []
-
-    return agent.tags or []
-# =============================================================================
-
-
 def notify_via_telegram(
     message: str,
-    agent_state: 'AgentState',
     owner_only: bool = False,
 ) -> str:
     """Send proactive notification to Telegram user(s).
@@ -85,9 +33,12 @@ def notify_via_telegram(
     Environment variable TELEGRAM_BOT_TOKEN must be set in the agent's tool
     execution environment.
 
+    Injected by Letta runtime:
+    - `client`: Authenticated Letta SDK client
+    - `LETTA_AGENT_ID`: This agent's ID (via os.getenv)
+
     Args:
         message: The proactive notification message to send to the user(s)
-        agent_state: Automatically injected by Letta runtime
         owner_only: If True, send only to agent owner. If False (default),
                    send to all users attached to this agent.
 
@@ -100,21 +51,36 @@ def notify_via_telegram(
     if not bot_token:
         return 'Error: TELEGRAM_BOT_TOKEN environment variable is not set'
 
+    # Get agent ID from injected environment
+    agent_id = os.environ.get('LETTA_AGENT_ID')
+    if not agent_id:
+        return 'Error: LETTA_AGENT_ID not available in execution environment'
+
+    # Use injected client to fetch agent data
+    # `client` is automatically injected by Letta runtime
+    try:
+        agent = client.agents.retrieve(agent_id=agent_id, include=['agent.identities'])
+    except Exception as e:
+        return f'Error retrieving agent data: {str(e)}'
+
     # Determine recipients
     if owner_only:
-        # WORKAROUND: Fetch tags via API (agent_state.tags may be empty)
-        tags = _fetch_tags_via_api(agent_state.id)
+        # Get owner from agent tags (format: owner-tg-{telegram_id})
+        tags = agent.tags or []
         owner_ids = [tag[9:] for tag in tags if tag.startswith('owner-tg-')]
         if not owner_ids:
             return 'Error: owner_only=True but no owner-tg-* tag found on agent'
         chat_ids = owner_ids[:1]
     else:
-        # WORKAROUND: Fetch all identities via API (agent_state.identities is empty)
-        identifier_keys = _fetch_identifier_keys_via_api(agent_state.id)
+        # Get all telegram identities attached to this agent
+        identities = agent.identities or []
         chat_ids = [
-            key[3:]
-            for key in identifier_keys
-            if key.startswith('tg-') and key[3:].isdigit()
+            identity.identifier_key[3:]
+            for identity in identities
+            if hasattr(identity, 'identifier_key')
+            and identity.identifier_key
+            and identity.identifier_key.startswith('tg-')
+            and identity.identifier_key[3:].isdigit()
         ]
         if not chat_ids:
             return 'Error: No telegram users found (no identities with tg-* identifier_key)'
