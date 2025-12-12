@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 **[Latest additions]**
 
+**Changed:**
+• Renamed `/botaccess` → `/access` with clearer description emphasizing this grants general bot access only (identity), not assistant capabilities
+
 **[1.1.0] - 2025-12-09**
 
 **Added:**
@@ -32,13 +35,13 @@ All notable changes to this project will be documented in this file.
 • Progressive "working" indicator that updates in real-time during agent processing (shows increasing hourglass symbols while waiting)
 • New unified response handler module consolidating stream event processing and message formatting
 • User notification system for authorization events (approval, denial, revocation)
-• /botaccess command for requesting or restoring bot access independently
+• /access command for requesting general bot access (identity only, no assistant capabilities)
 • Pending request validation to prevent duplicate identity requests
 • /switch command for switching between user's assistants
 • /notify command with inline buttons for enabling proactive assistant behavior (reminders, follow-ups, notifications)
 
 **Changed:**
-• Simplified command names: `/switch_assistant` → `/switch`, `/request_identity` → `/botaccess`
+• Simplified command names: `/switch_assistant` → `/switch`, `/request_identity` → `/access`
 • Admin commands now use separate commands (`/pending`, `/allow`, `/deny`, `/revoke`, `/users`) instead of `/admin` subcommands
 • Template selection now shows vertical button layout with confirmation message after selection
 • Assistant switching now updates the keyboard in-place to show current selection

@@ -144,9 +144,9 @@ class NewAssistantCallback(CallbackData, prefix='new'):
 # =============================================================================
 
 
-@auth_router.message(Command('botaccess'))
-async def botaccess(message: Message, bot: Bot, gel_client: AsyncIOExecutor) -> None:
-    """Request or restore bot access without requesting an agent."""
+@auth_router.message(Command('access'))
+async def access_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) -> None:
+    """Request general bot access (identity only, no assistant capabilities)."""
     if not message.from_user:
         return
 
@@ -202,11 +202,11 @@ async def new_assistant(message: Message) -> None:
     builder = InlineKeyboardBuilder()
     for t in templates:
         data = NewAssistantCallback(template_name=t.name, version=t.latest_version)
-        builder.button(text=f'{t.name}', callback_data=data.pack())
+        builder.button(text=f'Create agent: {t.name}', callback_data=data.pack())
     builder.adjust(1)  # One button per row for vertical layout
     await message.answer(
         Text(
-            'Choose a template for your assistant\n\n'
+            'Create your assistant\n\n'
             'See /about for detailed template descriptions'
         ).as_markdown(),
         reply_markup=builder.as_markup(),
@@ -590,7 +590,7 @@ async def deny_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) 
         if reason:
             user_message_parts.append(f'\n\nReason: {reason}')
         user_message_parts.append(
-            '\n\nYou can submit a new request using /new or /botaccess if needed.'
+            '\n\nYou can submit a new request using /new or /access if needed.'
         )
 
         await bot.send_message(
@@ -642,7 +642,7 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
                 'If you believe this was done in error, '
                 'please contact the administrator.\n'
                 'You can submit a new request using /new or '
-                '/botaccess if you wish to regain access.'
+                '/access if you wish to regain access.'
             ).as_markdown(),
         )
     except Exception as e:

@@ -78,6 +78,10 @@ module default {
             default := datetime_of_transaction();
         }
 
+        # Prevent duplicate pending requests for same user/resource_type/resource_id
+        constraint exclusive on ((.user, .resource_type, .resource_id))
+            except (.status != AuthStatus.pending);
+
         index on (.status);
     }
 }

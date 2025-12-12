@@ -52,7 +52,10 @@ down:
 	docker compose -f deploy/docker-compose.yaml --env-file .env down
 
 logs:
-	docker compose -f deploy/docker-compose.yaml --env-file .env logs -f
+	docker compose -f deploy/docker-compose.yaml --env-file .env logs -f letta_bot
+
+logs-db:
+	docker compose -f deploy/docker-compose.yaml --env-file .env logs -f gel
 
 pull:
 	git pull

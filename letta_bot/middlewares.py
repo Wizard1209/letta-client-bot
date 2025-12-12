@@ -107,7 +107,7 @@ class IdentityMiddleware(BaseMiddleware):
         # Check if user has allowed identity
         if not await get_allowed_identity_query(gel_client, telegram_id=from_user.id):
             await event.answer(
-                Text('You need to request bot access first using /botaccess').as_markdown()
+                Text('You need to request bot access first using /access').as_markdown()
             )
             return None
 

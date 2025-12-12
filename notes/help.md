@@ -13,7 +13,7 @@
 /switch - Switch between your assistants
 /current - View current assistant info and memory status
 /context - View assistant context window breakdown
-/botaccess - Request or restore bot access
+/access - Request general bot access (identity only, no assistant)
 /notify - Enable/disable proactive notifications
 
 ──────────────────────────────

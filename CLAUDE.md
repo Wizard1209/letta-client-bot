@@ -86,7 +86,7 @@ The bot uses **Aiogram's middleware system** for dependency injection and access
   - Injects `identity` object into handler data
   - Allows handler execution
 - If authorization fails:
-  - Sends error message to user: "You need to request bot access first using /botaccess"
+  - Sends error message to user: "You need to request bot access first using /access"
   - Blocks handler execution (returns None)
 
 **Marking Handlers that Require Identity**:
@@ -321,7 +321,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 
 **Phase 2: Resource Request**
 
-- **Identity-only request**: User runs `/botaccess` to request identity access without agent
+- **Identity-only request**: User runs `/access` to request general bot access (identity only, no assistant capabilities)
 - **Agent request**: User runs `/new` to see available agent templates
 - User selects template from inline keyboard
 - System creates authorization requests:
@@ -529,7 +529,7 @@ letta_bot/
   config.py            # Configuration management (Pydantic settings)
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
-  auth.py              # All authorization: user requests (/botaccess, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
+  auth.py              # All authorization: user requests (/access, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
   agent.py             # Agent operations: /switch, /current, /context, and message routing to Letta agents
   client.py            # Shared Letta client instance and Letta API operations (identity, agent, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
