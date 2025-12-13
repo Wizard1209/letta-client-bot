@@ -23,27 +23,26 @@ class ResourceType(enum.Enum):
 async def check_pending_request(
     executor: gel.AsyncIOExecutor,
     *,
+    resource_id: str | None = None,
     telegram_id: int,
     resource_type: ResourceType,
     status: AuthStatus | None = None,
-    resource_id: str | None = None,
 ) -> bool:
     return await executor.query_single(
         """\
+        with
+            rid := <optional str>$resource_id ?? ''
         select exists (
             select AuthorizationRequest
             filter
                 .user.telegram_id = <int64>$telegram_id
                 and .resource_type = <ResourceType>$resource_type
                 and .status = <optional AuthStatus>$status ?? AuthStatus.pending
-                and (
-                    <optional str>$resource_id ?? '' = ''
-                    or .resource_id = <optional str>$resource_id
-                )
+                and (rid = '' or .resource_id = rid)
         )\
         """,
+        resource_id=resource_id,
         telegram_id=telegram_id,
         resource_type=resource_type,
         status=status,
-        resource_id=resource_id,
     )
