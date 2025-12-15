@@ -5,42 +5,35 @@ Usage:
 """
 
 import argparse
-import asyncio
-import logging
 
 from letta_client import APIError
 
-from letta_bot.client import client
-
-# Suppress HTTP request logs
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('httpcore').setLevel(logging.WARNING)
+from devscripts.bootstrap import letta
 
 
-async def delete_agent(agent_id: str) -> tuple[str, bool, str | None]:
+def delete_agent(agent_id: str) -> tuple[str, bool, str | None]:
     """Delete a single agent and return result."""
     try:
-        await client.agents.delete(agent_id=agent_id)
+        letta.agents.delete(agent_id=agent_id)
         return (agent_id, True, None)
-    except (APIError, Exception) as e:
+    except APIError as e:
         return (agent_id, False, str(e))
 
 
-async def main(agent_ids: list[str]) -> None:
-    """Delete specified agents in parallel."""
+def main(agent_ids: list[str]) -> None:
+    """Delete specified agents."""
     if not agent_ids:
         print('\nNo agent IDs provided.')
         return
 
     print(f'\nDeleting {len(agent_ids)} agent(s)...\n')
 
-    results = await asyncio.gather(*[delete_agent(agent_id) for agent_id in agent_ids])
-
-    for agent_id, success, error in results:
+    for agent_id in agent_ids:
+        agent_id, success, error = delete_agent(agent_id)
         if success:
-            print(f'✅ Deleted: {agent_id}')
+            print(f'  Deleted: {agent_id}')
         else:
-            print(f'❌ Failed: {agent_id} - {error}')
+            print(f'  Failed: {agent_id} - {error}')
 
     print('\nDone.')
 
@@ -53,4 +46,4 @@ if __name__ == '__main__':
         help='One or more agent IDs to delete (space-separated)',
     )
     args = parser.parse_args()
-    asyncio.run(main(args.agent_ids))
+    main(args.agent_ids)

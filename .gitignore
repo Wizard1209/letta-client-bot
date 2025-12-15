@@ -58,6 +58,7 @@ __pypackages__/
 
 # Environments
 .env
+.agent_id
 .venv
 env/
 venv/

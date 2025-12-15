@@ -1,48 +1,60 @@
 #!/usr/bin/env python3
-"""CLI script to test custom Letta tools with .env loaded.
+"""CLI script to test custom Letta tools with injected context.
+
+Injects same variables as Letta cloud runtime:
+- client: Letta SDK client (global)
+- LETTA_AGENT_ID: Agent ID (env var)
+- LETTA_PROJECT_ID: Project ID (env var, from .env)
+
+Agent ID source (in order):
+1. --agent-id CLI argument
+2. LETTA_AGENT_ID env var
+3. .agent_id file in project root
 
 Usage:
     uv run python -m devscripts.run_tool <tool_name> [args...]
+    uv run python -m devscripts.run_tool --agent-id <id> <tool_name> [args...]
 
 Examples:
-    uv run python -m devscripts.run_tool get_x_user_posts elonmusk 12 10
     uv run python -m devscripts.run_tool notify_via_telegram "Hello world"
     uv run python -m devscripts.run_tool schedule_message "Reminder" 3600
+    uv run python -m devscripts.run_tool search_x_posts "TzKT OR PyTezos" 24 20
 """
 
 import argparse
 import importlib.util
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
+
+from devscripts.bootstrap import letta
+
+PROJECT_ROOT = Path(__file__).parent.parent
+TOOLS_DIR = PROJECT_ROOT / 'letta_bot' / 'custom_tools'
+AGENT_ID_FILE = PROJECT_ROOT / '.agent_id'
 
 
-def load_env(env_path: Path) -> None:
-    """Load environment variables from .env file."""
-    if not env_path.exists():
-        print(f'Warning: {env_path} not found')
-        return
+def get_agent_id(cli_agent_id: str | None) -> str | None:
+    """Get agent ID from CLI arg, env var, or .agent_id file."""
+    # 1. CLI argument
+    if cli_agent_id:
+        return cli_agent_id
 
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            # Skip empty lines and comments
-            if not line or line.startswith('#'):
-                continue
-            # Parse KEY=value
-            if '=' in line:
-                key, _, value = line.partition('=')
-                key = key.strip()
-                value = value.strip()
-                # Don't override existing env vars
-                if key and key not in os.environ:
-                    os.environ[key] = value
+    # 2. Environment variable
+    if env_id := os.environ.get('LETTA_AGENT_ID'):
+        return env_id
+
+    # 3. .agent_id file
+    if AGENT_ID_FILE.exists():
+        return AGENT_ID_FILE.read_text().strip()
+
+    return None
 
 
-def load_tool_function(tool_name: str, tools_dir: Path):
-    """Dynamically load a tool function from custom_tools directory."""
-    tool_file = tools_dir / f'{tool_name}.py'
+def load_tool_function(tool_name: str):
+    """Load tool function with injected client."""
+    tool_file = TOOLS_DIR / f'{tool_name}.py'
 
     if not tool_file.exists():
         raise FileNotFoundError(f'Tool file not found: {tool_file}')
@@ -52,9 +64,12 @@ def load_tool_function(tool_name: str, tools_dir: Path):
         raise ImportError(f'Cannot load spec for {tool_file}')
 
     module = importlib.util.module_from_spec(spec)
+
+    # Inject client into module's global namespace (like Letta runtime does)
+    module.__dict__['client'] = letta
+
     spec.loader.exec_module(module)
 
-    # Get the function with same name as module
     if not hasattr(module, tool_name):
         raise AttributeError(f'Function {tool_name} not found in {tool_file}')
 
@@ -62,78 +77,39 @@ def load_tool_function(tool_name: str, tools_dir: Path):
 
 
 def parse_arg(arg: str):
-    """Parse CLI argument, attempting to convert to appropriate type."""
-    # Try int
-    try:
-        return int(arg)
-    except ValueError:
-        pass
-
-    # Try float
-    try:
-        return float(arg)
-    except ValueError:
-        pass
-
-    # Try JSON (for complex types)
-    try:
-        return json.loads(arg)
-    except json.JSONDecodeError:
-        pass
-
-    # Return as string
+    """Parse CLI argument to appropriate type."""
+    for parser in (int, float, json.loads):
+        try:
+            return parser(arg)
+        except (ValueError, json.JSONDecodeError):
+            pass
     return arg
 
 
-def list_tools(tools_dir: Path) -> list[str]:
+def list_tools() -> list[str]:
     """List available tool names."""
-    tools = []
-    for f in tools_dir.glob('*.py'):
-        if not f.name.startswith('_'):
-            tools.append(f.stem)
-    return sorted(tools)
+    return sorted(f.stem for f in TOOLS_DIR.glob('*.py') if not f.name.startswith('_'))
 
 
 def main():
-    project_root = Path(__file__).parent.parent
-    tools_dir = project_root / 'letta_bot' / 'custom_tools'
-    env_path = project_root / '.env'
-
     parser = argparse.ArgumentParser(
-        description='Test custom Letta tools with .env loaded',
+        description='Test custom Letta tools with injected context',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    parser.add_argument('tool_name', nargs='?', help='Name of the tool (without .py)')
+    parser.add_argument('args', nargs='*', help='Arguments to pass to the tool')
+    parser.add_argument('-l', '--list', action='store_true', help='List available tools')
     parser.add_argument(
-        'tool_name',
-        nargs='?',
-        help='Name of the tool to run (without .py)',
-    )
-    parser.add_argument(
-        'args',
-        nargs='*',
-        help='Arguments to pass to the tool function',
-    )
-    parser.add_argument(
-        '-l',
-        '--list',
-        action='store_true',
-        help='List available tools',
-    )
-    parser.add_argument(
-        '-e',
-        '--env',
-        default=str(env_path),
-        help=f'Path to .env file (default: {env_path})',
+        '-a', '--agent-id',
+        help='Agent ID to inject (also reads from LETTA_AGENT_ID env or .agent_id file)',
     )
 
     args = parser.parse_args()
 
-    # List tools mode
     if args.list:
-        tools = list_tools(tools_dir)
         print('Available tools:')
-        for tool in tools:
+        for tool in list_tools():
             print(f'  - {tool}')
         return 0
 
@@ -141,21 +117,25 @@ def main():
         parser.print_help()
         return 1
 
-    # Load environment
-    load_env(Path(args.env))
+    # Resolve and inject agent ID
+    agent_id = get_agent_id(args.agent_id)
+    if agent_id:
+        os.environ['LETTA_AGENT_ID'] = agent_id
+        print(f'Agent ID: {agent_id}')
+    else:
+        print('Warning: No agent ID found (some tools may fail)')
+        print(f'  Set via: --agent-id, LETTA_AGENT_ID env, or {AGENT_ID_FILE}')
 
-    # Load and run tool
+    # Load tool with injected client
     try:
-        tool_fn = load_tool_function(args.tool_name, tools_dir)
+        tool_fn = load_tool_function(args.tool_name)
     except (FileNotFoundError, ImportError, AttributeError) as e:
         print(f'Error: {e}')
-        print(f'\nAvailable tools: {", ".join(list_tools(tools_dir))}')
+        print(f'\nAvailable tools: {", ".join(list_tools())}')
         return 1
 
-    # Parse arguments
     parsed_args = [parse_arg(a) for a in args.args]
 
-    # Run tool
     print(f'Running {args.tool_name}({", ".join(repr(a) for a in parsed_args)})')
     print('-' * 50)
 

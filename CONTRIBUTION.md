@@ -102,6 +102,97 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Usage analytics per identity
 - Add message editing support
 
+## Devscripts
+
+Development scripts for Letta API operations live in `devscripts/`. All scripts use **sync clients** and **plain env loading** via `bootstrap.py`.
+
+### Running Scripts
+
+```bash
+uv run python -m devscripts.<script_name> [args]
+```
+
+### Writing New Scripts
+
+**Standard pattern** - use `bootstrap.py`:
+
+```python
+"""Short description of what the script does.
+
+Usage:
+    uv run python -m devscripts.my_script [args]
+"""
+
+import argparse
+
+from devscripts.bootstrap import env, letta, gel
+
+
+def main() -> None:
+    """Main entry point."""
+    # Access env vars
+    project_id = env('LETTA_PROJECT_ID')
+    optional_var = env('OPTIONAL_VAR', 'default')
+
+    # Use sync Letta client
+    agents = letta.agents.list()
+
+    # Use sync Gel client
+    users = gel.query('select User { telegram_id }')
+
+
+if __name__ == '__main__':
+    main()
+```
+
+**Key principles:**
+
+1. **Sync clients only** - no `async`/`await`, no `asyncio.run()`
+2. **Import from bootstrap** - `from devscripts.bootstrap import env, letta, gel`
+3. **Plain env access** - `env('VAR')` or `env('VAR', 'default')`
+4. **No CONFIG** - don't import `letta_bot.config.CONFIG`, use `env()` directly
+5. **Module docstring** - include usage example at top of file
+6. **argparse for CLI args** - when script accepts arguments
+
+**Available from bootstrap:**
+
+- `env(key, default=None)` - get env var (raises KeyError if not set and no default)
+- `letta` - sync Letta client (lazy-loaded)
+- `gel` - sync Gel client (lazy-loaded)
+
+### Testing Custom Tools
+
+`run_tool.py` tests Letta custom tools with same injected context as cloud runtime:
+
+```bash
+# List available tools
+uv run python -m devscripts.run_tool -l
+
+# Run with agent ID from CLI
+uv run python -m devscripts.run_tool -a <agent-id> notify_via_telegram "Hello"
+
+# Run (reads agent ID from LETTA_AGENT_ID env or .agent_id file)
+uv run python -m devscripts.run_tool search_x_posts "TzKT" 24 20
+```
+
+**Injected context (same as Letta cloud):**
+
+- `client` - Letta SDK client (injected as global)
+- `LETTA_AGENT_ID` - agent ID (env var)
+- `LETTA_PROJECT_ID` - project ID (from .env)
+
+**Agent ID resolution order:**
+
+1. `--agent-id` / `-a` CLI argument
+2. `LETTA_AGENT_ID` environment variable
+3. `.agent_id` file in project root (single line with agent UUID)
+
+**Setting up .agent_id:**
+
+```bash
+echo "agent-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" > .agent_id
+```
+
 ## Technical TODOs
 
 Local TODOs are still in code
