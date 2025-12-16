@@ -4,6 +4,7 @@ Info handlers for commands serving information
 
 from functools import lru_cache
 import logging
+import re
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -87,8 +88,36 @@ async def contact_handler(message: Message) -> None:
     await message.answer(content)
 
 
+def _extract_latest_changelog(content: str) -> str:
+    """Extract only the latest version section from changelog.
+
+    Keeps header, [Latest additions], and most recent versioned section.
+    Matches MarkdownV2-escaped version headers like *\\[1\\.1\\.0\\] \\- 2025\\-12\\-09*
+
+    Args:
+        content: Telegram MarkdownV2 changelog content
+
+    Returns:
+        Truncated changelog with only latest sections
+    """
+    # Match version headers: *\[X.X.X\]...*  (MarkdownV2 escaped)
+    version_pattern = re.compile(
+        r'^\*\\\[\d+\\\.\d+\\\.\d+\\\].*\*$',
+        re.MULTILINE,
+    )
+
+    matches = list(version_pattern.finditer(content))
+
+    if len(matches) < 2:
+        return content
+
+    # Cut off at the second version header
+    return content[: matches[1].start()].rstrip()
+
+
 @info_router.message(Command('changelog'))
 async def changelog_handler(message: Message) -> None:
     """Display project changelog and version history."""
     content = load_info_command_content('changelog')
+    content = _extract_latest_changelog(content)
     await message.answer(content)

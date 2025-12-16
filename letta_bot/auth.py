@@ -434,7 +434,9 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
 
             # Check if agent still exists before attaching
             try:
-                agent = await client.agents.retrieve(agent_id=resource_id, include=['agent.tags'])
+                agent = await client.agents.retrieve(
+                    agent_id=resource_id, include=['agent.tags']
+                )
             except APIError as e:
                 LOGGER.error(f'Agent {resource_id} not found during approval: {e}')
                 await message.answer(
@@ -526,16 +528,20 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                 '✅ Your request for identity access has been approved!\n\n'
                 'Once your assistant will be available I will let you know'
             )
-        elif resource_type == ResourceType.ACCESS_AGENT:
-            user_message = (
-                f'✅ Your assistant access request has been approved!\n\n'
-                f'Agent ID: {resource_id}\n\n'
-                'You can now use /switch to select this assistant.'
-            )
         else:
-            user_message = (
-                '✅ Your new assistant is ready!\n\nJust type a message to start chatting!'
+            # ACCESS_AGENT or CREATE_AGENT_FROM_TEMPLATE
+            agents = await client.identities.agents.list(
+                identity_id=identity_result[0].identity_id, limit=2, order='desc'
             )
+            has_multiple = len(agents.items) > 1
+            hint = '\nUse /switch to select it.' if has_multiple else ''
+
+            if resource_type == ResourceType.ACCESS_AGENT:
+                agent = await client.agents.retrieve(agent_id=resource_id)
+                user_message = f'✅ Access to "{agent.name}" granted!{hint}'
+            else:
+                agent = agents.items[0]  # newest
+                user_message = f'✅ Your new assistant "{agent.name}" is ready!{hint}'
         await bot.send_message(
             chat_id=result.user.telegram_id,
             text=Text(user_message).as_markdown(),

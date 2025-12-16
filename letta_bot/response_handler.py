@@ -640,8 +640,8 @@ async def _send_error_message(message: Message, reason: Exception, content: str)
         message: Original message from user
         reason: Error description to log
     """
-    LOGGER.warning('Failed to send message: %s\ncontent: %s', reason)
-    LOGGER.debug('Content: %s', reason)
+    LOGGER.warning('Failed to send message: %s\nContent: %s', reason, content)
+    LOGGER.debug('Full content: %s', content)
 
     error_text = '❌ Something went wrong'
 
@@ -715,12 +715,13 @@ class AgentStreamHandler:
         if message_type in ('reasoning_message', 'tool_call_message'):
             formatted_content = self._format_other_event(event)
             if formatted_content:
-                try:
-                    await self.telegram_message.answer(
-                        formatted_content, parse_mode=ParseMode.MARKDOWN_V2
-                    )
-                except Exception as e:
-                    await _send_error_message(self.telegram_message, e, formatted_content)
+                for chunk in split_markdown_v2(formatted_content):
+                    try:
+                        await self.telegram_message.answer(
+                            chunk, parse_mode=ParseMode.MARKDOWN_V2
+                        )
+                    except Exception as e:
+                        await _send_error_message(self.telegram_message, e, chunk)
             return
 
         # System alerts (informational messages from Letta)

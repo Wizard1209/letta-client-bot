@@ -15,6 +15,7 @@ from gel import create_async_client
 from letta_bot.agent import agent_commands_router, agent_router
 from letta_bot.auth import auth_router
 from letta_bot.config import CONFIG
+from letta_bot.errors import setup_error_handler
 from letta_bot.info import info_router, load_info_command_content
 from letta_bot.middlewares import setup_middlewares
 from letta_bot.tools import tools_router
@@ -63,6 +64,7 @@ def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
     dp = Dispatcher(gel_client=gel_client)
 
     setup_middlewares(dp)
+    setup_error_handler(dp)
 
     # Register all common bot handlers
     setup_bot_handlers(dp)
@@ -82,6 +84,7 @@ async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
     dp = Dispatcher(gel_client=gel_client)
 
     setup_middlewares(dp)
+    setup_error_handler(dp)
 
     # Register all common bot handlers
     setup_bot_handlers(dp)

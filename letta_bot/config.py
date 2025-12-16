@@ -35,6 +35,9 @@ class Config(BaseSettings):
     # Logging level
     logging_level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] = 'INFO'
 
+    # Error notifications to admins (can be spammy, off by default)
+    notify_admins_on_error: bool = False
+
     # OpenAI config for audio transcription (optional, voice disabled if not set)
     openai_api_key: str | None = None
     whisper_model: str = 'gpt-4o-mini-transcribe'
