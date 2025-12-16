@@ -166,7 +166,7 @@ async def get_agent_owner_telegram_id(agent_id: str) -> int | None:
     Raises:
         APIError: If the retrieve operation fails
     """
-    agent = await client.agents.retrieve(agent_id=agent_id)
+    agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
     if agent.tags is not None:
         # Search for tag with format: owner-tg-{telegram_id}
         for tag in agent.tags:

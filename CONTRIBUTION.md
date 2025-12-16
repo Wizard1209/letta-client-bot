@@ -253,6 +253,68 @@ GEL_INSTANCE, GEL_SECRET_KEY (if using Gel Cloud)
 
 **Prerequisites**: Traefik with `lets-encrypt-ssl` resolver, `monitoring_monitoring` network exists, DNS configured for `WEBHOOK_HOST`.
 
+## Error Handling Policy
+
+### Infrastructure Errors
+
+**Not handled in code** - these are critical preconditions that MUST exist:
+
+- Database client (`gel_client`)
+- Letta client
+- Bot token, API keys
+- Required middleware dependencies
+
+If missing, the application should crash early. Don't wrap in try/except or check for None.
+
+```python
+# WRONG - defensive checking for infrastructure
+gel_client = data.get('gel_client')
+if not gel_client:
+    LOGGER.error('gel_client not found')
+    return None  # Silent failure
+
+# RIGHT - assume infrastructure exists, let it crash if not
+gel_client: AsyncIOExecutor = data['gel_client']
+```
+
+### Business Logic Errors
+
+**Raise exceptions** - missing business objects should raise errors that propagate to common error handler:
+
+- `from_user` is None (Telegram event without user context)
+- Identity not found for authorized user
+- Database query returned unexpected empty result
+
+```python
+# WRONG - silent skip
+if not event.from_user:
+    return None
+
+# RIGHT - raise error for common handler
+if not event.from_user:
+    raise ValueError('Event missing from_user context')
+```
+
+### Authorization Failures
+
+**User-facing** - notify user and block handler:
+
+- User not authorized (no identity access)
+- User has no agents available
+
+```python
+# Notify user, then block
+await event.answer('You need to request bot access first using /access')
+return None
+```
+
+### Key Principle
+
+**Never silently skip.** Either:
+1. Crash (infrastructure) - fail fast, fix deployment
+2. Raise error (business logic) - common handler notifies user
+3. Notify + block (authorization) - user knows what to do
+
 ## Logging Policy
 
 ### DEBUG

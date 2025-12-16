@@ -59,10 +59,10 @@ async def on_startup(bot: Bot) -> None:
 
 
 def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
-    dp = Dispatcher()
     gel_client = create_async_client()
+    dp = Dispatcher(gel_client=gel_client)
 
-    setup_middlewares(dp, gel_client)
+    setup_middlewares(dp)
 
     # Register all common bot handlers
     setup_bot_handlers(dp)
@@ -78,10 +78,10 @@ def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
 
 
 async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
-    dp = Dispatcher()
     gel_client = create_async_client()
+    dp = Dispatcher(gel_client=gel_client)
 
-    setup_middlewares(dp, gel_client)
+    setup_middlewares(dp)
 
     # Register all common bot handlers
     setup_bot_handlers(dp)

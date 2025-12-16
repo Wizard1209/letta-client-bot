@@ -16,7 +16,6 @@ from letta_client.types.agent_state import AgentState
 
 from letta_bot.client import client, register_notify_tool, register_schedule_message_tool
 from letta_bot.config import CONFIG
-from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
 from letta_bot.utils import version_needs_update
 
 LOGGER = logging.getLogger(__name__)
@@ -175,28 +174,26 @@ def _load_memory_block_content() -> str:
 tools_router = Router(name=f'{__name__}.commands')
 
 
-@tools_router.message(Command('notify'), flags={'require_identity': True})
-async def notify_command(message: Message, identity: GetIdentityResult) -> None:
+@tools_router.message(
+    Command('notify'), flags={'require_identity': True, 'require_agent': True}
+)
+async def notify_command(message: Message, agent_id: str) -> None:
     """Handle /notify command - manage proactive assistant behavior."""
     if not message.from_user:
         return
 
-    if not identity.selected_agent:
-        await message.answer(
-            Text('❌ No assistant selected. Use /switch to select one.').as_markdown()
-        )
-        return
-
     # Show checking message first, then edit with status
     status_msg = await message.answer(Text('🔍 Checking status...').as_markdown())
-    await handle_notify_status(status_msg, identity.selected_agent)
+    await handle_notify_status(status_msg, agent_id)
 
 
-@tools_router.callback_query(NotifyCallback.filter(), flags={'require_identity': True})
+@tools_router.callback_query(
+    NotifyCallback.filter(), flags={'require_identity': True, 'require_agent': True}
+)
 async def handle_notify_callback(
     callback: CallbackQuery,
     callback_data: NotifyCallback,
-    identity: GetIdentityResult,
+    agent_id: str,
 ) -> None:
     """Handle notify button clicks."""
     if not callback.from_user:
@@ -206,19 +203,15 @@ async def handle_notify_callback(
         await callback.answer('Message expired. Use /notify again.')
         return
 
-    if not identity.selected_agent:
-        await callback.answer('No assistant selected.')
-        return
-
     await callback.answer()
 
     match callback_data.action:
         case NotifyAction.ENABLE:
-            await handle_notify_enable(callback.message, identity.selected_agent)
+            await handle_notify_enable(callback.message, agent_id)
         case NotifyAction.DISABLE:
-            await handle_notify_disable(callback.message, identity.selected_agent)
+            await handle_notify_disable(callback.message, agent_id)
         case NotifyAction.UPDATE:
-            await handle_notify_update(callback.message, identity.selected_agent)
+            await handle_notify_update(callback.message, agent_id)
 
 
 async def handle_notify_status(message: Message, agent_id: str) -> None:
@@ -232,7 +225,10 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
     """
     try:
         # Step 1: Retrieve agent state
-        agent = await client.agents.retrieve(agent_id=agent_id)
+        agent = await client.agents.retrieve(
+            agent_id=agent_id,
+            include=['agent.blocks', 'agent.identities', 'agent.tools'
+        ])
 
         # Step 2: Check connection status
         schedule_connected = _is_schedule_connected(agent)

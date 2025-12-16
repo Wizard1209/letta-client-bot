@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**See also**: `CONTRIBUTION.md` for setup instructions, planned features, technical TODOs, and detailed policies.
+
 ## Project Overview
 
 A production-ready multi-user Telegram bot that leverages **Letta's identity system** for per-user agent isolation. Unlike the official letta-telegram bot (chat-scoped for single-user use), this bot is user-scoped and designed for larger client deployments with custom authentication.
@@ -60,75 +62,89 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 
 The bot uses **Aiogram's middleware system** for dependency injection and access control. Middlewares are called before handlers and can inject data, perform checks, or block handler execution.
 
-**DBMiddleware** (`middlewares.py`):
-
-- Injects `gel_client` (Gel database client) into handler data for all Message and CallbackQuery events
-- Registered as outer middleware for both message and callback query routers
-- Provides database access to all handlers without manual client passing
+**gel_client injection**: Passed via `Dispatcher(gel_client=gel_client)` workflow_data, available as `data['gel_client']` in all middlewares.
 
 **UserMiddleware** (`middlewares.py`):
 
-- Automatically registers/updates users in database on every interaction
-- Extracts user data from `event.from_user` (telegram_id, username, first_name, last_name, etc.)
-- Uses cached `upsert_user` query (5-minute TTL) to minimize database calls
-- Performs upsert operation: inserts new user or updates existing user on conflict
-- Injects `user` object into handler data for all handlers
-- Registered as outer middleware after DBMiddleware (requires `gel_client` from DBMiddleware)
-- Eliminates need for manual user registration in handlers
+- Registers/updates users in database on every interaction
+- Skips events without `from_user` (channel posts, service messages) — optional analytics
+- Uses cached `upsert_user` query (12-hour TTL) to minimize database calls
+- Injects `user` object into handler data
 
 **IdentityMiddleware** (`middlewares.py`):
 
-- Checks if handler requires identity verification by inspecting `require_identity` flag
-- Only processes handlers marked with `flags={'require_identity': True}`
-- Performs identity authorization check using `get_allowed_identity_query()`
-- If authorization succeeds:
-  - Fetches user's identity using `get_identity_query()`
-  - Injects `identity` object into handler data
-  - Allows handler execution
-- If authorization fails:
-  - Sends error message to user: "You need to request bot access first using /access"
-  - Blocks handler execution (returns None)
+- Triggered by `flags={'require_identity': True}`
+- **Business logic errors** (raise exceptions):
+  - Unsupported event type → `TypeError`
+  - Missing `from_user` → `ValueError`
+  - Identity not found for authorized user → `RuntimeError`
+- **Authorization** (notify + block):
+  - User not authorized → `❌ No access — use /new or /access to request`
+- Injects `identity: GetIdentityResult` into handler data
 
-**Marking Handlers that Require Identity**:
+**AgentMiddleware** (`middlewares.py`):
 
-Handlers that need identity access should use `flags={'require_identity': True}` parameter:
+- Triggered by `flags={'require_agent': True}` (requires `require_identity` too)
+- **Validation flow**:
+  1. If `selected_agent` exists: validate via `get_agent_identity_ids()`
+  2. If `NotFoundError`: agent deleted, trigger reselect
+  3. If identity not in agent's identities: trigger reselect
+  4. If no `selected_agent` or reselect needed: auto-select oldest agent via `get_default_agent()`
+  5. Save new selection to database via `set_selected_agent_query()`
+- **User notifications**:
+  - First-time: `🤖 Auto-selected assistant *{name}* — you can write now`
+  - Re-selection: `🔄 Switched to *{name}* (previous unavailable)`
+  - No agents: `❌ No assistants yet — use /new to request one` (blocks handler)
+- Injects `agent_id: str` into handler data
+
+**Marking Handlers that Require Identity and/or Agent**:
+
+Handlers can use flags to specify their requirements:
 
 ```python
-# Command handler requiring identity
+# Handler requiring only identity (no agent needed)
 @router.message(Command('switch'), flags={'require_identity': True})
 async def switch(message: Message, identity: GetIdentityResult) -> None:
     # Handler receives identity as injected parameter
     pass
 
-# Callback query handler requiring identity
-@router.callback_query(
-    SwitchAssistantCallback.filter(),
-    flags={'require_identity': True}
+# Handler requiring both identity and agent
+@router.message(
+    Command('current'), flags={'require_identity': True, 'require_agent': True}
 )
-async def handle_switch(
-    callback: CallbackQuery,
-    callback_data: SwitchAssistantCallback,
-    identity: GetIdentityResult,
-) -> None:
-    # Handler receives identity as injected parameter
+async def current(message: Message, agent_id: str) -> None:
+    # Handler receives validated agent_id as injected parameter
+    # Note: identity is also available if needed
     pass
 
-# Message handler (catch-all) requiring identity
-@router.message(flags={'require_identity': True})
-async def message_handler(
-    message: Message,
-    identity: GetIdentityResult
+# Callback query handler requiring both identity and agent
+@router.callback_query(
+    NotifyCallback.filter(),
+    flags={'require_identity': True, 'require_agent': True}
+)
+async def handle_notify_callback(
+    callback: CallbackQuery,
+    callback_data: NotifyCallback,
+    agent_id: str,
 ) -> None:
-    # Handler receives identity as injected parameter
+    # Handler receives validated agent_id
+    pass
+
+# Message handler (catch-all) requiring both identity and agent
+@router.message(flags={'require_identity': True, 'require_agent': True})
+async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
+    # Handler receives validated agent_id
+    # Agent validation and auto-selection handled by middleware
     pass
 ```
 
 **Key Points**:
 
-- Handlers with `require_identity` flag automatically receive `identity: GetIdentityResult` parameter
-- No need to manually check identity or pass `gel_client` - middleware handles this
+- `require_identity` flag: injects `identity: GetIdentityResult` parameter
+- `require_agent` flag: injects `agent_id: str` parameter (requires `require_identity` too)
+- `require_agent` handles all agent validation and auto-selection logic
+- No need to manually check `identity.selected_agent` or call `get_default_agent()` - middleware handles this
 - Middleware setup via `setup_middlewares(dp, gel_client)` in `main.py`
-- Replaces legacy `@require_identity(gel_client)` decorator pattern
 
 **Creating Custom Middlewares**:
 
@@ -167,25 +183,28 @@ class CustomMiddleware(BaseMiddleware):
 
 - **Outer middleware**: Runs before inner middleware and filters
   - Use: `dp.message.outer_middleware.register(CustomMiddleware())`
-  - Example: `DBMiddleware` (injects database client)
+  - Example: `UserMiddleware` (registers users)
 - **Inner middleware**: Runs after outer middleware but before handlers
   - Use: `dp.message.middleware(CustomMiddleware())`
-  - Example: `IdentityMiddleware` (checks identity access)
+  - Example: `IdentityMiddleware` (checks identity access), `AgentMiddleware` (validates agent)
 
-**Registration Order Matters**:
+**Registration Order** (`setup_middlewares(dp)`):
 
 ```python
-# 1. DBMiddleware runs first (outer) to inject gel_client
-dp.message.outer_middleware.register(DBMiddleware(gel_client))
-dp.callback_query.outer_middleware.register(DBMiddleware(gel_client))
+# gel_client injected via Dispatcher workflow_data:
+# dp = Dispatcher(gel_client=gel_client)
 
-# 2. UserMiddleware runs second (outer) to register/update users
+# 1. UserMiddleware (outer) - registers/updates users
 dp.message.outer_middleware.register(UserMiddleware())
 dp.callback_query.outer_middleware.register(UserMiddleware())
 
-# 3. IdentityMiddleware runs last (inner) and uses gel_client
+# 2. IdentityMiddleware (inner) - checks identity authorization
 dp.message.middleware(IdentityMiddleware())
 dp.callback_query.middleware(IdentityMiddleware())
+
+# 3. AgentMiddleware (inner) - validates/selects agent
+dp.message.middleware(AgentMiddleware())
+dp.callback_query.middleware(AgentMiddleware())
 ```
 
 ### Filters
@@ -722,6 +741,39 @@ Be specific: "Agent not found" vs "Agent not found or you don't have access" - h
 
 **Tags for Agents:**
 Recommend tagging all agents with `["telegram", "user:{telegram_id}"]` for additional filtering/analytics even beyond identity system.
+
+## Error Handling Policy
+
+**Never silently skip.** Three categories:
+
+1. **Infrastructure** (DB client, Letta client, API keys) → Don't handle, let it crash early
+2. **Business logic** (missing `from_user`, unexpected empty query results) → Raise error for common handler
+3. **Authorization** (user not allowed, no agents) → Notify user + block handler
+
+```python
+# Infrastructure - assume exists, crash if not
+gel_client: AsyncIOExecutor = data['gel_client']
+
+# Business logic - raise error
+if not event.from_user:
+    raise ValueError('Event missing from_user context')
+
+# Authorization - notify and block
+await event.answer('You need to request bot access first')
+return None
+```
+
+## Logging Policy
+
+| Level | Use |
+|-------|-----|
+| DEBUG | _(Reserved)_ |
+| INFO | Major business events outside agent interaction |
+| WARNING | Unexpected behavior from code logic |
+| ERROR | Recoverable errors |
+| CRITICAL | Non-recoverable errors affecting availability |
+
+**Rules**: Never log secrets. Always include context (telegram_id, request IDs). Use `logging.getLogger(__name__)`.
 
 ## Formatting Info Notes (notes/ directory)
 

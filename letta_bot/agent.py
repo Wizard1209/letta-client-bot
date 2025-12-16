@@ -11,12 +11,9 @@ from gel import AsyncIOExecutor
 from httpx import ReadTimeout
 from letta_client import APIError
 
-from letta_bot.client import client, get_agent_identity_ids, get_default_agent
+from letta_bot.client import client
 from letta_bot.letta_sdk_extensions import context_window_overview
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
-from letta_bot.queries.reset_selected_agent_async_edgeql import (
-    reset_selected_agent as reset_selected_agent_query,
-)
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
 )
@@ -124,20 +121,12 @@ async def handle_switch_assistant(
     await callback.answer('✅ Assistant switched')
 
 
-@agent_commands_router.message(Command('current'), flags={'require_identity': True})
-async def assistant_info_handler(
-    message: Message, gel_client: AsyncIOExecutor, identity: GetIdentityResult
-) -> None:
+@agent_commands_router.message(
+    Command('current'), flags={'require_identity': True, 'require_agent': True}
+)
+async def assistant_info_handler(message: Message, agent_id: str) -> None:
     """Show assistant info with memory blocks."""
     if not message.from_user:
-        return
-
-    if not identity.selected_agent:
-        await message.answer(
-            Text(
-                '❌ No assistant selected. Use /switch to select one.',
-            ).as_markdown()
-        )
         return
 
     # Send loading indicator
@@ -146,7 +135,7 @@ async def assistant_info_handler(
     try:
         # Fetch agent data
         agent = await client.agents.retrieve(
-            identity.selected_agent, include=['agent.blocks', 'agent.tools']
+            agent_id, include=['agent.blocks', 'agent.tools']
         )
 
         # Build memory blocks list
@@ -200,18 +189,12 @@ async def assistant_info_handler(
         await status_msg.edit_text(Text('❌ Error fetching assistant info').as_markdown())
 
 
-@agent_commands_router.message(Command('context'), flags={'require_identity': True})
-async def context_handler(
-    message: Message, gel_client: AsyncIOExecutor, identity: GetIdentityResult
-) -> None:
+@agent_commands_router.message(
+    Command('context'), flags={'require_identity': True, 'require_agent': True}
+)
+async def context_handler(message: Message, agent_id: str) -> None:
     """Show assistant context window breakdown."""
     if not message.from_user:
-        return
-
-    if not identity.selected_agent:
-        await message.answer(
-            Text('❌ No assistant selected. Use /switch to select one.').as_markdown()
-        )
         return
 
     # Send loading indicator
@@ -219,7 +202,7 @@ async def context_handler(
 
     try:
         # Fetch context window overview
-        context = await context_window_overview(client, identity.selected_agent)
+        context = await context_window_overview(client, agent_id)
 
         # Calculate context window usage
         current = context.context_window_size_current
@@ -263,10 +246,8 @@ async def context_handler(
         await status_msg.edit_text(Text('❌ Error fetching context info').as_markdown())
 
 
-@agent_router.message(flags={'require_identity': True})
-async def message_handler(
-    message: Message, bot: Bot, gel_client: AsyncIOExecutor, identity: GetIdentityResult
-) -> None:
+@agent_router.message(flags={'require_identity': True, 'require_agent': True})
+async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
     if not message.from_user:
         return
 
@@ -334,41 +315,6 @@ async def message_handler(
             ).as_markdown()
         )
         return
-
-    # Get or auto-select agent
-    if not identity.selected_agent:
-        try:
-            agent_id = await get_default_agent(identity.identity_id)
-            await set_selected_agent_query(
-                gel_client, identity_id=identity.identity_id, agent_id=agent_id
-            )
-        except IndexError:
-            await message.answer(Text('You have no assistants yet. Use /new').as_markdown())
-            return
-    else:
-        agent_id = identity.selected_agent
-
-        # Validate that the selected agent still belongs to the identity
-        if identity.identity_id not in await get_agent_identity_ids(agent_id):
-            LOGGER.warning(
-                f'Selected agent {agent_id} no longer belongs to identity '
-                f'{identity.identity_id}. Auto-selecting new agent.'
-            )
-            # Reset and try to get the default agent
-            try:
-                agent_id = await get_default_agent(identity.identity_id)
-                await set_selected_agent_query(
-                    gel_client, identity_id=identity.identity_id, agent_id=agent_id
-                )
-            except IndexError:
-                # No agents left - reset selected_agent to NULL
-                await reset_selected_agent_query(
-                    gel_client, identity_id=identity.identity_id
-                )
-                await message.answer(
-                    Text('You have no assistants yet. Use /new').as_markdown()
-                )
-                return
 
     # Should I let agent know that message came through telegram?
     request = [{'type': 'text', 'text': message_text}]

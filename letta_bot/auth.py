@@ -206,8 +206,7 @@ async def new_assistant(message: Message) -> None:
     builder.adjust(1)  # One button per row for vertical layout
     await message.answer(
         Text(
-            'Create your assistant\n\n'
-            'See /about for detailed template descriptions'
+            'Create your assistant\n\nSee /about for detailed template descriptions'
         ).as_markdown(),
         reply_markup=builder.as_markup(),
     )
@@ -435,7 +434,7 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
 
             # Check if agent still exists before attaching
             try:
-                agent = await client.agents.retrieve(agent_id=resource_id)
+                agent = await client.agents.retrieve(agent_id=resource_id, include=['agent.tags'])
             except APIError as e:
                 LOGGER.error(f'Agent {resource_id} not found during approval: {e}')
                 await message.answer(

@@ -25,8 +25,8 @@ import argparse
 import importlib.util
 import json
 import os
-import sys
 from pathlib import Path
+import sys
 
 from devscripts.bootstrap import letta
 
@@ -101,7 +101,8 @@ def main():
     parser.add_argument('args', nargs='*', help='Arguments to pass to the tool')
     parser.add_argument('-l', '--list', action='store_true', help='List available tools')
     parser.add_argument(
-        '-a', '--agent-id',
+        '-a',
+        '--agent-id',
         help='Agent ID to inject (also reads from LETTA_AGENT_ID env or .agent_id file)',
     )
 
