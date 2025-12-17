@@ -43,6 +43,9 @@ from letta_bot.queries.get_identity_async_edgeql import (
     GetIdentityResult,
     get_identity as get_identity_query,
 )
+from letta_bot.queries.get_identity_request_status_async_edgeql import (
+    get_identity_request_status as get_identity_request_status_query,
+)
 from letta_bot.queries.get_pending_requests_by_agent_async_edgeql import (
     get_pending_requests_by_agent as get_pending_requests_by_agent_query,
 )
@@ -245,23 +248,13 @@ async def register_assistant_request(
         )
         return
 
-    if not await get_allowed_identity_query(gel_client, telegram_id=callback.from_user.id):
-        # TODO: maybe identity name could be customed
-        # Check if user already has a pending identity request
-        has_pending = await check_pending_request_query(
-            gel_client,
-            telegram_id=callback.from_user.id,
-            resource_type=ResourceType.ACCESS_IDENTITY,
-        )
-        if has_pending:
-            await callback.answer(
-                Text(
-                    '⏳ You already have a pending identity access request. '
-                    'Please wait for admin approval.'
-                ).as_markdown()
-            )
-            return
-
+    # Check identity status: None = no request, pending = waiting, allowed = has access
+    identity_request = await get_identity_request_status_query(
+        gel_client, telegram_id=callback.from_user.id
+    )
+    # Only create identity request if none exists (matches DB constraint behavior)
+    # TODO: maybe identity name could be customed
+    if not identity_request:
         await create_auth_request_query(
             gel_client,
             telegram_id=callback.from_user.id,

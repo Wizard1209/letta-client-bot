@@ -419,6 +419,11 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 
 ## Development Commands
 
+**See `CONTRIBUTION.md`** for complete development workflows including:
+- Adding new EdgeQL queries (`uv run gel-py` to generate Python modules)
+- Feature development checklist
+- Testing and deployment procedures
+
 **Dependency management**: Use `uv` exclusively (NOT pip or poetry)
 
 Common commands:
