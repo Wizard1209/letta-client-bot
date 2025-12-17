@@ -178,6 +178,9 @@ async def assistant_info_handler(message: Message, agent_id: str) -> None:
             Text(),  # Empty line
             Text('💬 ', Bold('Message History: '), f'{message_count} messages'),
             Text('🔧 ', Bold('Tools: '), str(tools_count)),
+            Text(),  # Empty line
+            Text('📤 ', 'Share to let others request access:'),
+            Text('    ', Code(f'/attach {agent.id}')),
         )
 
         # Delete loading message and send result
