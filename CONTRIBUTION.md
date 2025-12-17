@@ -77,15 +77,12 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ### Very High Priority
 
-- Migrate to self-hosted Gel <https://github.com/geldata/gel-docker>
-
 ### High Priority
 
 - Agent content output configuration
   - Toggle verbose/brief tool execution display
   - Toggle reasoning messages on/off
 - Clear messages command (for testing clean assistants)
-- Strict Telegram error handling (timeouts, message length limits, invalid characters)
 
 ### Medium Priority
 
@@ -93,12 +90,10 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Multi-user agent from personal assistant
   - Clone personal agent
   - Shared memory blocks (some read-only)
-- Run gel schema migrations automatically
 - Images support
 - LaTeX support
 - Memory block viewing and editing
 - Agent rename
-- Agent tags for filtering
 - Usage analytics per identity
 - Add message editing support
 

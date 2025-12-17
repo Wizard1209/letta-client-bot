@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 **[Latest additions]**
 
+**Added:**
+• Image support: send photos to your assistant and it can see and analyze them (uses Letta's multimodal API with base64 encoding)
+
 **Changed:**
 • Renamed `/botaccess` → `/access` with clearer description emphasizing this grants general bot access only (identity), not assistant capabilities
 

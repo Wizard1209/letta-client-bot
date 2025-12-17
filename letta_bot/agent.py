@@ -12,6 +12,12 @@ from httpx import ReadTimeout
 from letta_client import APIError
 
 from letta_bot.client import client
+from letta_bot.images import (
+    ContentPart,
+    ImageProcessingError,
+    TextContentPart,
+    process_telegram_photo,
+)
 from letta_bot.letta_sdk_extensions import context_window_overview
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
 from letta_bot.queries.set_selected_agent_async_edgeql import (
@@ -254,27 +260,27 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
     if not message.from_user:
         return
 
-    # Build message content layer by layer
-    parts: list[str] = []
+    # Build text content layer by layer
+    text_parts: list[str] = []
 
     # Layer 1: Reply context (quote takes priority over full reply)
     if message.quote:
         # User quoted a specific part of the message
-        parts.append(f'<quote>{message.quote.text}</quote>')
+        text_parts.append(f'<quote>{message.quote.text}</quote>')
     elif message.reply_to_message:
         # Full reply without specific quote
         reply = message.reply_to_message
         if reply.text:
             preview = reply.text[:100] + ('...' if len(reply.text) > 100 else '')
-            parts.append(f'<reply_to>{preview}</reply_to>')
+            text_parts.append(f'<reply_to>{preview}</reply_to>')
 
     # Layer 2: Text content
     if message.text:
-        parts.append(message.text)
+        text_parts.append(message.text)
 
     # Layer 3: Caption (for media messages)
     if message.caption:
-        parts.append(f'<caption>{message.caption}</caption>')
+        text_parts.append(f'<caption>{message.caption}</caption>')
 
     # Layer 4: Audio transcription
     if message.voice or message.audio:
@@ -290,7 +296,7 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
             transcript = await transcription_service.transcribe_message_content(
                 bot, message
             )
-            parts.append(f'<{tag}>{transcript}</{tag}>')
+            text_parts.append(f'<{tag}>{transcript}</{tag}>')
         except TranscriptionError as e:
             LOGGER.warning(
                 '%s failed: %s, telegram_id=%s',
@@ -298,20 +304,42 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
                 e,
                 message.from_user.id,
             )
-            parts.append(f'<{tag}_error>{e}</{tag}_error>')
+            text_parts.append(f'<{tag}_error>{e}</{tag}_error>')
 
     # Unsupported content types
     if message.video:
         await message.answer(Text('Video content is not supported').as_markdown())
-    if message.photo or message.sticker:
-        await message.answer(
-            Text('Photos and stickers are not yet supported, but will be').as_markdown()
-        )
+    if message.sticker:
+        await message.answer(Text('Stickers are not yet supported').as_markdown())
 
-    # Combine all parts
-    message_text = '\n\n'.join(parts) if parts else None
+    # Build content parts for Letta API (image first, then text per spec)
+    content_parts: list[ContentPart] = []
 
-    if not message_text:
+    # Layer 5: Image content (processed first, added to content first)
+    if message.photo:
+        try:
+            # Use highest resolution (last element in photo array)
+            image_part = await process_telegram_photo(bot, message.photo[-1])
+            content_parts.append(image_part)
+        except ImageProcessingError as e:
+            LOGGER.warning(
+                'Image processing failed: %s, telegram_id=%s',
+                e,
+                message.from_user.id,
+            )
+            # Graceful degradation: prepend error to text parts
+            text_parts.insert(0, f'<image_processing_error>{e}</image_processing_error>')
+
+    # Combine text parts
+    message_text = '\n\n'.join(text_parts) if text_parts else None
+
+    # Add text content part if we have text
+    if message_text:
+        text_part: TextContentPart = {'type': 'text', 'text': message_text}
+        content_parts.append(text_part)
+
+    # Check if we have any content to send
+    if not content_parts:
         await message.answer(
             Text(
                 'No supported content provided, I hope to hear more from you'
@@ -319,8 +347,8 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
         )
         return
 
-    # Should I let agent know that message came through telegram?
-    request = [{'type': 'text', 'text': message_text}]
+    # Content ready for Letta API
+    request = content_parts
 
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):

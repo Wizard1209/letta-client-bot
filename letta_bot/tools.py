@@ -226,9 +226,8 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
     try:
         # Step 1: Retrieve agent state
         agent = await client.agents.retrieve(
-            agent_id=agent_id,
-            include=['agent.blocks', 'agent.identities', 'agent.tools'
-        ])
+            agent_id=agent_id, include=['agent.blocks', 'agent.identities', 'agent.tools']
+        )
 
         # Step 2: Check connection status
         schedule_connected = _is_schedule_connected(agent)
