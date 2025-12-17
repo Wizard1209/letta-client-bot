@@ -24,13 +24,13 @@ This bot relies on external services that have their own privacy policies:
 
 **Letta Platform**
 
-The bot is powered by Letta, which has access to all agent data including your conversations and memory. Letta maintains a strong privacy commitment.
+The bot is powered by Letta, which has access to all assistant data including your conversations and memory. Letta maintains a strong privacy commitment.
 
 View Letta's privacy policy: [https://www.letta.com/privacy-policy](https://www.letta.com/privacy-policy)
 
 **AI Model Providers**
 
-Model usage data (your conversations) is accessible to the AI model provider used by your agent. Depending on your agent configuration, this could be:
+Model usage data (your conversations) is accessible to the AI model provider used by your assistant. Depending on your assistant configuration, this could be:
 
 • Anthropic
 • Other model providers supported by Letta

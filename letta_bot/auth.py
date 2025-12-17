@@ -205,7 +205,7 @@ async def new_assistant(message: Message) -> None:
     builder = InlineKeyboardBuilder()
     for t in templates:
         data = NewAssistantCallback(template_name=t.name, version=t.latest_version)
-        builder.button(text=f'Create agent: {t.name}', callback_data=data.pack())
+        builder.button(text=f'Create assistant: {t.name}', callback_data=data.pack())
     builder.adjust(1)  # One button per row for vertical layout
     await message.answer(
         Text(
@@ -905,7 +905,7 @@ async def handle_agent_access_callback(
 
         if not owner_telegram_id:
             if CONFIG.admin_ids is None or callback.from_user.id not in CONFIG.admin_ids:
-                await callback.answer('❌ Only admins can approve unowned agents')
+                await callback.answer('❌ Only admins can approve unowned assistants')
                 LOGGER.warning(
                     f'User {callback.from_user.id} attempted to approve/deny '
                     f'agent access request {request_id} '

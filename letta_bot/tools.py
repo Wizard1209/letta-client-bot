@@ -426,7 +426,7 @@ def _render_status(
     lines: list[Text | str] = [
         Text(overall_icon, ' ', Bold('Proactive Mode')),
         '',
-        Text(Bold('Agent: '), agent_name),
+        Text(Bold('Assistant: '), agent_name),
         '',
     ]
 

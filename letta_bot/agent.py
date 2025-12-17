@@ -356,7 +356,7 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
         )
         await message.answer(
             Text(
-                '❌ The agent service stopped responding. '
+                '❌ The assistant service stopped responding. '
                 'This may be a temporary issue with Letta API. '
                 'Please try again in a moment.'
             ).as_markdown()
