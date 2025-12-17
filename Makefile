@@ -60,7 +60,7 @@ logs-db:
 pull:
 	git pull
 
-r: pull build down up
+r: pull build up
 
 restart: build down up
 	@echo "Bot restarted successfully"
