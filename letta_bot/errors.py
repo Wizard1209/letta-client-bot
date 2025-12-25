@@ -5,13 +5,13 @@ and errors are properly logged for debugging.
 """
 
 import contextlib
-import html
 import logging
 import traceback
 
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, ErrorEvent, Message
+from aiogram.utils.formatting import Bold, Pre, Text, as_list
 
 from letta_bot.config import CONFIG
 
@@ -56,17 +56,25 @@ async def global_error_handler(event: ErrorEvent, bot: Bot) -> bool:
         if from_user:
             user_info = f'{from_user.id}'
 
-        msg = (
-            f'🚨 <b>Bot Error</b>\n\n'
-            f'<b>User:</b> {html.escape(user_info)}\n'
-            f'<b>Type:</b> {html.escape(error_class)}\n'
-            f'<b>Error:</b> {html.escape(str(error)[:300])}\n\n'
-            f'<pre>{html.escape(tb)}</pre>'
+        content = as_list(
+            Text('🚨 '),
+            Bold('Bot Error'),
+            Text('\n\n'),
+            Bold('User: '),
+            Text(user_info),
+            Text('\n'),
+            Bold('Type: '),
+            Text(error_class),
+            Text('\n'),
+            Bold('Error: '),
+            Text(str(error)[:300]),
+            Text('\n\n'),
+            Pre(tb),
         )
 
         for admin_id in CONFIG.admin_ids:
             with contextlib.suppress(TelegramAPIError):
-                await bot.send_message(admin_id, msg, parse_mode='HTML')
+                await bot.send_message(admin_id, **content.as_kwargs())
 
     return True
 

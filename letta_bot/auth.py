@@ -120,14 +120,14 @@ async def request_owner_permission(
     try:
         await bot.send_message(
             owner_telegram_id,
-            Text(
+            **Text(
                 f'📬 Assistant Access Request\n\n'
                 f'User: {requester_name} '
                 f'(@{requester_username or "no username"})\n'
                 f'Telegram ID: {requester_telegram_id}\n\n'
                 f'{agent_info}\n\n'
                 'Do you want to grant access to this user?'
-            ).as_markdown(),
+            ).as_kwargs(),
             reply_markup=builder.as_markup(),
         )
         return True
@@ -155,7 +155,7 @@ async def access_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
 
     # Check if user already has identity access
     if await get_allowed_identity_query(gel_client, telegram_id=message.from_user.id):
-        await message.answer(Text('✅ You already have identity access').as_markdown())
+        await message.answer(**Text('✅ You already have identity access').as_kwargs())
         return
 
     # Check if user already has a pending identity request
@@ -166,10 +166,10 @@ async def access_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
     )
     if has_pending:
         await message.answer(
-            Text(
+            **Text(
                 '⏳ You already have a pending identity access request. '
                 'Please wait for admin approval.'
-            ).as_markdown()
+            ).as_kwargs()
         )
         return
 
@@ -183,14 +183,14 @@ async def access_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
 
     # Notify user
     await message.answer(
-        Text(
+        **Text(
             '✅ Your identity access request has been submitted '
             'and is pending admin approval'
-        ).as_markdown()
+        ).as_kwargs()
     )
 
     # Notify admins
-    await notify_admins(bot, Text('New identity access request').as_markdown())
+    await notify_admins(bot, **Text('New identity access request').as_kwargs())
 
 
 @auth_router.message(Command('new'))
@@ -208,9 +208,9 @@ async def new_assistant(message: Message) -> None:
         builder.button(text=f'Create assistant: {t.name}', callback_data=data.pack())
     builder.adjust(1)  # One button per row for vertical layout
     await message.answer(
-        Text(
+        **Text(
             'Create your assistant\n\nSee /about for detailed template descriptions'
-        ).as_markdown(),
+        ).as_kwargs(),
         reply_markup=builder.as_markup(),
     )
 
@@ -229,7 +229,7 @@ async def register_assistant_request(
             'to request resource without being registered'
         )
         await callback.answer(
-            Text('You must use /start command first to register').as_markdown(),
+            **Text('You must use /start command first to register').as_kwargs(),
         )
         return
 
@@ -241,10 +241,10 @@ async def register_assistant_request(
     )
     if has_pending:
         await callback.answer(
-            Text(
+            **Text(
                 '⏳ You already have a pending assistant request. '
                 'Please wait for admin approval.'
-            ).as_markdown()
+            ).as_kwargs()
         )
         return
 
@@ -272,10 +272,10 @@ async def register_assistant_request(
     # Update original message to show selection and remove keyboard
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
-            Text(
+            **Text(
                 f'✅ Request submitted for: {callback_data.template_name}\n\n'
                 'Pending admin approval'
-            ).as_markdown(),
+            ).as_kwargs(),
         )
 
     # Acknowledge the callback
@@ -285,7 +285,7 @@ async def register_assistant_request(
     if CONFIG.admin_ids is None:
         return
     for tg_id in CONFIG.admin_ids:
-        await bot.send_message(tg_id, Text('New assistant request').as_markdown())
+        await bot.send_message(tg_id, **Text('New assistant request').as_kwargs())
 
 
 # =============================================================================
@@ -301,7 +301,7 @@ async def pending_command(message: Message, gel_client: AsyncIOExecutor) -> None
     )
 
     if not pending_requests:
-        await message.answer(Text('No pending authorization requests.').as_markdown())
+        await message.answer(**Text('No pending authorization requests.').as_kwargs())
         return
 
     response_lines = [Text('📋 Pending Authorization Requests:\n\n')]
@@ -325,7 +325,7 @@ async def pending_command(message: Message, gel_client: AsyncIOExecutor) -> None
             )
         )
 
-    await message.answer(as_list(*response_lines).as_markdown())
+    await message.answer(**as_list(*response_lines).as_kwargs())
 
 
 @auth_router.message(Command('allow'), AdminOnlyFilter)
@@ -336,7 +336,7 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
 
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(Text('Usage: /allow <request_uuid>').as_markdown())
+        await message.answer(**Text('Usage: /allow <request_uuid>').as_kwargs())
         return
 
     request_uuid = parts[1].strip()
@@ -344,7 +344,7 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
     # Validate request_uuid format
     if not validate_uuid(request_uuid):
         await message.answer(
-            Text('Invalid request_uuid. Must be a valid UUID.').as_markdown()
+            **Text('Invalid request_uuid. Must be a valid UUID.').as_kwargs()
         )
         return
 
@@ -354,16 +354,16 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
     result = await get_auth_request_by_id_query(gel_client, id=request_id)
 
     if not result:
-        await message.answer(Text(f'Request {request_id} not found').as_markdown())
+        await message.answer(**Text(f'Request {request_id} not found').as_kwargs())
         return
 
     # Check if request is still pending
     if result.status != AuthStatus03.PENDING:
         await message.answer(
-            Text(
+            **Text(
                 f'Request {request_id} has already been processed '
                 f'(status: {result.status.value})'
-            ).as_markdown()
+            ).as_kwargs()
         )
         return
 
@@ -418,10 +418,10 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
             )
             if not identity_result:
                 await message.answer(
-                    Text(
+                    **Text(
                         f'❌ User {result.user.telegram_id} does not have an identity. '
                         'They must request identity access first.'
-                    ).as_markdown()
+                    ).as_kwargs()
                 )
                 return
 
@@ -433,9 +433,9 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
             except APIError as e:
                 LOGGER.error(f'Agent {resource_id} not found during approval: {e}')
                 await message.answer(
-                    Text(
+                    **Text(
                         f'❌ Agent {resource_id} no longer exists. Cannot grant access.'
-                    ).as_markdown()
+                    ).as_kwargs()
                 )
                 return
 
@@ -459,7 +459,7 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                 except APIError as e:
                     LOGGER.error(f'Failed to update agent tags: {e}')
                     await message.answer(
-                        Text('❌ Failed to update agent tags').as_markdown()
+                        **Text('❌ Failed to update agent tags').as_kwargs()
                     )
                     return
 
@@ -495,10 +495,10 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                         f'{resource_id} without being the owner'
                     )
                     await message.answer(
-                        Text(
+                        **Text(
                             '⚠️ Cannot approve request: You are not the owner of this '
                             'assistant. Only the owner can grant access to other users.'
-                        ).as_markdown()
+                        ).as_kwargs()
                     )
                     return
 
@@ -511,7 +511,7 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
     )
 
     await message.answer(
-        Text(f'✅ Authorization request approved: {request_id}\n').as_markdown()
+        **Text(f'✅ Authorization request approved: {request_id}\n').as_kwargs()
     )
 
     # Notify user of approval
@@ -537,7 +537,7 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                 user_message = f'✅ Your new assistant "{agent.name}" is ready!{hint}'
         await bot.send_message(
             chat_id=result.user.telegram_id,
-            text=Text(user_message).as_markdown(),
+            **Text(user_message).as_kwargs(),
         )
     except Exception as e:
         LOGGER.error(f'Failed to notify user {result.user.telegram_id} about approval: {e}')
@@ -551,7 +551,7 @@ async def deny_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) 
 
     parts = message.text.split(maxsplit=2)
     if len(parts) < 2:
-        await message.answer(Text('Usage: /deny <request_uuid> [reason]').as_markdown())
+        await message.answer(**Text('Usage: /deny <request_uuid> [reason]').as_kwargs())
         return
 
     request_uuid = parts[1].strip()
@@ -559,7 +559,7 @@ async def deny_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) 
     # Validate request_uuid format
     if not validate_uuid(request_uuid):
         await message.answer(
-            Text('Invalid request_uuid. Must be a valid UUID.').as_markdown()
+            **Text('Invalid request_uuid. Must be a valid UUID.').as_kwargs()
         )
         return
 
@@ -572,14 +572,14 @@ async def deny_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) 
     )
 
     if not result:
-        await message.answer(Text(f'Request {request_id} not found').as_markdown())
+        await message.answer(**Text(f'Request {request_id} not found').as_kwargs())
         return
 
     # TODO: Store denial reason in database (update AuthorizationRequest.response field)
 
     reason_msg = f' Reason: {reason}' if reason else ''
     await message.answer(
-        Text(f'❌ Authorization request denied: {request_id}{reason_msg}\n').as_markdown()
+        **Text(f'❌ Authorization request denied: {request_id}{reason_msg}\n').as_kwargs()
     )
 
     # Notify user of denial with reason
@@ -593,7 +593,7 @@ async def deny_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) 
 
         await bot.send_message(
             chat_id=result.user.telegram_id,
-            text=Text(''.join(user_message_parts)).as_markdown(),
+            **Text(''.join(user_message_parts)).as_kwargs(),
         )
     except Exception as e:
         LOGGER.error(f'Failed to notify user {result.user.telegram_id} about denial: {e}')
@@ -607,13 +607,13 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
 
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(Text('Usage: /revoke <telegram_id>').as_markdown())
+        await message.answer(**Text('Usage: /revoke <telegram_id>').as_kwargs())
         return
 
     try:
         telegram_id = int(parts[1])
     except ValueError:
-        await message.answer(Text('Invalid telegram_id. Must be an integer.').as_markdown())
+        await message.answer(**Text('Invalid telegram_id. Must be an integer.').as_kwargs())
         return
 
     # Revoke user identity access only
@@ -621,27 +621,27 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
 
     if not result:
         await message.answer(
-            Text(f'No authorization requests found for user {telegram_id}').as_markdown()
+            **Text(f'No authorization requests found for user {telegram_id}').as_kwargs()
         )
         return
 
     await message.answer(
-        Text(
+        **Text(
             f'🚫 Access revoked for user {telegram_id} ({len(result)} request(s) updated)\n'
-        ).as_markdown()
+        ).as_kwargs()
     )
 
     # Notify user of revocation
     try:
         await bot.send_message(
             chat_id=telegram_id,
-            text=Text(
+            **Text(
                 '🚫 Your access to the bot has been revoked.\n\n'
                 'If you believe this was done in error, '
                 'please contact the administrator.\n'
                 'You can submit a new request using /new or '
                 '/access if you wish to regain access.'
-            ).as_markdown(),
+            ).as_kwargs(),
         )
     except Exception as e:
         LOGGER.error(f'Failed to notify user {telegram_id} about revocation: {e}')
@@ -655,7 +655,7 @@ async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
     )
 
     if not all_requests:
-        await message.answer(Text('No active users.').as_markdown())
+        await message.answer(**Text('No active users.').as_kwargs())
         return
 
     response_parts = [Text('👥 Active Users:')]
@@ -679,7 +679,7 @@ async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
                 Text(f'  └─ {req.resource_type.value}: ', req.resource_id)
             )
 
-    await message.answer(as_list(*response_parts).as_markdown())
+    await message.answer(**as_list(*response_parts).as_kwargs())
 
 
 @auth_router.message(Command('attach'), flags={'require_identity': True})
@@ -700,7 +700,7 @@ async def attach_to_agent(
 
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer(Text('Usage: /attach <agent_id>').as_markdown())
+        await message.answer(**Text('Usage: /attach <agent_id>').as_kwargs())
         return
 
     agent_id = parts[1]
@@ -710,7 +710,7 @@ async def attach_to_agent(
         agent_id.removeprefix('agent-')
     ):
         await message.answer(
-            Text('Invalid agent ID format. Must be agent-{uuid}.').as_markdown()
+            **Text('Invalid agent ID format. Must be agent-{uuid}.').as_kwargs()
         )
         return
 
@@ -720,17 +720,17 @@ async def attach_to_agent(
     except APIError as e:
         LOGGER.error(f'Failed to retrieve agent {agent_id}: {e}')
         await message.answer(
-            Text(
+            **Text(
                 f'❌ Assistant with ID {agent_id} not found.\n\n'
                 'Please check the agent ID and try again.'
-            ).as_markdown()
+            ).as_kwargs()
         )
         return
 
     try:
         if identity.identity_id in agent_identity_ids:
             await message.answer(
-                Text('✅ You already have access to this assistant.').as_markdown()
+                **Text('✅ You already have access to this assistant.').as_kwargs()
             )
             return
 
@@ -742,10 +742,10 @@ async def attach_to_agent(
             status=AuthStatus.PENDING,
         ):
             await message.answer(
-                Text(
+                **Text(
                     '⏳ You already have a pending request for this assistant. '
                     'Please wait for approval.'
-                ).as_markdown()
+                ).as_kwargs()
             )
             return
 
@@ -757,11 +757,11 @@ async def attach_to_agent(
                 f'but no owner tag. Invalid state.'
             )
             await message.answer(
-                Text(
+                **Text(
                     '❌ This assistant is in an invalid state:\n\n'
                     'It has users but no owner. Please contact an administrator '
                     'to fix this issue.'
-                ).as_markdown()
+                ).as_kwargs()
             )
             return
 
@@ -774,17 +774,17 @@ async def attach_to_agent(
             )
 
             await message.answer(
-                Text(
+                **Text(
                     '✅ Access request submitted to admins '
                     'for unowned assistant.\n\n'
                     'Pending admin approval.'
-                ).as_markdown()
+                ).as_kwargs()
             )
 
             # Notify admins
             await notify_admins(
                 bot,
-                Text(
+                **Text(
                     f'📬 New assistant access request\n\n'
                     f'User: {message.from_user.full_name} '
                     f'(@{message.from_user.username})\n'
@@ -792,7 +792,7 @@ async def attach_to_agent(
                     f'Agent ID: {agent_id}\n\n'
                     'This assistant has no owner tag. '
                     'Use /pending to review.'
-                ).as_markdown(),
+                ).as_kwargs(),
             )
             return
 
@@ -815,17 +815,17 @@ async def attach_to_agent(
             )
 
             await message.answer(
-                Text(
+                **Text(
                     '✅ Access request submitted to admins '
                     '(assistant owner unavailable).\n\n'
                     'Pending admin approval.'
-                ).as_markdown()
+                ).as_kwargs()
             )
 
             # Notify admins
             await notify_admins(
                 bot,
-                Text(
+                **Text(
                     f'📬 New assistant access request\n\n'
                     f'User: {message.from_user.full_name} '
                     f'(@{message.from_user.username})\n'
@@ -833,7 +833,7 @@ async def attach_to_agent(
                     f'Agent ID: {agent_id}\n\n'
                     'Assistant owner not found in database. '
                     'Use /pending to review.'
-                ).as_markdown(),
+                ).as_kwargs(),
             )
             return
 
@@ -858,23 +858,23 @@ async def attach_to_agent(
 
         if not success:
             await message.answer(
-                Text(
+                **Text(
                     '❌ Failed to notify assistant owner. Please try again later.'
-                ).as_markdown()
+                ).as_kwargs()
             )
             return
 
         await message.answer(
-            Text(
+            **Text(
                 '✅ Access request sent to assistant owner.\n\n'
                 'You will be notified when they respond.'
-            ).as_markdown()
+            ).as_kwargs()
         )
 
     except Exception as e:
         LOGGER.error(f'Error in request_agent_access: {e}')
         await message.answer(
-            Text('❌ An error occurred while processing your request.').as_markdown()
+            **Text('❌ An error occurred while processing your request.').as_kwargs()
         )
         raise
 
@@ -962,21 +962,21 @@ async def handle_agent_access_callback(
 
             if isinstance(callback.message, Message):
                 await callback.message.edit_text(
-                    Text(
+                    **Text(
                         f'✅ Access granted\n\n'
                         f'User: {result.user.full_name or result.user.first_name}\n'
                         f'Agent ID: {agent_id}'
-                    ).as_markdown()
+                    ).as_kwargs()
                 )
 
             try:
                 await bot.send_message(
                     result.user.telegram_id,
-                    Text(
+                    **Text(
                         f'✅ Your assistant access request has been approved!\n\n'
                         f'Agent ID: {agent_id}\n\n'
                         'You can now use /switch to select this assistant.'
-                    ).as_markdown(),
+                    ).as_kwargs(),
                 )
             except Exception as e:
                 LOGGER.error(f'Failed to notify requester: {e}')
@@ -994,20 +994,20 @@ async def handle_agent_access_callback(
 
             if isinstance(callback.message, Message):
                 await callback.message.edit_text(
-                    Text(
+                    **Text(
                         f'❌ Access denied\n\n'
                         f'User: {result.user.full_name or result.user.first_name}\n'
                         f'Agent ID: {agent_id}'
-                    ).as_markdown()
+                    ).as_kwargs()
                 )
 
             try:
                 await bot.send_message(
                     result.user.telegram_id,
-                    Text(
+                    **Text(
                         f'❌ Your assistant access request was denied.\n\n'
                         f'Agent ID: {agent_id}'
-                    ).as_markdown(),
+                    ).as_kwargs(),
                 )
             except Exception as e:
                 LOGGER.error(f'Failed to notify requester: {e}')

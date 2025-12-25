@@ -7,24 +7,33 @@ This module handles:
 4. Sending responses to users
 """
 
-from collections import deque
 from datetime import datetime, timedelta
 import difflib
 from itertools import islice
 import json
 import logging
-import re
 from typing import Any
 
-from aiogram.enums import ParseMode
 from aiogram.types import Message
+from aiogram.utils.formatting import (
+    Bold,
+    ExpandableBlockQuote,
+    Italic,
+    Pre,
+    Text,
+    Url,
+    as_key_value,
+    as_line,
+    as_marked_list,
+)
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
+
+from letta_bot.utils import to_aiogram_entities
 
 LOGGER = logging.getLogger(__name__)
 
-
+# Telegram message limit in characters
 TELEGRAM_MAX_LEN = 4096
-MARKDOWN_TOKENS = {'`': ('```', '`'), '*': ('*',), '_': ('_',), '~': ('~',)}
 
 # =============================================================================
 # Stream Event Formatting (Helper Functions)
@@ -78,56 +87,33 @@ def _format_datetime(dt_string: str) -> str:
         return dt_string
 
 
-def _escape_markdown_v2(text: str) -> str:
-    """Escape all special characters required by Telegram MarkdownV2."""
-    pattern = re.compile(r'([\_\*\[\]\(\)\~\`\>\#\+\-\=\|\{\}\.\!\/\\])')
-    return pattern.sub(r'\\\1', text)
-
-
-def convert_to_telegram_markdown(text: str) -> str:
-    """Convert text to Telegram MarkdownV2 using telegramify-markdown."""
-    try:
-        # Use telegramify-markdown to handle proper escaping and conversion
-        import telegramify_markdown  # type: ignore[import-untyped]
-
-        telegram_text: str = telegramify_markdown.markdownify(text)
-        return telegram_text
-    except Exception as e:
-        LOGGER.warning('Error converting to Telegram markdown: %s', e)
-        # Fallback: return the original text with basic escaping
-        # Escape MarkdownV2 special characters
-        return _escape_markdown_v2(text)
-
-
-def _make_blockquote(text: str) -> str:
-    """Format plain text as a Markdown-style blockquote for Telegram."""
-    return '\n'.join(f'>{line}' for line in text.splitlines())
-
-
-def _format_reasoning_message(event: LettaStreamingResponse) -> str:
+def _format_reasoning_message(event: LettaStreamingResponse) -> dict[str, Any]:
     """Format reasoning message response.
 
     Args:
         event: Stream event containing reasoning message
 
     Returns:
-        Formatted Text object with reasoning content
+        Formatted dict with text, entities, and parse_mode
     """
-    reasoning_text = _escape_markdown_v2(getattr(event, 'reasoning', ''))
+    reasoning_text = getattr(event, 'reasoning', '')
     if len(reasoning_text) > TELEGRAM_MAX_LEN:
         LOGGER.warning('Reasoning message too long')
         reasoning_text = reasoning_text[:TELEGRAM_MAX_LEN]
-    return f'_Agent reasoning:_\n{_make_blockquote(reasoning_text)}'
+    return as_line(
+        *(Italic('Agent reasoning:'), ExpandableBlockQuote(reasoning_text)), sep='\n'
+    ).as_kwargs()
 
 
-def _format_tool_call_message(event: LettaStreamingResponse) -> str | None:
+def _format_tool_call_message(event: LettaStreamingResponse) -> dict[str, Any] | str | None:
     """Format tool call message response.
 
     Args:
         event: Stream event containing tool call
 
     Returns:
-        Formatted Text object or None if tool call should be skipped
+        Formatted dict with text and entities, markdown string,
+        or None if tool call should be skipped
     """
     tool_call = event.tool_call  # type: ignore
     tool_name = tool_call.name
@@ -146,13 +132,12 @@ def _format_tool_call_message(event: LettaStreamingResponse) -> str | None:
 
     except json.JSONDecodeError as e:
         LOGGER.warning(f'Error parsing tool arguments: {e}')
-        return f'*Agent using tool: {_escape_markdown_v2(tool_name)}\
-                \n\n```{_escape_markdown_v2(arguments)}```'
+        return Text(as_key_value('Agent using tool', tool_name), Pre(arguments)).as_kwargs()
 
 
 def _format_tool_by_name(
     tool_name: str, args_obj: dict[str, Any], raw_arguments: str
-) -> str | None:
+) -> dict[str, Any] | str | None:
     """Format tool call based on tool name.
 
     Args:
@@ -161,7 +146,8 @@ def _format_tool_by_name(
         raw_arguments: Raw JSON string (fallback for generic display)
 
     Returns:
-        Formatted Text object or None for tools that should be hidden
+        Formatted dict with text and entities, markdown string,
+        or None for tools that should be hidden
     """
     match tool_name:
         # Memory operations
@@ -206,16 +192,13 @@ def _format_tool_by_name(
             return _format_generic_tool(tool_name, args_obj)
 
 
-def _format_conversation_search(args_obj: dict[str, Any]) -> str:
+def _format_conversation_search(args_obj: dict[str, Any]) -> dict[str, Any]:
     """Format conversation_search tool call."""
-    query = _escape_markdown_v2(args_obj.get('query', ''))
+    query = args_obj.get('query', '')
     limit = args_obj.get('limit')
     start_date = args_obj.get('start_date', '')
     end_date = args_obj.get('end_date', '')
     roles = args_obj.get('roles', [])
-
-    header = '🔍 _Searching conversation history\\.\\.\\._\n'
-    header += f'*Query:* "{query}"'
 
     parts = []
 
@@ -223,34 +206,38 @@ def _format_conversation_search(args_obj: dict[str, Any]) -> str:
         parts.append(f'top {limit} results')
 
     if start_date and end_date:
-        formatted_start = _escape_markdown_v2(_format_datetime(start_date))
-        formatted_end = _escape_markdown_v2(_format_datetime(end_date))
-        parts.append(f'between {formatted_start} and {formatted_end}')
+        start = _format_datetime(start_date)
+        end = _format_datetime(end_date)
+        parts.append(f'between {start} and {end}')
     elif start_date:
-        formatted_start = _escape_markdown_v2(_format_datetime(start_date))
-        parts.append(f'after {formatted_start}')
+        start = _format_datetime(start_date)
+        parts.append(f'after {start}')
     elif end_date:
-        formatted_end = _escape_markdown_v2(_format_datetime(end_date))
-        parts.append(f'before {formatted_end}')
+        end = _format_datetime(end_date)
+        parts.append(f'before {end}')
 
     if roles:
-        formatted_roles = ', '.join(_escape_markdown_v2(role) for role in roles)
+        formatted_roles = ', '.join(roles)
         parts.append(f'roles: {formatted_roles}')
 
+    elements = [
+        Italic('🔍 Searching conversation history...'),
+        as_key_value('Query', f'"{query}"'),
+    ]
     if parts:
-        header += '\n' + '\n'.join(f'• {part}' for part in parts)
+        elements.append(as_marked_list(*parts, marker='• '))
 
-    return header
+    return as_line(*elements, sep='\n').as_kwargs()
 
 
-def _format_schedule_message(args_obj: dict[str, Any]) -> str:
+def _format_schedule_message(args_obj: dict[str, Any]) -> dict[str, Any]:
     """Format schedule_message tool call."""
 
-    message_to_self = _escape_markdown_v2(args_obj.get('message_to_self', ''))
+    message_to_self = args_obj.get('message_to_self', '')
     delay_seconds = args_obj.get('delay_seconds')
     schedule_at = args_obj.get('schedule_at', '')
 
-    header = '⏱️ _Setting self activation\\.\\.\\._\n'
+    elements: list[Any] = [Italic('⏱️ Setting self activation...')]
 
     # Show timing first (most important info)
     if delay_seconds is not None:
@@ -272,26 +259,25 @@ def _format_schedule_message(args_obj: dict[str, Any]) -> str:
         else:
             time_str = f'{total_seconds} second{"s" if total_seconds != 1 else ""}'
 
-        header += f'*When:* in {_escape_markdown_v2(time_str)}\n'
+        elements.append(Text(Bold('When: '), f'in {time_str}'))
     elif schedule_at:
-        formatted_time = _escape_markdown_v2(_format_datetime(schedule_at))
-        header += f'*When:* {formatted_time}\n'
+        formatted_time = _format_datetime(schedule_at)
+        elements.append(Text(Bold('When: '), formatted_time))
 
-    # Message content last
-    header += f'*Message:* "{message_to_self}"'
+    elements.append(as_key_value('Message', f'"{message_to_self}"'))
 
-    return header
+    return as_line(*elements, sep='\n').as_kwargs()
 
 
-def _format_notify_via_telegram(args_obj: dict[str, Any]) -> str:
+def _format_notify_via_telegram(args_obj: dict[str, Any]) -> dict[str, Any]:
     """Format notify_via_telegram tool call."""
     owner_only = args_obj.get('owner_only', False)
     if owner_only:
-        return '📲 _Sending message to owner\\.\\.\\._'
-    return '📲 _Sending message to Telegram\\.\\.\\._'
+        return Italic('📲 Sending message to owner...').as_kwargs()
+    return Italic('📲 Sending message to Telegram...').as_kwargs()
 
 
-def _format_web_search(args_obj: dict[str, Any]) -> str:
+def _format_web_search(args_obj: dict[str, Any]) -> dict[str, Any]:
     query = args_obj.get('query', '')
     num_results = args_obj.get('num_results', '')
     category = args_obj.get('category', '')
@@ -302,48 +288,51 @@ def _format_web_search(args_obj: dict[str, Any]) -> str:
     end_published_date = args_obj.get('end_published_date', '')
     user_location = args_obj.get('user_location', '')
 
-    def format_domains(domains: list[str]) -> str:
-        return '\\[' + ', '.join(_escape_markdown_v2(item) for item in domains) + '\\]'
-
-    header = '🔍 _Let me search for this\\.\\.\\._\n'
-    header += f'*Query:* "{_escape_markdown_v2(query)}"'
-
     parts = []
 
     if num_results:
         parts.append(f'top {num_results} results')
     if category:
-        parts.append(f'category: {_escape_markdown_v2(category)}')
+        parts.append(f'category: {category}')
 
     if include_domains:
-        parts.append(f'limited to {format_domains(include_domains)}')
+        domains_str = ', '.join(include_domains)
+        parts.append(f'limited to [{domains_str}]')
     if exclude_domains:
-        parts.append(f'excluding {format_domains(exclude_domains)}')
+        domains_str = ', '.join(exclude_domains)
+        parts.append(f'excluding [{domains_str}]')
     if include_text:
         parts.append('retrieving full page content')
     if start_published_date and end_published_date:
-        formatted_start = _escape_markdown_v2(_format_datetime(start_published_date))
-        formatted_end = _escape_markdown_v2(_format_datetime(end_published_date))
-        parts.append(f'published between {formatted_start} and {formatted_end}')
+        start = _format_datetime(start_published_date)
+        end = _format_datetime(end_published_date)
+        parts.append(f'published between {start} and {end}')
     elif start_published_date:
-        formatted_start = _escape_markdown_v2(_format_datetime(start_published_date))
-        parts.append(f'published after {formatted_start}')
+        start = _format_datetime(start_published_date)
+        parts.append(f'published after {start}')
     elif end_published_date:
-        formatted_end = _escape_markdown_v2(_format_datetime(end_published_date))
-        parts.append(f'published before {formatted_end}')
+        end = _format_datetime(end_published_date)
+        parts.append(f'published before {end}')
 
     if user_location:
-        parts.append(f'localized for {_escape_markdown_v2(user_location)} users')
+        parts.append(f'localized for {user_location} users')
 
+    elements = [Italic('🔍 Let me search for this...'), as_key_value('Query', f'"{query}"')]
     if parts:
-        header += '\n' + '\n'.join(f'• {part}' for part in parts)
+        elements.append(as_marked_list(*parts, marker='• '))
 
-    return header
+    return as_line(*elements, sep='\n').as_kwargs()
 
 
-def _format_fetch_webpage(args_obj: dict[str, Any]) -> str:
-    url = _escape_markdown_v2(args_obj.get('url', ''))
-    return f'🌐 _Fetching webpage_\\.\\.\\.\n_Retrieving content from_ {url}'
+def _format_fetch_webpage(args_obj: dict[str, Any]) -> dict[str, Any]:
+    url = args_obj.get('url', '')
+    return as_line(
+        *(
+            Italic('🌐 Fetching webpage...'),
+            Text(Italic('Retrieving content from '), Url(url)),
+        ),
+        sep='\n',
+    ).as_kwargs()
 
 
 def _format_archival_memory_insert(args_obj: dict[str, Any]) -> str:
@@ -351,101 +340,128 @@ def _format_archival_memory_insert(args_obj: dict[str, Any]) -> str:
     content_text = args_obj.get('content', '')
     tags = args_obj.get('tags', [])
 
-    # Convert content using the same conversion as assistant messages
-    converted_content = convert_to_telegram_markdown(
-        content_text
-    )  # FIXME: split long message
-
-    header = '💾 _Storing in archival memory\\.\\.\\._\n'
+    parts = ['*💾 Storing in archival memory...*\n']
 
     if tags:
-        formatted_tags = ', '.join(_escape_markdown_v2(tag) for tag in tags)
-        header += f'*Tags:* {formatted_tags}\n'
+        formatted_tags = ', '.join(tags)
+        parts.append(f'**Tags:** {formatted_tags}\n')
 
-    header += f'\n*Content:*\n{converted_content}'
+    parts.append(f'**Content:**\n{content_text}')
 
-    return header
+    return ''.join(parts)
 
 
-def _format_archival_memory_search(args_obj: dict[str, Any]) -> str:
+def _format_archival_memory_search(args_obj: dict[str, Any]) -> dict[str, Any]:
     """Format archival_memory_search tool call."""
-    query = _escape_markdown_v2(args_obj.get('query', ''))
+    query = args_obj.get('query', '')
     start_datetime = args_obj.get('start_datetime', '')
     end_datetime = args_obj.get('end_datetime', '')
     tags = args_obj.get('tags', [])
     tag_match_mode = args_obj.get('tag_match_mode', '')
     top_k = args_obj.get('top_k')
 
-    header = '🔍 _Searching archival memory\\.\\.\\._\n'
-    header += f'*Query:* "{query}"'
-
     parts = []
     if top_k:
         parts.append(f'top {top_k} results')
 
     if start_datetime and end_datetime:
-        formatted_start = _escape_markdown_v2(_format_datetime(start_datetime))
-        formatted_end = _escape_markdown_v2(_format_datetime(end_datetime))
-        parts.append(f'between {formatted_start} and {formatted_end}')
+        start = _format_datetime(start_datetime)
+        end = _format_datetime(end_datetime)
+        parts.append(f'between {start} and {end}')
     elif start_datetime:
-        formatted_start = _escape_markdown_v2(_format_datetime(start_datetime))
-        parts.append(f'after {formatted_start}')
+        start = _format_datetime(start_datetime)
+        parts.append(f'after {start}')
     elif end_datetime:
-        formatted_end = _escape_markdown_v2(_format_datetime(end_datetime))
-        parts.append(f'before {formatted_end}')
+        end = _format_datetime(end_datetime)
+        parts.append(f'before {end}')
 
     if tags:
-        formatted_tags = ', '.join(_escape_markdown_v2(tag) for tag in tags)
-        tag_mode = f' \\({tag_match_mode}\\)' if tag_match_mode else ''
+        formatted_tags = ', '.join(tags)
+        tag_mode = f' ({tag_match_mode})' if tag_match_mode else ''
         parts.append(f'tags: {formatted_tags}{tag_mode}')
 
+    elements = [
+        Italic('🔍 Searching archival memory...'),
+        as_key_value('Query', f'"{query}"'),
+    ]
     if parts:
-        header += '\n' + '\n'.join(f'• {part}' for part in parts)
+        elements.append(as_marked_list(*parts, marker='• '))
 
-    return header
+    return as_line(*elements, sep='\n').as_kwargs()
 
 
-def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> str:
+def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> dict[str, Any]:
     """Format memory_insert tool call."""
-    insert_text = _escape_markdown_v2(
-        args_obj.get('new_str' if legacy else 'insert_text', '')
-    )
-    path = _escape_markdown_v2(args_obj.get('path', ''))
+    insert_text = args_obj.get('new_str' if legacy else 'insert_text', '')
+    path = args_obj.get('path', '')
 
-    return f'📝 _Updating memory block\\.\\.\\._\n*Path:* {path}\n\n{insert_text}'
+    return as_line(
+        *(
+            Italic('📝 Updating memory block...'),
+            Text(
+                as_key_value(
+                    'Path',
+                    path,
+                ),
+                '\n',
+            ),
+            Text(insert_text),
+        ),
+        sep='\n',
+    ).as_kwargs()
 
 
-def _format_memory_replace(args_obj: dict[str, Any]) -> str | None:
+def _format_memory_replace(args_obj: dict[str, Any]) -> str:
     """Format memory_replace tool call."""
-    path = _escape_markdown_v2(args_obj.get('path', ''))
-    old_str = _escape_markdown_v2(args_obj.get('old_str', ''))
-    new_str = _escape_markdown_v2(args_obj.get('new_str', ''))
+    path = args_obj.get('path', '')
+    old_str = args_obj.get('old_str', '')
+    new_str = args_obj.get('new_str', '')
 
     diff = _get_diff_text(old_str, new_str)
-    header = '🔧 _Modifying memory block\\.\\.\\._\n'
+    parts = ['*🔧 Modifying memory block...*\n']
+
     if path:
-        header += f'*Path:* {path}\n'
-    return f'{header}```diff\n{diff}```'
+        parts.append(f'**Path:** {path}\n')
+
+    parts.append(f'```diff\n{diff}```')
+
+    return ''.join(parts)
 
 
-def _format_memory_rename(args_obj: dict[str, Any]) -> str:
-    description = _escape_markdown_v2(args_obj.get('description', ''))
-    path = _escape_markdown_v2(args_obj.get('path', ''))
-    new_path = _escape_markdown_v2(args_obj.get('new_path', ''))
-    old_path = _escape_markdown_v2(args_obj.get('old_path', ''))
+def _format_memory_rename(args_obj: dict[str, Any]) -> dict[str, Any]:
+    description = args_obj.get('description', '')
+    path = args_obj.get('path', '')
+    new_path = args_obj.get('new_path', '')
+    old_path = args_obj.get('old_path', '')
 
     if description and path:
-        return (
-            '🏷️ _Updating memory description\\.\\.\\._\n'
-            f'*Path:* {path}\n'
-            f'*New description:* "{description}"'
-        )
-    return f'📂 _Renaming memory block\\.\\.\\._\n*From:* {old_path}\n*To:* {new_path}'
+        return as_line(
+            *(
+                Italic('🏷️ Updating memory description...'),
+                as_key_value('Path', path),
+                as_key_value('New description', f'"{description}"'),
+            ),
+            sep='\n',
+        ).as_kwargs()
+    return as_line(
+        *(
+            Italic('📂 Renaming memory block...'),
+            as_key_value('From', old_path),
+            as_key_value('To', new_path),
+        ),
+        sep='\n',
+    ).as_kwargs()
 
 
-def _format_memory_delete(args_obj: dict[str, Any]) -> str:
-    path = _escape_markdown_v2(args_obj.get('path', ''))
-    return f'🧹 _Removing a memory block\\.\\.\\._\nDeleting *"{path}"* permanently\\.'
+def _format_memory_delete(args_obj: dict[str, Any]) -> dict[str, Any]:
+    path = args_obj.get('path', '')
+    return as_line(
+        *(
+            Italic('🧹 Removing a memory block...'),
+            Text('Deleting ', Bold(f'"{path}"'), ' permanently.'),
+        ),
+        sep='\n',
+    ).as_kwargs()
 
 
 def _format_memory_create(args_obj: dict[str, Any]) -> str:
@@ -455,32 +471,22 @@ def _format_memory_create(args_obj: dict[str, Any]) -> str:
     1. Creating memory block with initial content (has 'file_text')
     2. Creating empty memory block (no 'file_text')
     """
-    path = _escape_markdown_v2(args_obj.get('path', ''))
-    description = _escape_markdown_v2(args_obj.get('description', ''))
+    path = args_obj.get('path', '')
+    description = args_obj.get('description', '')
     file_text = args_obj.get('file_text', '')
 
+    parts = ['*📝 Creating new memory block...*\n', f'**Path:** {path}\n']
+
+    if description:
+        parts.append(f'**Description:** "{description}"\n')
+
     if file_text:
-        # Creating memory with initial content
-        # Convert file_text using the same conversion as assistant messages
-        converted_content = convert_to_telegram_markdown(
-            file_text
-        )  # FIXME: split long message
-        header = '📝 _Creating new memory block\\.\\.\\._\n'
-        header += f'*Path:* {path}\n'
-        if description:
-            header += f'*Description:* "{description}"\n'
-        header += f'\n*Initial content:*\n{converted_content}'
-        return header
-    else:
-        # Creating empty memory block
-        header = '📝 _Creating new memory block\\.\\.\\._\n'
-        header += f'*Path:* {path}\n'
-        if description:
-            header += f'*Description:* "{description}"'
-        return header
+        parts.append(f'**Initial content:**\n{file_text}')
+
+    return ''.join(parts)
 
 
-def _format_memory(args_obj: dict[str, Any]) -> None | str:
+def _format_memory(args_obj: dict[str, Any]) -> dict[str, Any] | str | None:
     """Format memory tool call."""
     match args_obj:
         case {'command': 'str_replace'}:
@@ -500,139 +506,28 @@ def _format_memory(args_obj: dict[str, Any]) -> None | str:
 
 def _format_run_code(args_obj: dict[str, Any]) -> str:
     """Format run_code tool call."""
-    code = _escape_markdown_v2(args_obj.get('code', ''))  # FIXME: maybe long message?
+    code = args_obj.get('code', '')
     language = args_obj.get('language', 'python')
 
-    header = '⚙️ _Executing code\\.\\.\\._\n'
-    header += f'*Language:* {_escape_markdown_v2(language)}\n'
-    header += f'```{language}\n{code}\n```'
+    parts = ['*⚙️ Executing code...*\n', f'**Language:** {language}\n']
+    parts.append(f'```{language}\n{code}\n```')
 
-    return header
+    return ''.join(parts)
 
 
 def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
     """Format generic tool call with JSON arguments."""
-    formatted_args = _escape_markdown_v2(json.dumps(args_obj, indent=2))
+    formatted_args = json.dumps(args_obj, indent=2)
 
-    header = '🔧 _Using tool\\.\\.\\._\n'
-    header += f'*Tool:* {_escape_markdown_v2(tool_name)}\n'
-    header += f'\n*Arguments:*\n```json\n{formatted_args}\n```'
+    parts = ['*🔧 Using tool...*\n', f'**Tool:** {tool_name}\n']
+    parts.append(f'**Arguments:**\n```json\n{formatted_args}\n```')
 
-    return header
+    return ''.join(parts)
 
 
 # =============================================================================
-# Message Splitting and Sending
+# Message Sending
 # =============================================================================
-def _get_next_token(text: str, pos: int, escaped: bool) -> tuple[str | None, int]:
-    """Find the next Markdown token at the given position.
-
-    Checks if the text starting from `pos` begins with any known Markdown token,
-    unless the preceding character was an escape character '\'.
-
-    Args:
-        text: The string to search within.
-        pos: The starting position in the text to check for a token.
-        escaped: True if the character immediately preceding `pos` was an
-                 escape character ('\'), False otherwise.
-
-    Returns:
-        A tuple containing:
-        - The found Markdown token (str) or None if no token is found
-          at the position or if it's escaped.
-        - The length of the found token (int), or 0 if no token is found.
-    """
-    if escaped:
-        return None, 0
-    first = text[pos]
-    for token in MARKDOWN_TOKENS.get(first, ()):
-        if text.startswith(token, pos):
-            return token, len(token)
-    return None, 0
-
-
-def split_markdown_v2(
-    text: str,
-    limit: int = TELEGRAM_MAX_LEN,
-    recommended_margin: int = 400,
-    safety_margin: int = 50,
-) -> list[str]:
-    """Split a Markdown text into chunks while trying to preserve formatting.
-
-    Attempts to split the text into chunks smaller than `limit`. It tracks
-    opening and closing Markdown tokens using a stack. When a chunk needs to be
-    split, it appends the necessary closing tokens to the end of the current
-    chunk and prepends the corresponding opening tokens to the beginning of the
-    next chunk.
-
-    Splitting priority:
-    1. At a newline character when the buffer size is close to the limit
-       (within `recommended_margin`).
-    2. Anywhere when the buffer size is very close to the limit
-       (within `safety_margin`).
-
-    Args:
-        text: The Markdown string to split.
-        limit: The maximum desired length for each chunk. Defaults to
-               `constants.MessageLimit.MAX_TEXT_LENGTH`.
-        recommended_margin: The preferred distance from the `limit` at which
-               to split, ideally looking for a newline.
-        safety_margin: The absolute minimum distance from the `limit` at which
-               a split must occur, regardless of the character.
-
-    Returns:
-        A list of strings, where each string is a chunk of the original text,
-        with formatting tokens adjusted to maintain validity across chunks.
-    """
-
-    if len(text) <= limit:
-        return [text]
-
-    chunks: list[str] = []
-    buffer: list[str] = []
-    buf_len = 0
-    stack: deque[str] = deque()
-    i = 0
-    n = len(text)
-    escaped = False
-
-    while i < n:
-        token, shift = _get_next_token(text, i, escaped)
-        next_piece = token if token else text[i]
-        next_len = len(next_piece)
-        escaped = text[i] == '\\'
-
-        if buf_len + next_len > limit - safety_margin:
-            closing_sequence = ''.join(reversed(stack))
-            chunks.append(''.join(buffer) + closing_sequence)
-            buffer = list(stack)
-            buf_len = sum(len(t) for t in stack)
-
-        buffer.append(next_piece)
-        buf_len += next_len
-
-        if token:
-            if stack and stack[-1] == token:
-                stack.pop()
-            else:
-                stack.append(token)
-            i += shift
-        else:
-            i += 1
-
-        if buf_len >= limit - recommended_margin and i < n and text[i] == '\n':
-            closing_sequence = ''.join(reversed(stack))
-            chunks.append(''.join(buffer) + closing_sequence)
-            buffer = list(stack)
-            buf_len = sum(len(t) for t in stack)
-            i += 1  # skip newline
-
-    if buffer:
-        chunks.append(''.join(buffer))
-
-    return chunks
-
-
 async def _send_error_message(message: Message, reason: Exception, content: str) -> None:
     """Send formatted error message to user and log the reason.
 
@@ -643,30 +538,29 @@ async def _send_error_message(message: Message, reason: Exception, content: str)
     LOGGER.warning('Failed to send message: %s\nContent: %s', reason, content)
     LOGGER.debug('Full content: %s', content)
 
-    error_text = '❌ Something went wrong'
-
-    await message.answer(text=error_text, parse_mode=ParseMode.MARKDOWN_V2)
+    await message.answer(**Text('❌ Something went wrong').as_kwargs())
 
 
-async def send_assistant_message(message: Message, content: str) -> None:
-    """Send assistant message, splitting and converting to Telegram markdown.
+async def send_markdown_message(message: Message, content: str) -> None:
+    """Send markdown message, converting to Telegram entities.
 
     Args:
         message: Telegram message to reply to
-        content: Raw markdown content from assistant
+        content: Standard Markdown content
 
     Process:
-        1. Split raw content at natural boundaries
-        2. Convert each chunk to Telegram MarkdownV2
-        3. Send each chunk
+        1. Convert markdown to Telegram entities (auto-splits if > 4096 chars)
+        2. Send each chunk as separate message
     """
-    telegram_markdown = convert_to_telegram_markdown(content)
-    for chunk in split_markdown_v2(telegram_markdown):
-        try:
-            await message.answer(chunk, parse_mode=ParseMode.MARKDOWN_V2)
-        except Exception as e:
-            await _send_error_message(message, e, chunk)
-            continue
+    from md_tg import markdown_to_telegram
+
+    # markdown_to_telegram returns list of chunks
+    # Automatically splits long text at block boundaries (never mid-word)
+    chunks = markdown_to_telegram(content)
+
+    # Send each chunk as separate message
+    for text, entities in chunks:
+        await message.answer(text, entities=to_aiogram_entities(entities))
 
 
 # =============================================================================
@@ -715,30 +609,33 @@ class AgentStreamHandler:
         if message_type in ('reasoning_message', 'tool_call_message'):
             formatted_content = self._format_other_event(event)
             if formatted_content:
-                for chunk in split_markdown_v2(formatted_content):
-                    try:
-                        await self.telegram_message.answer(
-                            chunk, parse_mode=ParseMode.MARKDOWN_V2
+                try:
+                    # Handle both dict (aiogram formatting) and str (markdown) formats
+                    if isinstance(formatted_content, str):
+                        await send_markdown_message(
+                            self.telegram_message, formatted_content
                         )
-                    except Exception as e:
-                        await _send_error_message(self.telegram_message, e, chunk)
+                    else:
+                        await self.telegram_message.answer(**formatted_content)
+                except Exception as e:
+                    await _send_error_message(
+                        self.telegram_message, e, str(formatted_content)
+                    )
             return
 
         # System alerts (informational messages from Letta)
         if message_type == 'system_message':
             alert_message = getattr(event, 'message', '')
             if alert_message and alert_message.strip():
-                alert_content = f'_\\(info: _{_escape_markdown_v2(alert_message)}_\\)_'
-                await self.telegram_message.answer(
-                    alert_content, parse_mode=ParseMode.MARKDOWN_V2
-                )
+                alert_content = Italic(f'info: {alert_message}').as_kwargs()
+                await self.telegram_message.answer(**alert_content)
             return
 
         # Phase 3: Final response (clears ping state)
         if message_type == 'assistant_message':
             raw_content = getattr(event, 'content', '').strip()
             if raw_content:
-                await send_assistant_message(self.telegram_message, raw_content)
+                await send_markdown_message(self.telegram_message, raw_content)
                 self._clear_ping_state()
 
     async def _handle_ping(self) -> None:
@@ -756,14 +653,16 @@ class AgentStreamHandler:
             except Exception as e:
                 LOGGER.warning(f'Failed to edit ping message: {e}')
 
-    def _format_other_event(self, event: LettaStreamingResponse) -> str | None:
+    def _format_other_event(
+        self, event: LettaStreamingResponse
+    ) -> dict[str, Any] | str | None:
         """Format non-assistant event content (reasoning, tool calls).
 
         Args:
             event: Stream event from Letta API
 
         Returns:
-            Formatted Text object or None
+            Formatted dict with text and entities, markdown string, or None
         """
         message_type = event.message_type
 

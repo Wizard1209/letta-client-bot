@@ -1,8 +1,12 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from functools import wraps
 import time
-from typing import Any, ParamSpec, TypeVar
+from typing import Any, ParamSpec, TypeVar, overload
 from uuid import UUID
+
+from aiogram.types import MessageEntity as AiogramEntity
+
+from md_tg.config import MessageEntity as MdTgEntity
 
 P = ParamSpec('P')
 R = TypeVar('R')
@@ -73,3 +77,59 @@ def version_needs_update(current: str | None, required: str) -> bool:
         return parse_version(current) < parse_version(required)
     except ValueError:
         return True
+
+
+@overload
+def to_aiogram_entities(entities: MdTgEntity) -> AiogramEntity: ...
+
+
+@overload
+def to_aiogram_entities(entities: Sequence[MdTgEntity]) -> list[AiogramEntity]: ...
+
+
+def to_aiogram_entities(
+    entities: MdTgEntity | Sequence[MdTgEntity],
+) -> AiogramEntity | list[AiogramEntity]:
+    """Convert md_tg MessageEntity to aiogram MessageEntity format.
+
+    Supports both single entity and list of entities.
+
+    Args:
+        entities: Single MessageEntity dict or list of MessageEntity dicts from md_tg
+
+    Returns:
+        Single aiogram MessageEntity or list of aiogram MessageEntity instances
+
+    Examples:
+        >>> from md_tg import markdown_to_telegram
+        >>>
+        >>> # Single chunk
+        >>> text, entities = markdown_to_telegram('**Bold**')[0]
+        >>> await message.answer(text, entities=to_aiogram_entities(entities))
+        >>>
+        >>> # Multiple chunks
+        >>> chunks = markdown_to_telegram(long_markdown)
+        >>> for text, entities in chunks:
+        ...     await message.answer(text, entities=to_aiogram_entities(entities))
+    """
+    # Check if single entity (has 'type' key)
+    if isinstance(entities, dict) and 'type' in entities:
+        return AiogramEntity(
+            type=entities['type'],
+            offset=entities['offset'],
+            length=entities['length'],
+            url=entities.get('url'),
+            language=entities.get('language'),
+        )
+
+    # List of entities
+    return [
+        AiogramEntity(
+            type=e['type'],
+            offset=e['offset'],
+            length=e['length'],
+            url=e.get('url'),
+            language=e.get('language'),
+        )
+        for e in entities
+    ]

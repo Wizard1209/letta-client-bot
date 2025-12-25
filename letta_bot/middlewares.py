@@ -96,7 +96,7 @@ class IdentityMiddleware(BaseMiddleware):
         # Authorization - check if user has allowed identity
         if not await get_allowed_identity_query(gel_client, telegram_id=telegram_id):
             await event.answer(
-                Text('❌ No access — use /new or /access to request').as_markdown()
+                **Text('❌ No access — use /new or /access to request').as_kwargs()
             )
             return None
 
@@ -183,11 +183,11 @@ class AgentMiddleware(BaseMiddleware):
                     msg = f'🔄 Switched to {agent.name} (previous unavailable)'
                 else:
                     msg = f'🤖 Auto-selected assistant {agent.name}'
-                await event.answer(Text(msg).as_markdown())
+                await event.answer(**Text(msg).as_kwargs())
             except IndexError:
                 # Authorization - no agents available
                 await event.answer(
-                    Text('❌ No assistants yet — use /new to request one').as_markdown()
+                    **Text('❌ No assistants yet — use /new to request one').as_kwargs()
                 )
                 return None
 

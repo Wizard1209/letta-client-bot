@@ -4,7 +4,7 @@ from enum import Enum
 import hashlib
 import logging
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from aiogram import Router
 from aiogram.filters.callback_data import CallbackData
@@ -183,7 +183,7 @@ async def notify_command(message: Message, agent_id: str) -> None:
         return
 
     # Show checking message first, then edit with status
-    status_msg = await message.answer(Text('🔍 Checking status...').as_markdown())
+    status_msg = await message.answer(**Text('🔍 Checking status...').as_kwargs())
     await handle_notify_status(status_msg, agent_id)
 
 
@@ -243,7 +243,7 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
         memory_current: bool | None = None
 
         if any_connected:
-            await message.edit_text(Text('🔄 Checking for updates...').as_markdown())
+            await message.edit_text(**Text('🔄 Checking for updates...').as_kwargs())
 
             if schedule_connected:
                 schedule_update = _check_schedule_current(agent)
@@ -267,7 +267,7 @@ async def handle_notify_status(message: Message, agent_id: str) -> None:
 
     except Exception as e:
         LOGGER.error(f'Error checking notification status: {e}')
-        await message.edit_text(Text('❌ Error checking status: ', str(e)).as_markdown())
+        await message.edit_text(**Text('❌ Error checking status: ', str(e)).as_kwargs())
 
 
 def _get_status_icon(
@@ -366,7 +366,7 @@ async def _display_notify_status(
 
     # Render status display
     await message.edit_text(
-        _render_status(
+        **_render_status(
             overall_icon=overall_icon,
             agent_name=agent.name,
             schedule_connected=schedule_connected,
@@ -419,7 +419,7 @@ def _render_status(
     memory_exists: bool,
     memory_current: bool | None,
     current_memory_version: str | None,
-) -> str:
+) -> dict[str, Any]:
     """Render the full proactive mode status message."""
     # Header
     lines: list[Text | str] = [
@@ -452,7 +452,7 @@ def _render_status(
         _render_memory_status(memory_exists, memory_current, current_memory_version)
     )
 
-    return as_list(*lines, sep='\n').as_markdown()
+    return as_list(*lines, sep='\n').as_kwargs()
 
 
 async def handle_notify_enable(message: Message, agent_id: str) -> None:
@@ -461,10 +461,10 @@ async def handle_notify_enable(message: Message, agent_id: str) -> None:
         # Check if Scheduler API key is configured
         if not CONFIG.scheduler_api_key:
             await message.edit_text(
-                Text(
+                **Text(
                     '❌ Scheduled messages require SCHEDULER_API_KEY to be configured. '
                     'Please contact the administrator.'
-                ).as_markdown()
+                ).as_kwargs()
             )
             return
 
@@ -472,42 +472,42 @@ async def handle_notify_enable(message: Message, agent_id: str) -> None:
 
         # STEP 1: Enable Scheduling (schedule_message)
         await message.edit_text(
-            Text('📅 Configuring ', Code('schedule_message'), ' tool...').as_markdown()
+            **Text('📅 Configuring ', Code('schedule_message'), ' tool...').as_kwargs()
         )
         await _enable_schedule_tool(agent_id)
 
         # STEP 2: Enable Notifications (notify_via_telegram)
         await message.edit_text(
-            Text('📢 Configuring ', Code('notify_via_telegram'), ' tool...').as_markdown()
+            **Text('📢 Configuring ', Code('notify_via_telegram'), ' tool...').as_kwargs()
         )
         await _enable_notify_tool(agent_id)
 
         # STEP 3: Attach Memory Block (agent_communication_tools_memo)
         await message.edit_text(
-            Text('📝 Attaching tool guidance memory block...').as_markdown()
+            **Text('📝 Attaching tool guidance memory block...').as_kwargs()
         )
         await _attach_tool_memory_block(agent_id)
 
         # Final success message
         await message.edit_text(
-            Text(
+            **Text(
                 '✅ Proactive mode enabled for ',
                 Bold(agent.name),
                 '\n\nYour assistant can now:',
                 '\n• Schedule future check-ins and reminders',
                 '\n• Queue tasks for later execution',
                 '\n• Notify you at the right time',
-            ).as_markdown()
+            ).as_kwargs()
         )
 
     except Exception as e:
         LOGGER.error(f'Error enabling communication tools: {e}')
-        await message.edit_text(Text('❌ Error enabling tools: ', str(e)).as_markdown())
+        await message.edit_text(**Text('❌ Error enabling tools: ', str(e)).as_kwargs())
 
 
 async def handle_notify_update(message: Message, agent_id: str) -> None:
     """Update proactive tools by re-enabling (disable + enable)."""
-    await message.edit_text(Text('🔄 Updating tools...').as_markdown())
+    await message.edit_text(**Text('🔄 Updating tools...').as_kwargs())
     await handle_notify_disable(message, agent_id)
     await handle_notify_enable(message, agent_id)
 
@@ -598,30 +598,30 @@ async def handle_notify_disable(message: Message, agent_id: str) -> None:
 
         # STEP 1: Disable Scheduling (schedule_message)
         await message.edit_text(
-            Text('📅 Removing ', Code('schedule_message'), ' tool...').as_markdown()
+            **Text('📅 Removing ', Code('schedule_message'), ' tool...').as_kwargs()
         )
         await _disable_schedule_tool(agent_id)
 
         # STEP 2: Disable Notifications (notify_via_telegram)
         await message.edit_text(
-            Text('📢 Removing ', Code('notify_via_telegram'), ' tool...').as_markdown()
+            **Text('📢 Removing ', Code('notify_via_telegram'), ' tool...').as_kwargs()
         )
         await _disable_notify_tool(agent_id)
 
         # STEP 3: Detach Memory Block (agent_communication_tools_memo)
         await message.edit_text(
-            Text('📝 Removing tool guidance memory block...').as_markdown()
+            **Text('📝 Removing tool guidance memory block...').as_kwargs()
         )
         await _detach_tool_memory_block(agent_id)
 
         # Final success message
         await message.edit_text(
-            Text('✅ Proactive mode disabled for ', Bold(agent.name)).as_markdown()
+            **Text('✅ Proactive mode disabled for ', Bold(agent.name)).as_kwargs()
         )
 
     except Exception as e:
         LOGGER.error(f'Error disabling communication tools: {e}')
-        await message.edit_text(Text('❌ Error disabling tools: ', str(e)).as_markdown())
+        await message.edit_text(**Text('❌ Error disabling tools: ', str(e)).as_kwargs())
 
 
 async def _disable_schedule_tool(agent_id: str) -> None:
