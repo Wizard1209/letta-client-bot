@@ -7,7 +7,7 @@ All tests focus on the main requirement:
 
 import pytest
 
-from md_tg.config import DEFAULT_CONFIG
+from md_tg.config import DEFAULT_CONFIG, MessageEntity
 from md_tg.converter import markdown_to_telegram
 from md_tg.utils import utf16_len
 
@@ -15,7 +15,7 @@ MAX_CHUNK_LENGTH = DEFAULT_CONFIG.max_chunk_length
 
 
 def _assert_chunks_within_limit(
-    chunks: list[tuple[str, list[dict[str, object]]]]
+    chunks: list[tuple[str, list[MessageEntity]]]
 ) -> None:
     """Verify all chunks respect Telegram's 4096 limit and entity bounds.
 
