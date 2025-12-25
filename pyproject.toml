@@ -8,6 +8,7 @@ dependencies = [
   "aiogram>=3.22.0",
   "gel>=3.1.0",
   "letta-client>=1.0.0",
+  "mistune>=3.1.4",
   "openai>=2.8.1",
   "pydantic-settings>=2.11.0",
   "telegramify-markdown>=0.5.2",
@@ -51,7 +52,7 @@ unfixable = []
 "devscripts/*" = ["ANN"]   # Don't require type annotations in devscripts
 
 [tool.ruff.lint.isort]
-known-first-party = ["letta_client_bot"]
+known-first-party = ["letta_client_bot", "md_tg"]
 combine-as-imports = true
 force-sort-within-sections = true
 
