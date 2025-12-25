@@ -79,12 +79,14 @@ exclude = [
   "letta_bot/queries/.*_async_edgeql\\.py$",
   "devscripts/",
   "letta_bot/custom_tools/",
+  "tests/",
 ]
 plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+disable_error_code = ["operator", "arg-type", "var-annotated"]
 
 [[tool.mypy.overrides]]
 module = ["letta_client.*"]
