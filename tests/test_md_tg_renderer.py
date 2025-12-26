@@ -29,7 +29,7 @@ def test_entity_types(markdown: str, expected_entity_type: str) -> None:
     chunks = markdown_to_telegram(markdown)
     _, entities = chunks[0]
 
-    entity_types = [e['type'] for e in entities]
+    entity_types = [e.type for e in entities]
     assert expected_entity_type in entity_types, (
         f'Expected {expected_entity_type} entity in {entity_types}'
     )
@@ -48,9 +48,9 @@ def test_inline_code_trailing_space_excluded_from_entity() -> None:
     chunks = markdown_to_telegram('Text with `code ` here')
     text, entities = chunks[0]
 
-    code_entity = next(e for e in entities if e['type'] == 'code')
-    offset = code_entity['offset']
-    length = code_entity['length']
+    code_entity = next(e for e in entities if e.type == 'code')
+    offset = code_entity.offset
+    length = code_entity.length
     entity_text = text[offset : offset + length]
 
     # Entity must NOT include trailing space
@@ -67,9 +67,9 @@ def test_inline_code_various_trailing_whitespace(trailing: str) -> None:
     chunks = markdown_to_telegram(markdown)
     text, entities = chunks[0]
 
-    code_entity = next(e for e in entities if e['type'] == 'code')
-    offset = code_entity['offset']
-    length = code_entity['length']
+    code_entity = next(e for e in entities if e.type == 'code')
+    offset = code_entity.offset
+    length = code_entity.length
     entity_text = text[offset : offset + length]
 
     assert entity_text == 'code', f'Expected "code", got {entity_text!r}'
@@ -88,14 +88,14 @@ def test_entity_length_excludes_trailing_whitespace_next_offset_includes() -> No
     chunks = markdown_to_telegram(markdown)
     text, entities = chunks[0]
 
-    code_entities = [e for e in entities if e['type'] == 'code']
+    code_entities = [e for e in entities if e.type == 'code']
     assert len(code_entities) == 2, f'Expected 2 code entities, got {len(code_entities)}'
 
     # Helper to extract entity text using UTF-16 offsets
-    def extract_entity_text(entity: dict[str, object]) -> str:
+    def extract_entity_text(entity: object) -> str:
         text_utf16 = text.encode('utf-16-le')
-        offset_bytes = entity['offset'] * 2
-        length_bytes = entity['length'] * 2
+        offset_bytes = entity.offset * 2
+        length_bytes = entity.length * 2
         return text_utf16[offset_bytes:offset_bytes + length_bytes].decode('utf-16-le')
 
     first_text = extract_entity_text(code_entities[0])
@@ -106,8 +106,8 @@ def test_entity_length_excludes_trailing_whitespace_next_offset_includes() -> No
     assert second_text == 'more', f'Expected "more", got {second_text!r}'
 
     # Next offset must INCLUDE preceding whitespace
-    first_end = code_entities[0]['offset'] + code_entities[0]['length']
-    gap = code_entities[1]['offset'] - first_end
+    first_end = code_entities[0].offset + code_entities[0].length
+    gap = code_entities[1].offset - first_end
     expected_gap = utf16_len('  and ')  # Trailing space from first + " and "
 
     assert gap == expected_gap, (
@@ -146,7 +146,7 @@ def test_link_url_validation(markdown: str, should_have_link: bool) -> None:
     chunks = markdown_to_telegram(markdown)
     _, entities = chunks[0]
 
-    link_entities = [e for e in entities if e.get('type') == 'text_link']
+    link_entities = [e for e in entities if e.type == 'text_link']
 
     if should_have_link:
         assert len(link_entities) == 1, f'Expected text_link for {markdown}'
@@ -159,9 +159,9 @@ def test_link_url_attribute() -> None:
     chunks = markdown_to_telegram('[Google](https://google.com)')
     _, entities = chunks[0]
 
-    link_entity = next(e for e in entities if e['type'] == 'text_link')
-    assert 'url' in link_entity, 'text_link entity missing url attribute'
-    assert link_entity['url'] == 'https://google.com'
+    link_entity = next(e for e in entities if e.type == 'text_link')
+    assert link_entity.url is not None, 'text_link entity missing url attribute'
+    assert link_entity.url == 'https://google.com'
 
 
 # ============================================================================
@@ -186,13 +186,13 @@ def test_code_block_language_preservation(
     chunks = markdown_to_telegram(markdown)
     _, entities = chunks[0]
 
-    pre_entity = next(e for e in entities if e['type'] == 'pre')
+    pre_entity = next(e for e in entities if e.type == 'pre')
 
     if expected_language:
-        assert 'language' in pre_entity, 'pre entity missing language attribute'
-        assert pre_entity['language'] == expected_language
+        assert pre_entity.language is not None, 'pre entity missing language attribute'
+        assert pre_entity.language == expected_language
     else:
-        assert 'language' not in pre_entity, 'pre entity should not have language'
+        assert pre_entity.language is None, 'pre entity should not have language'
 
 
 # ============================================================================
@@ -209,12 +209,12 @@ def test_utf16_offsets_with_emoji() -> None:
     text, entities = chunks[0]
 
     # Find bold entity
-    bold_entity = next(e for e in entities if e['type'] == 'bold')
+    bold_entity = next(e for e in entities if e.type == 'bold')
 
     # Extract text using UTF-16 offsets
     text_utf16 = text.encode('utf-16-le')
-    offset_bytes = bold_entity['offset'] * 2  # Each UTF-16 unit is 2 bytes
-    length_bytes = bold_entity['length'] * 2
+    offset_bytes = bold_entity.offset * 2  # Each UTF-16 unit is 2 bytes
+    length_bytes = bold_entity.length * 2
     entity_text_bytes = text_utf16[offset_bytes : offset_bytes + length_bytes]
     entity_text = entity_text_bytes.decode('utf-16-le')
 
@@ -233,9 +233,9 @@ def test_utf16_entity_bounds_with_unicode() -> None:
 
     for entity in entities:
         # Entity must not exceed text length
-        assert entity['offset'] + entity['length'] <= text_len_utf16, (
-            f'Entity {entity["type"]} out of bounds: '
-            f'offset={entity["offset"]}, length={entity["length"]}, '
+        assert entity.offset + entity.length <= text_len_utf16, (
+            f'Entity {entity.type} out of bounds: '
+            f'offset={entity.offset}, length={entity.length}, '
             f'text_len={text_len_utf16}'
         )
 
@@ -254,12 +254,12 @@ def test_multiple_entities_sequence() -> None:
     assert len(entities) == 3, f'Expected 3 entities, got {len(entities)}'
 
     # All entity types must be present
-    entity_types = {e['type'] for e in entities}
+    entity_types = {e.type for e in entities}
     assert entity_types == {'bold', 'italic', 'code'}
 
     # Entities must be ordered by offset
     for i in range(len(entities) - 1):
-        assert entities[i]['offset'] <= entities[i + 1]['offset'], (
+        assert entities[i].offset <= entities[i + 1].offset, (
             'Entities not ordered by offset'
         )
 

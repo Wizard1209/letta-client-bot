@@ -28,8 +28,6 @@ from aiogram.utils.formatting import (
 )
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
 
-from letta_bot.utils import to_aiogram_entities
-
 LOGGER = logging.getLogger(__name__)
 
 # Telegram message limit in characters
@@ -560,7 +558,7 @@ async def send_markdown_message(message: Message, content: str) -> None:
 
     # Send each chunk as separate message
     for text, entities in chunks:
-        await message.answer(text, entities=to_aiogram_entities(entities))
+        await message.answer(text, entities=entities)
 
 
 # =============================================================================

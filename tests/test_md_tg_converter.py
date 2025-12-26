@@ -6,8 +6,9 @@ All tests focus on the main requirement:
 """
 
 import pytest
+from aiogram.types import MessageEntity
 
-from md_tg.config import DEFAULT_CONFIG, MessageEntity
+from md_tg.config import DEFAULT_CONFIG
 from md_tg.converter import markdown_to_telegram
 from md_tg.utils import utf16_len
 
@@ -36,9 +37,9 @@ def _assert_chunks_within_limit(
         # All entities must be within text bounds
         text_len = utf16_len(text)
         for entity in entities:
-            assert entity['offset'] + entity['length'] <= text_len, (
-                f'Chunk {i} entity {entity["type"]} out of bounds: '
-                f'offset={entity["offset"]}, length={entity["length"]}, text_len={text_len}'
+            assert entity.offset + entity.length <= text_len, (
+                f'Chunk {i} entity {entity.type} out of bounds: '
+                f'offset={entity.offset}, length={entity.length}, text_len={text_len}'
             )
 
 
@@ -103,7 +104,7 @@ def test_large_paragraph_with_mixed_formatting_within_limit() -> None:
     # Additional check: entities must have positive length
     for _, entities in chunks:
         for entity in entities:
-            assert entity['length'] > 0, f'{entity["type"]} has zero length'
+            assert entity.length > 0, f'{entity.type} has zero length'
 
 
 # ============================================================================

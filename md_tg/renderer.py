@@ -6,10 +6,11 @@ from collections.abc import Callable, Sequence
 from typing import Any
 from urllib.parse import urlparse
 
+from aiogram.types import MessageEntity
 from mistune import BaseRenderer
 from mistune.core import BlockState
 
-from md_tg.config import MarkdownConfig, MessageEntity
+from md_tg.config import MarkdownConfig
 from md_tg.utils import utf16_len
 
 # Hosts that Telegram rejects for text_link entities
@@ -154,16 +155,14 @@ class TelegramRenderer(BaseRenderer):
         if length <= 0:  # Skip empty entities
             return
 
-        # Create MessageEntity dict
-        entity: MessageEntity = {
-            'type': entity_type,
-            'offset': offset,
-            'length': length,
-        }
-        if url is not None:
-            entity['url'] = url
-        if language is not None:
-            entity['language'] = language
+        # Create aiogram MessageEntity object
+        entity = MessageEntity(
+            type=entity_type,
+            offset=offset,
+            length=length,
+            url=url,
+            language=language,
+        )
         self.entities.append(entity)
 
     def _remove_trailing_newlines(self, max_newlines: int = 1) -> int:
@@ -1023,7 +1022,7 @@ class TelegramRenderer(BaseRenderer):
 
         return '\n'.join(lines)
 
-    def finalize(self) -> tuple[str, Sequence[MessageEntity]]:
+    def finalize(self) -> tuple[str, list[MessageEntity]]:  # type: ignore[valid-type]
         """Finalize rendering and return result.
 
         Removes trailing whitespace and filters invalid entities.
@@ -1044,7 +1043,7 @@ class TelegramRenderer(BaseRenderer):
         valid_entities = [
             entity
             for entity in self.entities
-            if entity['offset'] + entity['length'] <= text_length_utf16
+            if entity.offset + entity.length <= text_length_utf16
         ]
 
         return (text, valid_entities)

@@ -6,13 +6,14 @@ into chunks (each < 4096 chars), then render each chunk separately.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any, cast
 
+from aiogram.types import MessageEntity
 import mistune
 from mistune.core import BlockState
 
-from md_tg.config import DEFAULT_CONFIG, MarkdownConfig, MessageEntity
+from md_tg.config import DEFAULT_CONFIG, MarkdownConfig
 from md_tg.renderer import TelegramRenderer
 from md_tg.utils import utf16_len
 
@@ -854,7 +855,7 @@ def _render_chunk(
     tokens: list[dict[str, Any]],
     config: MarkdownConfig,
     env: Mapping[str, Any] | None = None,
-) -> tuple[str, Sequence[MessageEntity]]:
+) -> tuple[str, list[MessageEntity]]:
     """Render a group of tokens to (text, entities).
 
     Args:
@@ -891,7 +892,7 @@ def _render_chunk(
 def markdown_to_telegram(
     markdown_text: str,
     config: MarkdownConfig | None = None,
-) -> list[tuple[str, Sequence[MessageEntity]]]:
+) -> list[tuple[str, list[MessageEntity]]]:
     """Convert Markdown text to Telegram plain text with message entities.
 
     This function parses Markdown and produces Telegram-compatible output:

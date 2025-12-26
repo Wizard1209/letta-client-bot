@@ -13,7 +13,7 @@ Example:
     bold
 """
 
-from md_tg.config import DEFAULT_CONFIG, MarkdownConfig, MessageEntity
+from md_tg.config import DEFAULT_CONFIG, MarkdownConfig
 from md_tg.converter import markdown_to_telegram
 
 __version__ = '0.1.0'
@@ -22,5 +22,4 @@ __all__ = [
     'markdown_to_telegram',
     'MarkdownConfig',
     'DEFAULT_CONFIG',
-    'MessageEntity',
 ]

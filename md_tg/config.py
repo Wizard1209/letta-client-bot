@@ -1,32 +1,6 @@
 """Configuration and data models for Markdown to Telegram conversion."""
 
 from dataclasses import dataclass
-from typing import NotRequired, TypedDict
-
-
-class MessageEntity(TypedDict):
-    """Telegram MessageEntity structure.
-
-    Follows Bot API spec: https://core.telegram.org/bots/api#messageentity
-
-    This is a TypedDict for minimal overhead and direct compatibility
-    with Telegram API (which expects plain dicts).
-
-    Required fields:
-        type: Type of entity (bold, italic, code, pre, text_link, etc.)
-        offset: Offset in UTF-16 code units to the start of the entity
-        length: Length in UTF-16 code units
-
-    Optional fields:
-        url: For text_link only, URL that will be opened after user taps on the text
-        language: For pre only, the programming language of the entity text
-    """
-
-    type: str
-    offset: int
-    length: int
-    url: NotRequired[str]
-    language: NotRequired[str]
 
 
 @dataclass(frozen=True)
