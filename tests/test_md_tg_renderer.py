@@ -1,6 +1,7 @@
 """Tests for md_tg renderer - entity types and UTF-16 correctness."""
 
 import pytest
+from aiogram.types import MessageEntity
 
 from md_tg import markdown_to_telegram
 from md_tg.utils import utf16_len
@@ -92,7 +93,7 @@ def test_entity_length_excludes_trailing_whitespace_next_offset_includes() -> No
     assert len(code_entities) == 2, f'Expected 2 code entities, got {len(code_entities)}'
 
     # Helper to extract entity text using UTF-16 offsets
-    def extract_entity_text(entity: object) -> str:
+    def extract_entity_text(entity: MessageEntity) -> str:
         text_utf16 = text.encode('utf-16-le')
         offset_bytes = entity.offset * 2
         length_bytes = entity.length * 2
@@ -122,29 +123,32 @@ def test_entity_length_excludes_trailing_whitespace_next_offset_includes() -> No
 
 
 @pytest.mark.parametrize(
-    ('markdown', 'should_have_link'),
+    ('markdown', 'should_have_link', 'expected_text_fragment'),
     [
         # Valid URLs
-        ('[HTTP](http://example.com)', True),
-        ('[HTTPS](https://example.com)', True),
-        ('[TG](tg://resolve?domain=test)', True),
-        # Invalid: localhost/loopback (security)
-        ('[Localhost](http://localhost)', False),
-        ('[Loopback](http://127.0.0.1)', False),
-        # Invalid: unsupported schemes
-        ('[Anchor](#introduction)', False),
-        ('[Relative](page.html)', False),
-        ('[Mail](mailto:test@example.com)', False),
+        ('[HTTP](http://example.com)', True, 'HTTP'),
+        ('[HTTPS](https://example.com)', True, 'HTTPS'),
+        ('[TG](tg://resolve?domain=test)', True, 'TG'),
+        # Invalid: localhost/loopback (security) - rendered as text with URL
+        ('[Localhost](http://localhost)', False, 'Localhost (http://localhost)'),
+        ('[Loopback](http://127.0.0.1)', False, 'Loopback (http://127.0.0.1)'),
+        # Invalid: unsupported schemes - rendered as text with URL
+        ('[Anchor](#introduction)', False, 'Anchor (#introduction)'),
+        ('[Relative](page.html)', False, 'Relative (page.html)'),
+        ('[Mail](mailto:test@example.com)', False, 'Mail (mailto:test@example.com)'),
     ],
 )
-def test_link_url_validation(markdown: str, should_have_link: bool) -> None:
+def test_link_url_validation(
+    markdown: str, should_have_link: bool, expected_text_fragment: str
+) -> None:
     """Only valid URLs create text_link entities (security).
 
     Telegram requires publicly accessible HTTP/HTTPS URLs or tg:// scheme.
     Rejects: fragments, relative paths, localhost, 127.0.0.1, mailto, etc.
+    Invalid URLs are rendered as plain text with URL in parentheses.
     """
     chunks = markdown_to_telegram(markdown)
-    _, entities = chunks[0]
+    text, entities = chunks[0]
 
     link_entities = [e for e in entities if e.type == 'text_link']
 
@@ -152,6 +156,11 @@ def test_link_url_validation(markdown: str, should_have_link: bool) -> None:
         assert len(link_entities) == 1, f'Expected text_link for {markdown}'
     else:
         assert len(link_entities) == 0, f'Expected NO text_link for {markdown}'
+
+    # Check that expected text fragment is present
+    assert expected_text_fragment in text, (
+        f'Expected {expected_text_fragment!r} in {text!r}'
+    )
 
 
 def test_link_url_attribute() -> None:

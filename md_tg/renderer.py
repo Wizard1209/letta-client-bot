@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+import re
 from typing import Any
-from urllib.parse import urlparse
 
 from aiogram.types import MessageEntity
 from mistune import BaseRenderer
@@ -13,12 +13,22 @@ from mistune.core import BlockState
 from md_tg.config import MarkdownConfig
 from md_tg.utils import utf16_len
 
-# Hosts that Telegram rejects for text_link entities
-_INVALID_HOSTS = frozenset({'localhost', '127.0.0.1', '0.0.0.0', '::1'})
+# Regex pattern for valid Telegram text_link URLs
+# - tg:// scheme: always valid
+# - http(s):// scheme: must have domain with TLD, not localhost/private IPs
+_TELEGRAM_URL_PATTERN = re.compile(
+    r'^(?:'
+    r'tg://\S+'  # tg:// scheme with any content
+    r'|'
+    # http(s) with public domain and TLD (excludes localhost/private IPs)
+    r'https?://(?!(?:localhost|127\.0\.0\.1|0\.0\.0\.0|::1)(?:/|:|$))\S*\.\S+'
+    r')$',
+    re.IGNORECASE,
+)
 
 
 def _is_valid_telegram_url(url: str) -> bool:
-    """Check if URL is valid for Telegram text_link entity.
+    """Check if URL is valid for Telegram text_link entity using regex.
 
     Telegram requires http://, https://, or tg:// URLs with valid public hosts.
 
@@ -26,28 +36,9 @@ def _is_valid_telegram_url(url: str) -> bool:
         url: URL string to validate
 
     Returns:
-        True if URL is valid for Telegram text_link entity
+        True if URL matches Telegram text_link requirements
     """
-    try:
-        parsed = urlparse(url)
-        scheme = parsed.scheme.lower()
-    except (ValueError, AttributeError):
-        return False
-
-    # tg:// deep links are always valid
-    if scheme == 'tg':
-        return True
-
-    # Must have http or https scheme with valid host
-    if scheme not in ('http', 'https'):
-        return False
-
-    # Validate host: must exist, not be localhost, and have TLD
-    if not (host := parsed.hostname):
-        return False
-
-    host = host.lower()
-    return host not in _INVALID_HOSTS and '.' in host
+    return bool(_TELEGRAM_URL_PATTERN.match(url))
 
 
 class TelegramRenderer(BaseRenderer):
@@ -426,6 +417,20 @@ class TelegramRenderer(BaseRenderer):
         # Rejects: fragments (#anchor), relative paths, localhost, private IPs
         is_valid_url = _is_valid_telegram_url(url)
 
+        # NOTE: mb need rework? [Localhost](http://localhost) -> Localhost (http://localhost)
+        # [http://127.0.0.1](http://127.0.0.1) ->  http://127.0.0.1 (http://127.0.0.1)
+        # If URL is invalid, render as plain text with URL in parentheses
+        if not is_valid_url:
+            # Render children (link text)
+            if token.get('children'):
+                self._render_children(token, state)
+            else:
+                # If no children, use URL as text
+                self._add_text(url)
+            # Append URL in parentheses
+            self._add_text(f' ({url})')
+            return ''
+
         # Check if this is a reference-style link (Mistune adds 'ref' and 'label')
         is_reference_link = 'ref' in token or 'label' in token
 
@@ -447,8 +452,8 @@ class TelegramRenderer(BaseRenderer):
         trailing = self._remove_trailing_whitespace()
 
         length = self.current_offset - start_offset
-        # Only add text_link entity for valid URLs
-        if length > 0 and is_valid_url:
+        # Add text_link entity for valid URLs
+        if length > 0:
             self._add_entity('text_link', start_offset, length, url=url)
 
         # Re-add trailing whitespace after entity
