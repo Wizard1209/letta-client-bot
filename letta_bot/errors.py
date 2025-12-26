@@ -39,7 +39,7 @@ async def global_error_handler(event: ErrorEvent, bot: Bot) -> bool:
         try:
             if isinstance(trigger_event, Message):
                 msg = f'❌ An {error_class} occurred. Please try again later.'
-                await trigger_event.answer(msg)
+                await trigger_event.answer(**Text(msg).as_kwargs())
             elif isinstance(trigger_event, CallbackQuery):
                 await trigger_event.answer(f'❌ {error_class} occurred', show_alert=True)
         except TelegramAPIError as e:
