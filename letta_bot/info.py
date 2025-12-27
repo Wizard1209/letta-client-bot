@@ -11,7 +11,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from letta_bot.config import CONFIG
-from letta_bot.response_handler import _escape_markdown_v2, convert_to_telegram_markdown
+from letta_bot.response_handler import send_markdown_message
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,19 +19,17 @@ LOGGER = logging.getLogger(__name__)
 @lru_cache(maxsize=32)
 def load_info_command_content(note_name: str) -> str:
     """
-    Load markdown note from specified directory and convert to Telegram MarkdownV2.
+    Load markdown note from specified directory.
 
-    Note files should be written in standard Markdown format. This function
-    automatically converts them to Telegram-compatible MarkdownV2 using the same
-    conversion pipeline used for agent responses.
+    Note files should be written in standard Markdown format.
 
-    Results are cached to avoid re-converting the same notes on every request.
+    Results are cached to avoid re-reading the same notes on every request.
 
     Args:
         note_name: Name of the note file (without .md extension)
 
     Returns:
-        Telegram MarkdownV2 formatted content, or error message if not found
+        Standard Markdown content, or error message if not found
     """
     notes_dir = CONFIG.info_dir
 
@@ -45,15 +43,15 @@ def load_info_command_content(note_name: str) -> str:
 
     if not note_path.exists():
         LOGGER.warning(f'Note file not found: {note_path}')
-        return _escape_markdown_v2(f"ℹ️ Note '{note_name}' is not available.")
+        return f"ℹ️ Note '{note_name}' is not available."
 
     try:
-        # Load standard markdown content and convert to Telegram MarkdownV2
+        # Load standard markdown content
         markdown_content = note_path.read_text(encoding='utf-8').strip()
-        return convert_to_telegram_markdown(markdown_content)
+        return markdown_content
     except Exception as e:
         LOGGER.error(f'Error reading note {note_path}: {e}')
-        return _escape_markdown_v2(f'❌ Error loading note: {str(e)}')
+        return f'❌ Error loading note: {str(e)}'
 
 
 info_router = Router(name=__name__)
@@ -64,45 +62,45 @@ info_router = Router(name=__name__)
 async def privacy_handler(message: Message) -> None:
     """Display privacy policy and data handling information."""
     content = load_info_command_content('privacy')
-    await message.answer(content)
+    await send_markdown_message(message, content)
 
 
 @info_router.message(Command('help'))
 async def help_handler(message: Message) -> None:
     """Display help documentation and available commands."""
     content = load_info_command_content('help')
-    await message.answer(content)
+    await send_markdown_message(message, content)
 
 
 @info_router.message(Command('about'))
 async def about_handler(message: Message) -> None:
     """Display information about the bot."""
     content = load_info_command_content('about')
-    await message.answer(content)
+    await send_markdown_message(message, content)
 
 
 @info_router.message(Command('contact'))
 async def contact_handler(message: Message) -> None:
     """Display contact and support information."""
     content = load_info_command_content('contact')
-    await message.answer(content)
+    await send_markdown_message(message, content)
 
 
 def _extract_latest_changelog(content: str) -> str:
     """Extract only the latest version section from changelog.
 
     Keeps header, [Latest additions], and most recent versioned section.
-    Matches MarkdownV2-escaped version headers like *\\[1\\.1\\.0\\] \\- 2025\\-12\\-09*
+    Matches version headers like **[1.1.0] - 2025-12-09**
 
     Args:
-        content: Telegram MarkdownV2 changelog content
+        content: Standard Markdown changelog content
 
     Returns:
         Truncated changelog with only latest sections
     """
-    # Match version headers: *\[X.X.X\]...*  (MarkdownV2 escaped)
+    # Match version headers: **[X.X.X]...**  (standard Markdown)
     version_pattern = re.compile(
-        r'^\*\\\[\d+\\\.\d+\\\.\d+\\\].*\*$',
+        r'^\*\*\[\d+\.\d+\.\d+\].*\*\*$',
         re.MULTILINE,
     )
 
@@ -120,4 +118,4 @@ async def changelog_handler(message: Message) -> None:
     """Display project changelog and version history."""
     content = load_info_command_content('changelog')
     content = _extract_latest_changelog(content)
-    await message.answer(content)
+    await send_markdown_message(message, content)

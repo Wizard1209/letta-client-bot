@@ -4,7 +4,8 @@ import logging
 import sys
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
+
+# from aiogram.client.default import DefaultBotProperties  # ВРЕМЕННО не используется
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 from aiogram.utils.formatting import Text
@@ -18,6 +19,7 @@ from letta_bot.config import CONFIG
 from letta_bot.errors import setup_error_handler
 from letta_bot.info import info_router, load_info_command_content
 from letta_bot.middlewares import setup_middlewares
+from letta_bot.response_handler import send_markdown_message
 from letta_bot.tools import tools_router
 
 LOGGER = logging.getLogger(__name__)
@@ -28,11 +30,11 @@ def start_command(dp: Dispatcher) -> None:
     async def welcome_handler(message: Message) -> None:
         """Display welcome information."""
         if not message.from_user:
-            await message.answer(Text("Can't identify user").as_markdown())
+            await message.answer(**Text("Can't identify user").as_kwargs())
             LOGGER.warning('User invoked start command cant be identified')
             return
         content = load_info_command_content('welcome')
-        await message.answer(content)
+        await send_markdown_message(message, content)
 
 
 def setup_bot_handlers(dp: Dispatcher) -> None:
@@ -101,7 +103,7 @@ if __name__ == '__main__':
 
     args: argparse.Namespace = parser.parse_args()
 
-    bot = Bot(CONFIG.bot_token, default=DefaultBotProperties(parse_mode='MarkdownV2'))
+    bot = Bot(CONFIG.bot_token)
 
     if args.polling:
         asyncio.run(run_polling(bot, args))
