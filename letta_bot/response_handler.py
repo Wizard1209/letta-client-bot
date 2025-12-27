@@ -14,10 +14,9 @@ import json
 import logging
 from typing import Any
 
-from aiogram.types import Message
+from aiogram.types import Message, MessageEntity
 from aiogram.utils.formatting import (
     Bold,
-    ExpandableBlockQuote,
     Italic,
     Pre,
     Text,
@@ -27,6 +26,9 @@ from aiogram.utils.formatting import (
     as_marked_list,
 )
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
+
+from md_tg import markdown_to_telegram
+from md_tg.utils import utf16_len
 
 LOGGER = logging.getLogger(__name__)
 
@@ -83,24 +85,6 @@ def _format_datetime(dt_string: str) -> str:
     except (ValueError, AttributeError):
         # Fallback to original string if parsing fails
         return dt_string
-
-
-def _format_reasoning_message(event: LettaStreamingResponse) -> dict[str, Any]:
-    """Format reasoning message response.
-
-    Args:
-        event: Stream event containing reasoning message
-
-    Returns:
-        Formatted dict with text, entities, and parse_mode
-    """
-    reasoning_text = getattr(event, 'reasoning', '')
-    if len(reasoning_text) > TELEGRAM_MAX_LEN:
-        LOGGER.warning('Reasoning message too long')
-        reasoning_text = reasoning_text[:TELEGRAM_MAX_LEN]
-    return as_line(
-        *(Italic('Agent reasoning:'), ExpandableBlockQuote(reasoning_text)), sep='\n'
-    ).as_kwargs()
 
 
 def _format_tool_call_message(event: LettaStreamingResponse) -> dict[str, Any] | str | None:
@@ -550,14 +534,44 @@ async def send_markdown_message(message: Message, content: str) -> None:
         1. Convert markdown to Telegram entities (auto-splits if > 4096 chars)
         2. Send each chunk as separate message
     """
-    from md_tg import markdown_to_telegram
-
     # markdown_to_telegram returns list of chunks
     # Automatically splits long text at block boundaries (never mid-word)
     chunks = markdown_to_telegram(content)
 
     # Send each chunk as separate message
     for text, entities in chunks:
+        await message.answer(text, entities=entities)
+
+
+async def send_reasoning_message(message: Message, reasoning_text: str) -> None:
+    """Send reasoning with expandable_blockquote wrapper.
+
+    Args:
+        message: Telegram message to reply to
+        reasoning_text: Raw reasoning content
+    """
+    header = 'Agent reasoning:'
+    header_len = utf16_len(header)
+    markdown = f'*{header}*{reasoning_text}'
+    chunks = markdown_to_telegram(markdown)
+
+    for text, entities in chunks:
+        # First chunk starts with header, subsequent chunks don't
+        if text.startswith(header):
+            offset = header_len
+            length = utf16_len(text) - header_len
+        else:
+            offset = 0
+            length = utf16_len(text)
+
+        if length > 0:
+            entities.append(
+                MessageEntity(
+                    type='expandable_blockquote',
+                    offset=offset,
+                    length=length,
+                )
+            )
         await message.answer(text, entities=entities)
 
 
@@ -604,8 +618,17 @@ class AgentStreamHandler:
             return
 
         # Phase 2: Processing content (reasoning, tool calls, system alerts)
-        if message_type in ('reasoning_message', 'tool_call_message'):
-            formatted_content = self._format_other_event(event)
+        if message_type == 'reasoning_message':
+            reasoning_text = getattr(event, 'reasoning', '')
+            if reasoning_text:
+                try:
+                    await send_reasoning_message(self.telegram_message, reasoning_text)
+                except Exception as e:
+                    await _send_error_message(self.telegram_message, e, reasoning_text)
+            return
+
+        if message_type == 'tool_call_message':
+            formatted_content = _format_tool_call_message(event)
             if formatted_content:
                 try:
                     # Handle both dict (aiogram formatting) and str (markdown) formats
@@ -650,27 +673,6 @@ class AgentStreamHandler:
                 await self.ping_message.edit_text(ping_text)
             except Exception as e:
                 LOGGER.warning(f'Failed to edit ping message: {e}')
-
-    def _format_other_event(
-        self, event: LettaStreamingResponse
-    ) -> dict[str, Any] | str | None:
-        """Format non-assistant event content (reasoning, tool calls).
-
-        Args:
-            event: Stream event from Letta API
-
-        Returns:
-            Formatted dict with text and entities, markdown string, or None
-        """
-        message_type = event.message_type
-
-        if message_type == 'reasoning_message':
-            return _format_reasoning_message(event)
-
-        elif message_type == 'tool_call_message':
-            return _format_tool_call_message(event)
-
-        return None
 
     def _clear_ping_state(self) -> None:
         """Reset ping tracking state."""
