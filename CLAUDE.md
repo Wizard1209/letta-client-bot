@@ -369,7 +369,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
 - Bot streams agent responses via `client.agents.messages.create()` with `streaming=True`
 - **Response handler** (`response_handler.py`) processes stream events:
-  - **assistant_message**: Main agent response converted to Telegram MarkdownV2 via `telegramify-markdown`
+  - **assistant_message**: Main agent response converted to Telegram entities via `md_tg` module
   - **reasoning_message**: Internal agent reasoning (italic header, blockquote formatting)
   - **tool_call_message**: Tool execution details (parsed from JSON arguments)
   - **ping**: Progressive heartbeat indicator (displays "⏳", "⏳⏳", "⏳⏳⏳", etc., updating same message)
@@ -391,7 +391,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - `fetch_webpage`: "🌐 Fetching webpage..." with URL
   - Generic tools: "🔧 Using tool..." with tool name and JSON arguments
 - **Message formatting pipeline**:
-  - Agent responses: Standard Markdown → `convert_to_telegram_markdown()` → Telegram MarkdownV2
+  - Agent responses: Standard Markdown → `markdown_to_telegram()` → Telegram entities
   - Info notes: Standard Markdown files → same conversion pipeline
   - Tool outputs: Manual MarkdownV2 strings with `_escape_markdown_v2()` helper
   - Long messages: Split using `split_markdown_v2()` with intelligent boundary detection (preserves code blocks and formatting across chunks)
@@ -644,6 +644,12 @@ notes/                 # Markdown files for info commands (optional, at project 
   help.md              # Help documentation
   about.md             # About the bot
   contact.md           # Contact information
+md_tg/               # Markdown to Telegram entities converter
+  __init__.py        # Public API: markdown_to_telegram()
+  config.py          # MarkdownConfig with emoji settings
+  converter.py       # AST-based chunking and conversion logic
+  renderer.py        # TelegramRenderer - mistune renderer for entities
+  utils.py           # UTF-16 length utilities
 deploy/
   Dockerfile           # Multi-stage Python 3.13 image with uv
   docker-compose.yaml  # Production deployment with Traefik
@@ -782,7 +788,7 @@ return None
 
 ## Formatting Info Notes (notes/ directory)
 
-Info command files (`/help`, `/privacy`, `/about`, `/contact`, `/welcome`, `/changelog`) are stored in the `notes/` directory using **standard Markdown**. Files are automatically converted to Telegram MarkdownV2 via `telegramify-markdown` library when sent to users.
+Info command files (`/help`, `/privacy`, `/about`, `/contact`, `/welcome`, `/changelog`) are stored in the `notes/` directory using **standard Markdown**. Files are automatically converted to Telegram entities via `md_tg` module when sent to users.
 
 ### Formatting Rules
 
@@ -880,7 +886,7 @@ Always test note rendering in Telegram:
 - **Standard Markdown only** - write naturally, no manual escaping
 - **Use `**bold**` for headers** - not `#` syntax
 - **Use `•` for lists** - not `-` or `*`
-- **Automatic conversion** - `convert_to_telegram_markdown()` handles MarkdownV2 escaping via `telegramify-markdown` library
+- **Automatic conversion** - `markdown_to_telegram()` converts to Telegram entities via `md_tg` module
 - **Same pipeline as agent responses** - info notes use identical formatting as agent message responses
 
 ## EdgeQL Quick Reference
