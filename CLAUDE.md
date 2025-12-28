@@ -366,6 +366,11 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 **Phase 4: Message Routing and Response Processing**
 
 - Authorized users send messages to bot
+- **Message content processing** (builds multimodal content parts):
+  - Text: plain text, quotes, replies, captions
+  - Voice/audio: transcribed via external service, wrapped in XML tags
+  - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected)
+  - Unsupported: video and stickers notify user, don't block message
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
 - Bot streams agent responses via `client.agents.messages.create()` with `streaming=True`
 - **Response handler** (`response_handler.py`) processes stream events:
@@ -624,6 +629,7 @@ letta_bot/
   broadcast.py         # Bot-level messaging: admin notifications, user broadcasts
   response_handler.py  # Agent response stream processing and message formatting
   letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
+  images.py            # Image processing: download Telegram photos, convert to base64 for Letta multimodal API
   utils.py             # Utility functions (async cache decorator with TTL, UUID validation)
   queries/             # EdgeQL queries and auto-generated Python modules
     upsert_user.edgeql                      # Register/update user (upsert on telegram_id)
