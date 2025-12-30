@@ -52,9 +52,9 @@ async def switch(message: Message, identity: GetIdentityResult) -> None:
 
         if not all_agents:
             await message.answer(
-                Text(
+                **Text(
                     "You don't have any assistants yet. Use /new to request one."
-                ).as_markdown()
+                ).as_kwargs()
             )
             return
 
@@ -71,13 +71,13 @@ async def switch(message: Message, identity: GetIdentityResult) -> None:
         builder.adjust(1)
 
         await message.answer(
-            Text('Select an assistant:').as_markdown(),
+            **Text('Select an assistant:').as_kwargs(),
             reply_markup=builder.as_markup(),
         )
 
     except APIError as e:
         LOGGER.error(f'Error listing agents for identity {identity.identity_id}: {e}')
-        await message.answer(Text('Error retrieving your assistants').as_markdown())
+        await message.answer(**Text('Error retrieving your assistants').as_kwargs())
 
 
 @agent_commands_router.callback_query(
@@ -136,7 +136,7 @@ async def assistant_info_handler(message: Message, agent_id: str) -> None:
         return
 
     # Send loading indicator
-    status_msg = await message.answer(Text('⏳ Fetching assistant info...').as_markdown())
+    status_msg = await message.answer(**Text('⏳ Fetching assistant info...').as_kwargs())
 
     try:
         # Fetch agent data
@@ -195,7 +195,7 @@ async def assistant_info_handler(message: Message, agent_id: str) -> None:
 
     except Exception as e:
         LOGGER.error(f'Error fetching assistant info: {e}')
-        await status_msg.edit_text(Text('❌ Error fetching assistant info').as_markdown())
+        await status_msg.edit_text(**Text('❌ Error fetching assistant info').as_kwargs())
 
 
 @agent_commands_router.message(
@@ -207,7 +207,7 @@ async def context_handler(message: Message, agent_id: str) -> None:
         return
 
     # Send loading indicator
-    status_msg = await message.answer(Text('⏳ Fetching context info...').as_markdown())
+    status_msg = await message.answer(**Text('⏳ Fetching context info...').as_kwargs())
 
     try:
         # Fetch context window overview
@@ -252,7 +252,7 @@ async def context_handler(message: Message, agent_id: str) -> None:
 
     except Exception as e:
         LOGGER.error(f'Error fetching context info: {e}')
-        await status_msg.edit_text(Text('❌ Error fetching context info').as_markdown())
+        await status_msg.edit_text(**Text('❌ Error fetching context info').as_kwargs())
 
 
 @agent_router.message(flags={'require_identity': True, 'require_agent': True})
@@ -287,7 +287,7 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
         transcription_service = get_transcription_service()
         if transcription_service is None:
             await message.answer(
-                Text('Audio not supported. OpenAI API key not configured.').as_markdown()
+                **Text('Audio not supported. OpenAI API key not configured.').as_kwargs()
             )
             return
 
@@ -308,9 +308,9 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
 
     # Unsupported content types
     if message.video:
-        await message.answer(Text('Video content is not supported').as_markdown())
+        await message.answer(**Text('Video content is not supported').as_kwargs())
     if message.sticker:
-        await message.answer(Text('Stickers are not yet supported').as_markdown())
+        await message.answer(**Text('Stickers are not yet supported').as_kwargs())
 
     # Build content parts for Letta API (image first, then text per spec)
     content_parts: list[ContentPart] = []
@@ -341,9 +341,9 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
     # Check if we have any content to send
     if not content_parts:
         await message.answer(
-            Text(
+            **Text(
                 'No supported content provided, I hope to hear more from you'
-            ).as_markdown()
+            ).as_kwargs()
         )
         return
 
@@ -383,11 +383,11 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
             agent_id,
         )
         await message.answer(
-            Text(
+            **Text(
                 '❌ The assistant service stopped responding. '
                 'This may be a temporary issue with Letta API. '
                 'Please try again in a moment.'
-            ).as_markdown()
+            ).as_kwargs()
         )
 
     except APIError as e:
@@ -399,7 +399,7 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
             message.from_user.id,
             agent_id,
         )
-        await message.answer(Text('Error communicating with assistant').as_markdown())
+        await message.answer(**Text('Error communicating with assistant').as_kwargs())
         raise
 
     except Exception:
@@ -408,5 +408,5 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
             message.from_user.id,
             agent_id,
         )
-        await message.answer(Text('An unexpected error occurred').as_markdown())
+        await message.answer(**Text('An unexpected error occurred').as_kwargs())
         raise

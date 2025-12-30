@@ -67,6 +67,28 @@ make check  # Runs linting, formatting, and type checking
 2. For development: `gel watch --migrate` (auto-applies schema changes)
 3. For production: `gel migration create` → `gel migrate`
 
+## Claude Code Skills
+
+Project-specific skills live in `.claude/skills/`. These are markdown prompts that automate common development workflows. Works with any LLM, but Claude Code natively triggers and supports them.
+
+**Available skills:**
+
+| Skill | What it does |
+|-------|--------------|
+| `update-changelog` | Drafts changelog entries from git history |
+| `update-docs` | Syncs CLAUDE.md with code changes |
+| `merge-readiness` | Pre-merge checklist (conflicts, migrations, tests, docs) |
+
+**Usage:** Just ask naturally or use trigger phrases. Skills auto-activate based on context.
+
+**Adding new skills:**
+
+1. Create `.claude/skills/<skill-name>/SKILL.md`
+2. Add frontmatter with `name` and `description` (include trigger phrases)
+3. Write concise instructions (skills share context window)
+
+See [Claude Code Skills docs](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices) for detailed guidance.
+
 ## Weird solutions
 
 ### Message sending
