@@ -14,7 +14,7 @@ import json
 import logging
 from typing import Any
 
-from aiogram.types import Message, MessageEntity
+from aiogram.types import Message
 from aiogram.utils.formatting import (
     Bold,
     Italic,
@@ -28,7 +28,6 @@ from aiogram.utils.formatting import (
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
 
 from md_tg import markdown_to_telegram
-from md_tg.utils import utf16_len
 
 LOGGER = logging.getLogger(__name__)
 
@@ -543,36 +542,17 @@ async def send_markdown_message(message: Message, content: str) -> None:
         await message.answer(text, entities=entities)
 
 
-async def send_reasoning_message(message: Message, reasoning_text: str) -> None:
-    """Send reasoning with expandable_blockquote wrapper.
+def _format_reasoning_message(reasoning_text: str) -> str:
+    """Format reasoning message as markdown with blockquote.
 
     Args:
-        message: Telegram message to reply to
         reasoning_text: Raw reasoning content
+
+    Returns:
+        Markdown string with header and blockquoted content
     """
-    header = 'Agent reasoning:'
-    header_len = utf16_len(header)
-    markdown = f'*{header}*{reasoning_text}'
-    chunks = markdown_to_telegram(markdown)
-
-    for text, entities in chunks:
-        # First chunk starts with header, subsequent chunks don't
-        if text.startswith(header):
-            offset = header_len
-            length = utf16_len(text) - header_len
-        else:
-            offset = 0
-            length = utf16_len(text)
-
-        if length > 0:
-            entities.append(
-                MessageEntity(
-                    type='expandable_blockquote',
-                    offset=offset,
-                    length=length,
-                )
-            )
-        await message.answer(text, entities=entities)
+    quoted_lines = '\n> '.join(reasoning_text.split('\n'))
+    return f'*Agent reasoning:*\n> {quoted_lines}'
 
 
 # =============================================================================
@@ -621,10 +601,11 @@ class AgentStreamHandler:
         if message_type == 'reasoning_message':
             reasoning_text = getattr(event, 'reasoning', '')
             if reasoning_text:
+                reasoning_markdown = _format_reasoning_message(reasoning_text)
                 try:
-                    await send_reasoning_message(self.telegram_message, reasoning_text)
+                    await send_markdown_message(self.telegram_message, reasoning_markdown)
                 except Exception as e:
-                    await _send_error_message(self.telegram_message, e, reasoning_text)
+                    await _send_error_message(self.telegram_message, e, reasoning_markdown)
             return
 
         if message_type == 'tool_call_message':

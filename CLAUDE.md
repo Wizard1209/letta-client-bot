@@ -375,7 +375,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 - Bot streams agent responses via `client.agents.messages.create()` with `streaming=True`
 - **Response handler** (`response_handler.py`) processes stream events:
   - **assistant_message**: Main agent response converted to Telegram entities via `md_tg` module
-  - **reasoning_message**: Internal agent reasoning (italic header, blockquote formatting)
+  - **reasoning_message**: Internal agent reasoning (italic header, expandable blockquote formatting)
   - **tool_call_message**: Tool execution details (parsed from JSON arguments)
   - **ping**: Progressive heartbeat indicator (displays "⏳", "⏳⏳", "⏳⏳⏳", etc., updating same message)
   - **system_alert**: Informational messages from Letta (displayed as info text)

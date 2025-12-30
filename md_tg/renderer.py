@@ -664,14 +664,14 @@ class TelegramRenderer(BaseRenderer):
         return ''
 
     def block_quote(self, token: dict[str, Any], state: BlockState) -> str:
-        """Render block quote.
+        """Render block quote as expandable blockquote entity.
 
         Args:
             token: Token dict with 'children'
             state: Rendering state
 
         Returns:
-            Rendered block quote with formatting
+            Empty string (content added to output with expandable_blockquote entity)
         """
         start_offset = self.current_offset
         self._render_children(token, state)
@@ -681,7 +681,7 @@ class TelegramRenderer(BaseRenderer):
         trailing = self._remove_trailing_whitespace()
         quote_length = self.current_offset - start_offset
 
-        self._add_entity('blockquote', start_offset, quote_length)
+        self._add_entity('expandable_blockquote', start_offset, quote_length)
 
         # Re-add trailing whitespace OR add standard spacing if no trailing
         # The children (paragraphs) typically already add \n\n, so we reuse that
