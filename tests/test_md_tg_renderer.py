@@ -1,7 +1,7 @@
 """Tests for md_tg renderer - entity types and UTF-16 correctness."""
 
-import pytest
 from aiogram.types import MessageEntity
+import pytest
 
 from md_tg import markdown_to_telegram
 from md_tg.utils import utf16_len
@@ -97,7 +97,7 @@ def test_entity_length_excludes_trailing_whitespace_next_offset_includes() -> No
         text_utf16 = text.encode('utf-16-le')
         offset_bytes = entity.offset * 2
         length_bytes = entity.length * 2
-        return text_utf16[offset_bytes:offset_bytes + length_bytes].decode('utf-16-le')
+        return text_utf16[offset_bytes : offset_bytes + length_bytes].decode('utf-16-le')
 
     first_text = extract_entity_text(code_entities[0])
     second_text = extract_entity_text(code_entities[1])

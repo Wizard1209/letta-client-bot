@@ -25,6 +25,7 @@ exclude = [
   "__pycache__",
   "build",
   "dist",
+  "devscripts/",
   "letta_bot/queries/*_async_edgeql.py",
   "letta_bot/custom_tools/",
 ]

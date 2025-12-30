@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 
 **Changed:**
 • Renamed `/botaccess` → `/access` with clearer description emphasizing this grants general bot access only (identity), not assistant capabilities
+• Reasoning messages now display in collapsible blockquote (tap to expand full reasoning)
+• Message formatting migrated to native Telegram entities via custom md_tg module (replaces telegramify-markdown library)
 
 **[1.1.0] - 2025-12-09**
 

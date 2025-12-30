@@ -78,10 +78,7 @@ def _split_inline_element(
         )
         text_chunks = _split_text_by_chars(raw_text, max_length)
         # Wrap each chunk in same element type
-        return [
-            {**element, 'raw': chunk}
-            for chunk in text_chunks
-        ]
+        return [{**element, 'raw': chunk} for chunk in text_chunks]
 
     # For elements with children (emphasis, strong, link, etc.), split children
     if 'children' in element:
@@ -124,10 +121,7 @@ def _split_inline_element(
             child_chunks.append(current_chunk)
 
         # Wrap each chunk in same element type (preserving formatting!)
-        return [
-            {**element, 'children': chunk}
-            for chunk in child_chunks
-        ]
+        return [{**element, 'children': chunk} for chunk in child_chunks]
 
     # Fallback: return as-is (will be caught by validation)
     return [element]
@@ -712,11 +706,13 @@ def _split_large_list(
         if child_size > chunk_limit:
             # Save current chunk first
             if current_chunk:
-                chunks.append({
-                    'type': 'list',
-                    'children': current_chunk,
-                    'attrs': list_attrs,
-                })
+                chunks.append(
+                    {
+                        'type': 'list',
+                        'children': current_chunk,
+                        'attrs': list_attrs,
+                    }
+                )
                 current_chunk = []
                 current_size = 0
 
@@ -725,21 +721,25 @@ def _split_large_list(
 
             # Add each split item as a separate list
             for split_item in split_items:
-                chunks.append({
-                    'type': 'list',
-                    'children': [split_item],
-                    'attrs': list_attrs,
-                })
+                chunks.append(
+                    {
+                        'type': 'list',
+                        'children': [split_item],
+                        'attrs': list_attrs,
+                    }
+                )
 
             continue
 
         # Start new chunk if adding this child would exceed limit
         if current_size + child_size > chunk_limit and current_chunk:
-            chunks.append({
-                'type': 'list',
-                'children': current_chunk,
-                'attrs': list_attrs,
-            })
+            chunks.append(
+                {
+                    'type': 'list',
+                    'children': current_chunk,
+                    'attrs': list_attrs,
+                }
+            )
             current_chunk = []
             current_size = 0
 
@@ -748,11 +748,13 @@ def _split_large_list(
 
     # Add final chunk if not empty
     if current_chunk:
-        chunks.append({
-            'type': 'list',
-            'children': current_chunk,
-            'attrs': list_attrs,
-        })
+        chunks.append(
+            {
+                'type': 'list',
+                'children': current_chunk,
+                'attrs': list_attrs,
+            }
+        )
 
     return chunks
 
@@ -946,9 +948,7 @@ def markdown_to_telegram(
         config = DEFAULT_CONFIG
 
     # Parse markdown to AST
-    md = mistune.create_markdown(
-        plugins=['strikethrough', 'task_lists', 'url', 'table']
-    )
+    md = mistune.create_markdown(plugins=['strikethrough', 'task_lists', 'url', 'table'])
     state = BlockState()
 
     # Normalize line endings
