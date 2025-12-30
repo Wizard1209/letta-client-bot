@@ -82,9 +82,9 @@ def search_x_posts(
                 'start_time': start_time.strftime('%Y-%m-%dT%H:%M:%SZ'),
                 'max_results': max_results,
                 'sort_order': 'recency',
-                'tweet.fields': 'created_at,public_metrics,text',
-                'expansions': 'author_id',
-                'user.fields': 'username,name',
+                'tweet.fields': 'created_at,public_metrics,text,conversation_id,referenced_tweets,in_reply_to_user_id,lang,entities',
+                'expansions': 'author_id,referenced_tweets.id,referenced_tweets.id.author_id',
+                'user.fields': 'username,name,public_metrics,verified,verified_type',
             },
             headers={'Authorization': f'Bearer {bearer_token}'},
             timeout=REQUEST_TIMEOUT,
@@ -118,15 +118,34 @@ def search_x_posts(
     result_count = data.get('meta', {}).get('result_count', len(posts))
 
     users_map = {
-        user['id']: user['username']
+        user['id']: {
+            'username': user['username'],
+            'followers': user.get('public_metrics', {}).get('followers_count', 0),
+            'verified': user.get('verified', False),
+            'verified_type': user.get('verified_type', ''),
+        }
         for user in data.get('includes', {}).get('users', [])
         if user.get('id') and user.get('username')
+    }
+
+    # Map referenced tweets for context
+    referenced_tweets_map = {
+        tweet['id']: tweet
+        for tweet in data.get('includes', {}).get('tweets', [])
+        if tweet.get('id')
     }
 
     lines = [f"Found {result_count} post(s) for query '{query}' (last {hours_ago}h):\n"]
 
     for i, post in enumerate(posts, 1):
-        username = users_map.get(post.get('author_id', ''), 'unknown')
+        author_id = post.get('author_id', '')
+        author_info = users_map.get(author_id, {
+            'username': 'unknown', 'followers': 0, 'verified': False, 'verified_type': ''
+        })
+        username = author_info['username']
+        followers = author_info['followers']
+        verified = author_info['verified']
+        verified_type = author_info['verified_type']
         metrics = post.get('public_metrics', {})
 
         if created_at := post.get('created_at'):
@@ -138,9 +157,71 @@ def search_x_posts(
         else:
             timestamp = 'Unknown time'
 
+        # Parse referenced tweets for reply/quote detection
+        refs = post.get('referenced_tweets', [])
+        reply_to_id = next((r['id'] for r in refs if r.get('type') == 'replied_to'), None)
+        quote_of_id = next((r['id'] for r in refs if r.get('type') == 'quoted'), None)
+        is_retweet = any(r.get('type') == 'retweeted' for r in refs)
+
+        # Build post type indicator
+        post_type = ''
+        if is_retweet:
+            post_type = '[RT] '
+        elif reply_to_id:
+            post_type = '[Reply] '
+        elif quote_of_id:
+            post_type = '[Quote] '
+
+        # Build verified badge
+        if verified:
+            # verified_type can be: 'blue', 'business', 'government', or empty
+            badge = ' ✓' if verified_type == 'blue' else ' ☑️'
+        else:
+            badge = ''
+
+        # Build header with followers count and verified badge
+        header = f'--- Post {i} {post_type}by @{username}{badge} ({followers:,} followers) ({timestamp}) ---'
+
+        lines.append(header)
+        lines.append(post.get('text', ''))
+
+        # Extract hashtags and mentions from entities
+        entities = post.get('entities', {})
+        hashtags = [f"#{h['tag']}" for h in entities.get('hashtags', [])]
+        mentions = [f"@{m['username']}" for m in entities.get('mentions', [])]
+
+        if hashtags or mentions:
+            entity_parts = []
+            if hashtags:
+                entity_parts.append(f"Tags: {', '.join(hashtags)}")
+            if mentions:
+                entity_parts.append(f"Mentions: {', '.join(mentions)}")
+            lines.append(f"[{' | '.join(entity_parts)}]")
+
+        # Show thread/conversation info
+        if conversation_id := post.get('conversation_id'):
+            if conversation_id != post.get('id'):
+                lines.append(f'[Thread: {conversation_id}]')
+
+        # Show what this is replying to
+        if reply_to_id and (ref_tweet := referenced_tweets_map.get(reply_to_id)):
+            ref_author_id = ref_tweet.get('author_id', '')
+            ref_author = users_map.get(ref_author_id, {}).get('username', 'unknown')
+            ref_text = ref_tweet.get('text', '')[:100]
+            if len(ref_tweet.get('text', '')) > 100:
+                ref_text += '...'
+            lines.append(f'↳ Replying to @{ref_author}: "{ref_text}"')
+
+        # Show what this is quoting
+        if quote_of_id and (ref_tweet := referenced_tweets_map.get(quote_of_id)):
+            ref_author_id = ref_tweet.get('author_id', '')
+            ref_author = users_map.get(ref_author_id, {}).get('username', 'unknown')
+            ref_text = ref_tweet.get('text', '')[:100]
+            if len(ref_tweet.get('text', '')) > 100:
+                ref_text += '...'
+            lines.append(f'↳ Quoting @{ref_author}: "{ref_text}"')
+
         lines.extend([
-            f'--- Post {i} by @{username} ({timestamp}) ---',
-            post.get('text', ''),
             f"[Likes: {metrics.get('like_count', 0)} | "
             f"Retweets: {metrics.get('retweet_count', 0)} | "
             f"Replies: {metrics.get('reply_count', 0)}]",
