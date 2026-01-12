@@ -4,14 +4,12 @@ Usage:
     uv run python -m devscripts.list_identities
 """
 
-from devscripts.bootstrap import env, letta
+from devscripts.bootstrap import letta
 
 
 def main() -> None:
     """List all identities with their agents."""
-    project_id = env('LETTA_PROJECT_ID')
-    page = letta.identities.list(project_id=project_id)
-    identities = page.items
+    identities = list(letta.identities.list())
 
     if not identities:
         print('\nNo identities found.')
