@@ -82,6 +82,19 @@ The bot uses **Aiogram's middleware system** for dependency injection and access
   - User not authorized → `❌ No access — use /new or /access to request`
 - Injects `identity: GetIdentityResult` into handler data
 
+**MediaGroupMiddleware** (`middlewares.py`):
+
+- Rejects Telegram media groups (albums) with a single response message
+- Prevents duplicate error messages when user sends multiple files at once
+- Configurable predicate to filter which events trigger rejection
+- Currently registered for documents and photos in `setup_middlewares()`
+
+**RateLimitMiddleware** (`middlewares.py`):
+
+- Generic rate limiter with configurable key function and predicate
+- Supports per-user, per-chat, or custom rate limiting strategies
+- Available for use but not currently applied to any handlers
+
 **AgentMiddleware** (`middlewares.py`):
 
 - Triggered by `flags={'require_agent': True}` (requires `require_identity` too)
@@ -198,11 +211,14 @@ class CustomMiddleware(BaseMiddleware):
 dp.message.outer_middleware.register(UserMiddleware())
 dp.callback_query.outer_middleware.register(UserMiddleware())
 
-# 2. IdentityMiddleware (inner) - checks identity authorization
+# 2. MediaGroupMiddleware (inner) - rejects albums for files/photos
+dp.message.middleware(MediaGroupMiddleware(...))
+
+# 3. IdentityMiddleware (inner) - checks identity authorization
 dp.message.middleware(IdentityMiddleware())
 dp.callback_query.middleware(IdentityMiddleware())
 
-# 3. AgentMiddleware (inner) - validates/selects agent
+# 4. AgentMiddleware (inner) - validates/selects agent
 dp.message.middleware(AgentMiddleware())
 dp.callback_query.middleware(AgentMiddleware())
 ```
@@ -370,9 +386,16 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Text: plain text, quotes, replies, captions
   - Voice/audio: transcribed via external service, wrapped in XML tags
   - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected)
+  - **Documents**: validated by type/size, uploaded to per-agent Letta folder, processed asynchronously with status polling
   - Unsupported: video and stickers notify user, don't block message
+- **Document processing** (`documents.py`):
+  - Supported formats: PDF, text, markdown, code files (py, js, ts, go, rs, etc.), config files (json, yaml, toml)
+  - Size limit: ~10MB (Letta API constraint)
+  - Per-user concurrency control via `FileProcessingTracker` (one upload at a time per user)
+  - Media groups (albums) rejected by `MediaGroupMiddleware`
+  - Files uploaded to agent-specific folders (`uploads-{agent_id}`) and indexed for RAG
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
-- Bot streams agent responses via `client.agents.messages.create()` with `streaming=True`
+- Bot streams agent responses via `client.agents.messages.stream()`
 - **Response handler** (`response_handler.py`) processes stream events:
   - **assistant_message**: Main agent response converted to Telegram entities via `md_tg` module
   - **reasoning_message**: Internal agent reasoning (italic header, expandable blockquote formatting)
@@ -394,6 +417,11 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - `run_code`: "⚙️ Executing code..." with language and syntax-highlighted code block
   - `web_search`: "🔍 Let me search for this..." with query, result count, category, domain filters, date range (formatted), and location
   - `fetch_webpage`: "🌐 Fetching webpage..." with URL
+  - `open_files`: "📂 Opening files..." with file list and line ranges
+  - `grep_files`: "🔍 Searching in files..." with pattern, filter, and context lines
+  - `semantic_search_files`: "🔍 Searching by meaning..." with query and limit
+  - `schedule_message`: "⏱️ Setting self activation..." with human-readable delay and message
+  - `notify_via_telegram`: "📲 Sending message..." with owner-only indicator
   - Generic tools: "🔧 Using tool..." with tool name and JSON arguments
 - **Message formatting pipeline**:
   - Agent responses: Standard Markdown → `markdown_to_telegram()` → Telegram entities
@@ -484,6 +512,17 @@ Development scripts for Letta API operations live in `devscripts/`. Scripts use 
 ```bash
 uv run python -m devscripts.list_identities
 uv run python -m devscripts.delete_agents agent-uuid1 agent-uuid2
+uv run python -m devscripts.folders list
+uv run python -m devscripts.folders delete folder-uuid1 folder-uuid2
+```
+
+### Testing Scripts
+
+```bash
+uv run python -m devscripts.test_folder_workflow        # Test folder attach/upload/detach cycle
+uv run python -m devscripts.test_folder_workflow --keep # Keep resources after test
+uv run python -m devscripts.test_upload_limits          # Find Letta file size limits
+uv run python -m devscripts.test_upload_limits --binary-search --min 1 --max 50
 ```
 
 ### Testing Custom Tools
@@ -623,14 +662,15 @@ letta_bot/
   filters.py           # Filters for admin access control
   auth.py              # All authorization: user requests (/access, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
   agent.py             # Agent operations: /switch, /current, /context, and message routing to Letta agents
-  client.py            # Shared Letta client instance and Letta API operations (identity, agent, tool management)
+  client.py            # Shared Letta client instance and Letta API operations (identity, agent, folder, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
   tools.py             # Tool management: attach/detach/configure agent tools (/notify for proactive mode)
   broadcast.py         # Bot-level messaging: admin notifications, user broadcasts
   response_handler.py  # Agent response stream processing and message formatting
   letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
   images.py            # Image processing: download Telegram photos, convert to base64 for Letta multimodal API
-  utils.py             # Utility functions (async cache decorator with TTL, UUID validation)
+  documents.py         # Document processing: download Telegram files, upload to Letta folders for RAG
+  utils.py             # Utility functions (async cache decorator with TTL, UUID validation, MIME type detection)
   queries/             # EdgeQL queries and auto-generated Python modules
     upsert_user.edgeql                      # Register/update user (upsert on telegram_id)
     is_registered.edgeql                    # Check if user is registered
