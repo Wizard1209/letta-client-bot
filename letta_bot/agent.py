@@ -11,7 +11,15 @@ from gel import AsyncIOExecutor
 from httpx import ReadTimeout
 from letta_client import APIError
 
-from letta_bot.client import client
+from letta_bot.client import LettaProcessingError, client
+from letta_bot.documents import (
+    DocumentProcessingError,
+    FileTooLargeError,
+    UnsupportedDocumentError,
+    file_processing_tracker,
+    process_telegram_document,
+    wait_for_file_processing,
+)
 from letta_bot.images import (
     ContentPart,
     ImageProcessingError,
@@ -27,7 +35,6 @@ from letta_bot.response_handler import AgentStreamHandler
 from letta_bot.transcription import TranscriptionError, get_transcription_service
 
 LOGGER = logging.getLogger(__name__)
-
 
 agent_commands_router = Router(name=f'{__name__}.commands')
 agent_router = Router(name=f'{__name__}.messaging')
@@ -306,6 +313,62 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
             )
             text_parts.append(f'<{tag}_error>{e}</{tag}_error>')
 
+    # Layer 5: File processing (media groups handled by RateLimitMiddleware)
+    if message.document:
+        user_id = message.from_user.id
+
+        async with file_processing_tracker.acquire(user_id) as acquired:
+            if not acquired:
+                await message.answer(
+                    **Text(
+                        '📄 Wait for the previous file to finish processing.'
+                    ).as_kwargs()
+                )
+                return
+
+            try:
+                file_name = message.document.file_name or 'document'
+                await message.answer(**Text(f'📄 Uploading "{file_name}"...').as_kwargs())
+
+                result = await process_telegram_document(
+                    bot, message.document, agent_id, user_id
+                )
+                # Wait for Letta to process the file
+                await wait_for_file_processing(result['folder_id'], result['file_id'])
+
+                text_parts.append(
+                    f'<document_ready file_id="{result["file_id"]}" '
+                    f'file_name="{result["file_name"]}">'
+                    f'File is now searchable and readable'
+                    f'</document_ready>'
+                )
+            except UnsupportedDocumentError:
+                await message.answer(
+                    **Text(
+                        '📄 Unsupported file format.\n'
+                        'Supported: pdf, txt, md, csv, json, xml, yaml, toml, html, htm, '
+                        'py, js, ts, c, cpp, cs, go, rs, rb, java, kt, scala, '
+                        'swift, php, sh, sql, R, f90, ps1'
+                    ).as_kwargs()
+                )
+                return
+            except FileTooLargeError as e:
+                await message.answer(**Text(f'📄 {e}').as_kwargs())
+                return
+            except (DocumentProcessingError, LettaProcessingError) as e:
+                LOGGER.warning('Document processing failed: %s, telegram_id=%s', e, user_id)
+                text_parts.append(f'<document_error>{e}</document_error>')
+            except APIError as e:
+                status = getattr(e, 'status_code', 'unknown')
+                body = getattr(e, 'body', 'no body')
+                LOGGER.warning(
+                    'Document processing failed: status=%s, body=%s, telegram_id=%s',
+                    status,
+                    body,
+                    user_id,
+                )
+                text_parts.append(f'<document_error>API error: {status}</document_error>')
+
     # Unsupported content types
     if message.video:
         await message.answer(**Text('Video content is not supported').as_kwargs())
@@ -352,16 +415,15 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
 
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-            response_stream = await client.agents.messages.create(
+            response_stream = await client.agents.messages.stream(
                 agent_id=agent_id,
-                messages=[{'role': 'user', 'content': request}],  # type: ignore
+                messages=[{'role': 'user', 'content': request}],  # type: ignore[typeddict-item]
                 include_pings=True,
-                streaming=True,
             )
 
             handler = AgentStreamHandler(message)
 
-            async for event in response_stream:  # type: ignore[union-attr]
+            async for event in response_stream:
                 try:
                     await handler.handle_event(event)
                 except Exception as e:
