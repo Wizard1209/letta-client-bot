@@ -1,5 +1,6 @@
 from collections.abc import Awaitable, Callable
 import logging
+import time
 from typing import cast
 
 from aiogram import BaseMiddleware, Dispatcher
@@ -27,6 +28,152 @@ from letta_bot.utils import async_cache
 LOGGER = logging.getLogger(__name__)
 
 upsert_user_cached = async_cache(ttl=43200)(upsert_user)
+
+
+class MediaGroupMiddleware(BaseMiddleware):
+    """Rejects media groups (albums) with a single response message.
+
+    Args:
+        predicate: Function to check if event should be filtered (default: always)
+        message: Message to send when media group is detected
+
+    Examples:
+        # Reject all media groups
+        MediaGroupMiddleware(message='Please send one file at a time.')
+
+        # Reject only document media groups
+        MediaGroupMiddleware(
+            predicate=lambda e: hasattr(e, 'document') and e.document,
+            message='📄 Please send one file at a time.'
+        )
+    """
+
+    def __init__(
+        self,
+        message: str = 'Please send one item at a time.',
+        predicate: Callable[[TelegramObject], bool] | None = None,
+    ) -> None:
+        self.message = message
+        self.predicate = predicate or (lambda _: True)
+        self._responded_groups: set[str] = set()
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
+        event: TelegramObject,
+        data: dict[str, object],
+    ) -> object | None:
+        # Skip if predicate returns False
+        if not self.predicate(event):
+            return await handler(event, data)
+
+        # Check for media group
+        media_group_id = getattr(event, 'media_group_id', None)
+        if not media_group_id:
+            return await handler(event, data)
+
+        # Already responded to this group - silently skip
+        if media_group_id in self._responded_groups:
+            return None
+
+        # Clear cache if it grows too large (media_group_ids are short-lived)
+        if len(self._responded_groups) > 100:
+            self._responded_groups.clear()
+
+        # Respond once and track
+        self._responded_groups.add(media_group_id)
+        if hasattr(event, 'answer'):
+            await event.answer(self.message)
+        return None
+
+
+class RateLimitMiddleware(BaseMiddleware):
+    """Universal rate limiter with configurable event filtering.
+
+    Args:
+        max_requests: Maximum requests allowed in window
+        window_seconds: Time window in seconds
+        key_func: Function to extract rate limit key (default: user_id)
+        predicate: Function to check if event should be rate limited (default: always)
+        message: Message template for rate limit response (use {wait} placeholder)
+
+    Examples:
+        # Rate limit all messages
+        RateLimitMiddleware(max_requests=10, window_seconds=60)
+
+        # Rate limit only documents
+        RateLimitMiddleware(
+            max_requests=3,
+            window_seconds=60,
+            predicate=lambda e: hasattr(e, 'document') and e.document,
+            message='📄 Too many uploads. Wait {wait}s.'
+        )
+
+        # Rate limit by chat instead of user
+        RateLimitMiddleware(
+            max_requests=20,
+            window_seconds=60,
+            key_func=lambda e: e.chat.id
+        )
+    """
+
+    def __init__(
+        self,
+        max_requests: int = 10,
+        window_seconds: float = 60.0,
+        key_func: Callable[[TelegramObject], int | str | None] | None = None,
+        predicate: Callable[[TelegramObject], bool] | None = None,
+        message: str = 'Too many requests. Please wait {wait}s.',
+    ) -> None:
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self.key_func = key_func or self._default_key
+        self.predicate = predicate or (lambda _: True)
+        self.message = message
+        self._requests: dict[int | str, list[float]] = {}
+
+    @staticmethod
+    def _default_key(event: TelegramObject) -> int | None:
+        """Extract user_id from event."""
+        from_user = getattr(event, 'from_user', None)
+        if from_user:
+            return int(from_user.id)
+        return None
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
+        event: TelegramObject,
+        data: dict[str, object],
+    ) -> object | None:
+        # Skip if predicate returns False
+        if not self.predicate(event):
+            return await handler(event, data)
+
+        # Get rate limit key
+        key = self.key_func(event)
+        if key is None:
+            return await handler(event, data)
+
+        now = time.time()
+
+        # Get/create timestamps list
+        timestamps = self._requests.setdefault(key, [])
+
+        # Remove expired timestamps
+        timestamps[:] = [t for t in timestamps if now - t < self.window]
+
+        # Check limit
+        if len(timestamps) >= self.max_requests:
+            wait_time = int(self.window - (now - timestamps[0]))
+            if hasattr(event, 'answer'):
+                await event.answer(self.message.format(wait=wait_time))
+            return None
+
+        # Record request
+        timestamps.append(now)
+
+        return await handler(event, data)
 
 
 class UserMiddleware(BaseMiddleware):
@@ -202,9 +349,23 @@ def setup_middlewares(dp: Dispatcher) -> None:
     Requires gel_client in dispatcher's workflow_data:
         dp = Dispatcher(gel_client=gel_client)
     """
+    # Outer middleware - user tracking
     dp.message.outer_middleware.register(UserMiddleware())
     dp.callback_query.outer_middleware.register(UserMiddleware())
 
+    # Media group rejection for files and images (albums not supported)
+    # Note: concurrent upload blocking handled by file_processing_tracker in agent.py
+    dp.message.middleware(
+        MediaGroupMiddleware(
+            predicate=lambda e: (
+                (hasattr(e, 'document') and e.document is not None)
+                or (hasattr(e, 'photo') and e.photo)
+            ),
+            message='📄 Please send one file at a time.',
+        )
+    )
+
+    # Inner middleware - identity and agent checks
     dp.message.middleware(IdentityMiddleware())
     dp.callback_query.middleware(IdentityMiddleware())
 
