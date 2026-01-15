@@ -389,11 +389,12 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - **Documents**: validated by type/size, uploaded to per-agent Letta folder, processed asynchronously with status polling
   - Unsupported: video and stickers notify user, don't block message
 - **Document processing** (`documents.py`):
-  - Supported formats: PDF, text, markdown, code files (py, js, ts, go, rs, etc.), config files (json, yaml, toml)
+  - Accepts any file type (no MIME type restrictions)
   - Size limit: ~10MB (Letta API constraint)
   - Per-user concurrency control via `FileProcessingTracker` (one upload at a time per user)
   - Media groups (albums) rejected by `MediaGroupMiddleware`
   - Files uploaded to agent-specific folders (`uploads-{agent_id}`) and indexed for RAG
+  - Auto-attaches `file_handling` memory block to agent on first file upload (teaches agent how to respond to files)
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
 - Bot streams agent responses via `client.agents.messages.stream()`
 - **Response handler** (`response_handler.py`) processes stream events:
@@ -670,7 +671,7 @@ letta_bot/
   letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
   images.py            # Image processing: download Telegram photos, convert to base64 for Letta multimodal API
   documents.py         # Document processing: download Telegram files, upload to Letta folders for RAG
-  utils.py             # Utility functions (async cache decorator with TTL, UUID validation, MIME type detection)
+  utils.py             # Utility functions (async cache decorator with TTL, UUID validation)
   queries/             # EdgeQL queries and auto-generated Python modules
     upsert_user.edgeql                      # Register/update user (upsert on telegram_id)
     is_registered.edgeql                    # Check if user is registered

@@ -15,7 +15,6 @@ from letta_bot.client import LettaProcessingError, client
 from letta_bot.documents import (
     DocumentProcessingError,
     FileTooLargeError,
-    UnsupportedDocumentError,
     file_processing_tracker,
     process_telegram_document,
     wait_for_file_processing,
@@ -336,28 +335,18 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
                 # Wait for Letta to process the file
                 await wait_for_file_processing(result['folder_id'], result['file_id'])
 
-                text_parts.append(
-                    f'<document_ready file_id="{result["file_id"]}" '
-                    f'file_name="{result["file_name"]}">'
-                    f'File is now searchable and readable'
-                    f'</document_ready>'
-                )
-            except UnsupportedDocumentError:
-                await message.answer(
-                    **Text(
-                        '📄 Unsupported file format.\n'
-                        'Supported: pdf, txt, md, csv, json, xml, yaml, toml, html, htm, '
-                        'py, js, ts, c, cpp, cs, go, rs, rb, java, kt, scala, '
-                        'swift, php, sh, sql, R, f90, ps1'
-                    ).as_kwargs()
-                )
-                return
+                file_name = result['file_name']
+                file_id = result['file_id']
+                msg = f'File "{file_name}" ready (id: {file_id})'
+                if message.caption:
+                    msg += f'\nUser caption: {message.caption}'
+                text_parts.append(f'<system_message>{msg}</system_message>')
             except FileTooLargeError as e:
                 await message.answer(**Text(f'📄 {e}').as_kwargs())
                 return
             except (DocumentProcessingError, LettaProcessingError) as e:
                 LOGGER.warning('Document processing failed: %s, telegram_id=%s', e, user_id)
-                text_parts.append(f'<document_error>{e}</document_error>')
+                text_parts.append(f'<system_message>File error: {e}</system_message>')
             except APIError as e:
                 status = getattr(e, 'status_code', 'unknown')
                 body = getattr(e, 'body', 'no body')
@@ -367,7 +356,8 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
                     body,
                     user_id,
                 )
-                text_parts.append(f'<document_error>API error: {status}</document_error>')
+                error_msg = f'File error: status={status}, body={body}'
+                text_parts.append(f'<system_message>{error_msg}</system_message>')
 
     # Unsupported content types
     if message.video:

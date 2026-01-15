@@ -13,85 +13,63 @@ from typing import BinaryIO, TypedDict
 from aiogram import Bot
 from aiogram.types import Document
 
-from letta_bot.utils import get_mime_type
+from letta_bot.client import (
+    client,
+    get_file_status,
+    get_or_create_agent_folder,
+    upload_file_to_folder,
+)
 
 LOGGER = logging.getLogger(__name__)
+
+# File handling memory block configuration
+FILE_HANDLING_BLOCK_LABEL = 'file_handling'
+FILE_HANDLING_BLOCK_VERSION = '1.0.0'
+FILE_HANDLING_BLOCK_DESC = (
+    'How to handle user file uploads: understanding system messages, '
+    'using file tools, and responding appropriately to file events.'
+)
+
+
+def _load_file_handling_block_content() -> str:
+    """Load file handling memory block content from markdown file."""
+    block_path = (
+        Path(__file__).parent / 'custom_tools' / 'memory_blocks' / 'file_handling.md'
+    )
+    return block_path.read_text(encoding='utf-8')
+
+
+async def _attach_file_handling_block(agent_id: str) -> None:
+    """Attach file handling memory block to agent if not exists."""
+    # Check if block already exists on agent
+    async for block in client.agents.blocks.list(agent_id=agent_id):
+        if block.label == FILE_HANDLING_BLOCK_LABEL:
+            LOGGER.debug('File handling block already attached to agent %s', agent_id)
+            return
+
+    # Load content and create block
+    block_content = _load_file_handling_block_content()
+    block = await client.blocks.create(
+        label=FILE_HANDLING_BLOCK_LABEL,
+        description=FILE_HANDLING_BLOCK_DESC,
+        value=block_content,
+        metadata={'version': FILE_HANDLING_BLOCK_VERSION},
+    )
+
+    # Attach to agent
+    if block.id:
+        await client.agents.blocks.attach(agent_id=agent_id, block_id=block.id)
+        LOGGER.info('Attached file handling block to agent %s', agent_id)
+
 
 # Letta API file size limit (bytes)
 # API returns 502 at ~10,485,600 bytes, using 10MB with safety margin
 MAX_FILE_SIZE_BYTES: int = 10_000_000  # ~9.5 MB
 MAX_FILE_SIZE_MB: float = MAX_FILE_SIZE_BYTES / (1024 * 1024)
 
-# Supported MIME types for Letta document processing
-SUPPORTED_MIME_TYPES: frozenset[str] = frozenset(
-    {
-        'application/pdf',
-        'application/json',
-        'application/toml',
-        'application/x-yaml',
-        'application/x-sh',
-        'application/sql',
-        'text/plain',
-        'text/markdown',
-        'text/x-markdown',
-        'text/javascript',
-        'text/x-python',
-        'text/yaml',
-        'text/css',
-        'text/csv',
-        'text/x-c',
-        'text/html',
-        'text/xml',
-    }
-)
-
-# Supported extensions (fallback when MIME type is not detected)
-SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
-    {
-        '.py',
-        '.css',
-        '.csv',
-        '.htm',
-        '.html',
-        '.md',
-        '.txt',
-        '.yml',
-        '.yaml',
-        '.xml',
-        '.toml',
-        '.json',
-        '.swift',
-        '.sql',
-        '.scala',
-        '.kt',
-        '.java',
-        '.m',
-        '.R',
-        '.r',
-        '.php',
-        '.sh',
-        '.ps1',
-        '.cs',
-        '.cpp',
-        '.c',
-        '.f90',
-        '.go',
-        '.js',
-        '.ts',
-        '.rb',
-        '.rs',
-    }
-)
-
 
 class DocumentProcessingError(Exception):
     """Raised when document processing fails (infrastructure errors)."""
-
-    pass
-
-
-class UnsupportedDocumentError(DocumentProcessingError):
-    """Raised when document type is not supported."""
 
     pass
 
@@ -105,8 +83,6 @@ class FileTooLargeError(DocumentProcessingError):
 class FileProcessingTracker:
     """Tracks file processing per user to prevent concurrent uploads.
 
-    Uses asyncio.Lock to prevent race conditions between check and start.
-
     Usage:
         tracker = FileProcessingTracker()
 
@@ -119,27 +95,24 @@ class FileProcessingTracker:
 
     def __init__(self) -> None:
         self._processing: set[int] = set()
-        self._lock = asyncio.Lock()
 
     def acquire(self, user_id: int) -> 'FileProcessingContext':
-        """Acquire processing slot for user (thread-safe).
+        """Acquire processing slot for user.
 
         Returns a context manager that tracks processing state.
         """
         return FileProcessingContext(self, user_id)
 
-    async def _try_start(self, user_id: int) -> bool:
+    def _try_start(self, user_id: int) -> bool:
         """Try to start processing for user. Returns True if acquired."""
-        async with self._lock:
-            if user_id in self._processing:
-                return False
-            self._processing.add(user_id)
-            return True
+        if user_id in self._processing:
+            return False
+        self._processing.add(user_id)
+        return True
 
-    async def _stop(self, user_id: int) -> None:
+    def _stop(self, user_id: int) -> None:
         """Release processing slot for user."""
-        async with self._lock:
-            self._processing.discard(user_id)
+        self._processing.discard(user_id)
 
 
 class FileProcessingContext:
@@ -152,48 +125,17 @@ class FileProcessingContext:
 
     async def __aenter__(self) -> bool:
         """Try to acquire processing slot. Returns True if acquired."""
-        self._acquired = await self._tracker._try_start(self._user_id)
+        self._acquired = self._tracker._try_start(self._user_id)
         return self._acquired
 
     async def __aexit__(self, *args: object) -> None:
         """Release processing slot if acquired."""
         if self._acquired:
-            await self._tracker._stop(self._user_id)
+            self._tracker._stop(self._user_id)
 
 
 # Global instance for file processing tracking
 file_processing_tracker = FileProcessingTracker()
-
-
-def _get_extension(file_name: str | None) -> str | None:
-    """Extract lowercase extension from file name using pathlib."""
-    if not file_name:
-        return None
-    suffix = Path(file_name).suffix
-    return suffix.lower() if suffix else None
-
-
-def is_supported_document(document: Document) -> bool:
-    """Check if document type is supported.
-
-    Args:
-        document: Telegram Document object
-
-    Returns:
-        True if document type is supported
-    """
-    # Check document's mime_type first
-    if document.mime_type and document.mime_type in SUPPORTED_MIME_TYPES:
-        return True
-
-    # Check extension directly (for types mimetypes doesn't know)
-    ext = _get_extension(document.file_name)
-    if ext and ext in SUPPORTED_EXTENSIONS:
-        return True
-
-    # Fallback to mimetypes detection
-    detected_mime = get_mime_type(document.file_name)
-    return detected_mime is not None and detected_mime in SUPPORTED_MIME_TYPES
 
 
 class DocumentResult(TypedDict):
@@ -245,12 +187,12 @@ async def process_telegram_document(
     agent_id: str,
     user_id: int,
 ) -> DocumentResult:
-    """Process a Telegram document: validate, download, upload to Letta folder.
+    """Process a Telegram document: download and upload to Letta folder.
 
     This is the main entry point for document processing. It:
-    1. Validates document type and size
+    1. Validates file size
     2. Downloads from Telegram
-    3. Gets or creates agent folder
+    3. Gets or creates agent folder (attaches file handling memory block)
     4. Uploads to Letta
 
     Note: Caller should use wait_for_file_processing() to wait for Letta
@@ -266,17 +208,9 @@ async def process_telegram_document(
         DocumentResult with folder_id, file_id and file_name
 
     Raises:
-        UnsupportedDocumentError: If document type is not supported
         FileTooLargeError: If document exceeds size limit
         DocumentProcessingError: If download/upload fails
     """
-    # Import here to avoid circular dependency
-    from letta_bot.client import get_or_create_agent_folder, upload_file_to_folder
-
-    # Validate document type
-    if not is_supported_document(document):
-        raise UnsupportedDocumentError(f'Unsupported document type: {document.mime_type}')
-
     # Validate file size
     if document.file_size and document.file_size > MAX_FILE_SIZE_BYTES:
         raise FileTooLargeError(f'File too large (max {MAX_FILE_SIZE_MB:.1f} MB)')
@@ -284,8 +218,9 @@ async def process_telegram_document(
     # Download from Telegram
     file_obj, file_name = await download_telegram_document(bot, document)
 
-    # Upload to Letta folder
+    # Get or create folder and attach file handling memory block
     folder_id = await get_or_create_agent_folder(agent_id, user_id)
+    await _attach_file_handling_block(agent_id)
     file_id = await upload_file_to_folder(folder_id, file_obj)
 
     LOGGER.info(
@@ -320,9 +255,6 @@ async def wait_for_file_processing(
         DocumentProcessingError: If timeout reached
         LettaProcessingError: If Letta failed to process the file
     """
-    # Import here to avoid circular dependency
-    from letta_bot.client import get_file_status
-
     interval = initial_interval
     try:
         async with asyncio.timeout(timeout):
@@ -333,6 +265,4 @@ async def wait_for_file_processing(
                 await asyncio.sleep(interval)
                 interval = min(interval * backoff_factor, max_interval)
     except TimeoutError:
-        raise DocumentProcessingError(
-            f'Processing timed out after {timeout}s'
-        ) from None
+        raise DocumentProcessingError(f'Processing timed out after {timeout}s') from None
