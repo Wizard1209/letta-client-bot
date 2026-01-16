@@ -327,7 +327,9 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
 
             try:
                 file_name = message.document.file_name or 'document'
-                await message.answer(**Text(f'📄 Uploading "{file_name}"...').as_kwargs())
+                status_msg = await message.answer(
+                    **Text(f'📄 Uploading "{file_name}"...').as_kwargs()
+                )
 
                 result = await process_telegram_document(
                     bot, message.document, agent_id, user_id
@@ -337,6 +339,12 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
 
                 file_name = result['file_name']
                 file_id = result['file_id']
+
+                # Update status message to show upload complete
+                await status_msg.edit_text(
+                    **Text(f'✅ Uploaded "{file_name}"').as_kwargs()
+                )
+
                 msg = f'File "{file_name}" ready (id: {file_id})'
                 if message.caption:
                     msg += f'\nUser caption: {message.caption}'
