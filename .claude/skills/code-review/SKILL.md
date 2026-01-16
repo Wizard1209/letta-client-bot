@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Reviews code changes with brief annotations. Use when user says "review code", "review changes", "what changed", or runs /code-review.
+description: Reviews code changes with brief annotations. Use when user says "review code", "review changes", "what changed", "review pull request", "review PR", "let's review", or runs /code-review.
 ---
 
 # Code Review

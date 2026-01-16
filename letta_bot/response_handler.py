@@ -482,10 +482,10 @@ def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> dic
 def _format_memory_replace(args_obj: dict[str, Any]) -> str:
     """Format memory_replace tool call."""
     path = args_obj.get('path', '')
-    old_str = args_obj.get('old_str', '')
-    new_str = args_obj.get('new_str', '')
+    old_string = args_obj.get('old_string', '')
+    new_string = args_obj.get('new_string', '')
 
-    diff = _get_diff_text(old_str, new_str)
+    diff = _get_diff_text(old_string, new_string)
     parts = ['*🔧 Modifying memory block...*\n']
 
     if path:

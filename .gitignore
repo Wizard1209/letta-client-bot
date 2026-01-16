@@ -88,3 +88,6 @@ gel.local.toml
 
 # local reference folders
 letta-telegram-reference
+
+# local subprojects
+evals/
