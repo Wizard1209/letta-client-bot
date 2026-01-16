@@ -551,7 +551,7 @@ async def _enable_schedule_tool(agent_id: str) -> None:
     env_dict['SCHEDULER_URL'] = CONFIG.scheduler_url
     env_dict['SCHEDULER_API_KEY'] = CONFIG.scheduler_api_key
 
-    await client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env_dict)
+    await client.agents.update(agent_id=agent_id, secrets=env_dict)
 
 
 async def _enable_notify_tool(agent_id: str) -> None:
@@ -588,7 +588,7 @@ async def _enable_notify_tool(agent_id: str) -> None:
 
     env_dict['TELEGRAM_BOT_TOKEN'] = CONFIG.bot_token
 
-    await client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env_dict)
+    await client.agents.update(agent_id=agent_id, secrets=env_dict)
 
 
 async def handle_notify_disable(message: Message, agent_id: str) -> None:

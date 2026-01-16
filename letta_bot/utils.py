@@ -1,5 +1,6 @@
 from collections.abc import Awaitable, Callable
 from functools import wraps
+import mimetypes
 import time
 from typing import Any, ParamSpec, TypeVar
 from uuid import UUID
@@ -73,3 +74,19 @@ def version_needs_update(current: str | None, required: str) -> bool:
         return parse_version(current) < parse_version(required)
     except ValueError:
         return True
+
+
+def get_mime_type(file_name: str | None) -> str | None:
+    """Detect MIME type from file name using standard library.
+
+    Args:
+        file_name: File name with extension (e.g., 'document.pdf')
+
+    Returns:
+        MIME type string or None if unknown
+    """
+    if not file_name:
+        return None
+
+    mime_type, _ = mimetypes.guess_type(file_name)
+    return mime_type

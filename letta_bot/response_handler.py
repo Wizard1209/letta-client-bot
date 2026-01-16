@@ -160,6 +160,16 @@ def _format_tool_by_name(
         case 'conversation_search':
             return _format_conversation_search(args_obj)
 
+        # File operations
+        case 'open_files':
+            return _format_open_files(args_obj)
+
+        case 'grep_files':
+            return _format_grep_files(args_obj)
+
+        case 'semantic_search_files':
+            return _format_semantic_search_files(args_obj)
+
         # Notifications and scheduling
         case 'schedule_message':
             return _format_schedule_message(args_obj)
@@ -207,6 +217,83 @@ def _format_conversation_search(args_obj: dict[str, Any]) -> dict[str, Any]:
     ]
     if parts:
         elements.append(as_marked_list(*parts, marker='• '))
+
+    return as_line(*elements, sep='\n').as_kwargs()
+
+
+def _format_open_files(args_obj: dict[str, Any]) -> dict[str, Any]:
+    """Format open_files tool call."""
+    file_requests = args_obj.get('file_requests', [])
+    close_all_others = args_obj.get('close_all_others', False)
+
+    elements: list[Any] = [Italic('📂 Opening files...')]
+
+    # List files being opened
+    file_parts = []
+    for req in file_requests[:5]:  # Show max 5 files
+        file_name = req.get('file_name', '')
+        # Extract just the filename from path
+        short_name = file_name.split('/')[-1] if '/' in file_name else file_name
+        offset = req.get('offset')
+        length = req.get('length')
+
+        if offset is not None and length is not None:
+            file_parts.append(f'{short_name} (lines {offset + 1}-{offset + length})')
+        elif offset is not None:
+            file_parts.append(f'{short_name} (from line {offset + 1})')
+        else:
+            file_parts.append(short_name)
+
+    if len(file_requests) > 5:
+        file_parts.append(f'...and {len(file_requests) - 5} more')
+
+    if file_parts:
+        elements.append(as_marked_list(*file_parts, marker='• '))
+
+    if close_all_others:
+        elements.append(Italic('(closing other files)'))
+
+    return as_line(*elements, sep='\n').as_kwargs()
+
+
+def _format_grep_files(args_obj: dict[str, Any]) -> dict[str, Any]:
+    """Format grep_files tool call."""
+    pattern = args_obj.get('pattern', '')
+    include = args_obj.get('include', '')
+    context_lines = args_obj.get('context_lines')
+    offset = args_obj.get('offset')
+
+    elements: list[Any] = [
+        Italic('🔍 Searching in files...'),
+        as_key_value('Pattern', f'"{pattern}"'),
+    ]
+
+    parts = []
+    if include:
+        parts.append(f'filter: {include}')
+    if context_lines:
+        parts.append(f'{context_lines} context lines')
+    if offset:
+        parts.append(f'starting from match #{offset + 1}')
+
+    if parts:
+        elements.append(as_marked_list(*parts, marker='• '))
+
+    return as_line(*elements, sep='\n').as_kwargs()
+
+
+def _format_semantic_search_files(args_obj: dict[str, Any]) -> dict[str, Any]:
+    """Format semantic_search_files tool call."""
+    query = args_obj.get('query', '')
+    limit = args_obj.get('limit')
+
+    elements: list[Any] = [
+        Italic('🔍 Searching by meaning...'),
+        as_key_value('Query', f'"{query}"'),
+    ]
+
+    if limit:
+        elements.append(Text(f'top {limit} results'))
 
     return as_line(*elements, sep='\n').as_kwargs()
 

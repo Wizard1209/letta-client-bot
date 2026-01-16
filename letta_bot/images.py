@@ -11,6 +11,8 @@ from typing import BinaryIO, Literal, TypedDict
 from aiogram import Bot
 from aiogram.types import PhotoSize
 
+from letta_bot.utils import get_mime_type
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -46,37 +48,7 @@ class ImageProcessingError(Exception):
     pass
 
 
-# Extension to MIME type mapping
-EXTENSION_TO_MEDIA_TYPE: dict[str, str] = {
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-}
-
 DEFAULT_MEDIA_TYPE = 'image/jpeg'
-
-
-def get_media_type(file_path: str | None) -> str:
-    """Detect MIME type from file path extension.
-
-    Args:
-        file_path: File path from Telegram API (e.g., 'photos/file_123.jpg')
-
-    Returns:
-        MIME type string (defaults to 'image/jpeg' if unknown)
-    """
-    if not file_path:
-        return DEFAULT_MEDIA_TYPE
-
-    # Extract extension (lowercase)
-    dot_index = file_path.rfind('.')
-    if dot_index == -1:
-        return DEFAULT_MEDIA_TYPE
-
-    extension = file_path[dot_index:].lower()
-    return EXTENSION_TO_MEDIA_TYPE.get(extension, DEFAULT_MEDIA_TYPE)
 
 
 async def download_telegram_image(bot: Bot, photo: PhotoSize) -> tuple[bytes, str]:
@@ -171,7 +143,7 @@ async def process_telegram_photo(bot: Bot, photo: PhotoSize) -> ImageContentPart
     base64_data = encode_image_to_base64(image_data)
 
     # Detect MIME type from file path
-    media_type = get_media_type(file_path)
+    media_type = get_mime_type(file_path) or DEFAULT_MEDIA_TYPE
 
     LOGGER.info(
         'Processed image: size=%d bytes, type=%s',
