@@ -821,6 +821,21 @@ await event.answer('You need to request bot access first')
 return None
 ```
 
+### External API Errors (Letta, Telegram, etc.)
+
+**Don't wrap in try/except** unless you have specific recovery logic. General API errors should propagate to common error handling:
+
+- Network errors (timeout, DNS, connection refused)
+- Authentication errors (invalid/expired API key)
+- Server errors (5xx responses)
+- Rate limiting (429)
+- Invalid configuration (wrong project ID, missing resources)
+
+**DO handle specifically:**
+- Empty results that need UX feedback (e.g., no templates → show message)
+- Known error codes with user-actionable recovery
+- Partial failures where some data can still be used
+
 ## Logging Policy
 
 | Level | Use |

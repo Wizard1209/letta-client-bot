@@ -202,6 +202,14 @@ async def new_assistant(message: Message) -> None:
     page = await paginator
     templates = page.templates
 
+    # Handle empty templates (no try/except - API errors go to common handler)
+    if not templates:
+        await message.answer(
+            '📭 No assistant templates available yet.\n\n'
+            'Please contact an administrator or try again later.'
+        )
+        return
+
     builder = InlineKeyboardBuilder()
     for t in templates:
         data = NewAssistantCallback(template_name=t.name, version=t.latest_version)

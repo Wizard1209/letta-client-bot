@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Reviews code changes with brief annotations. Use when user says "review code", "review changes", "what changed", "review pull request", "review PR", "let's review", or runs /code-review.
+description: Reviews code changes with brief annotations. Use when user says "review code", "review changes", "what changed", "review pull request", "review PR", "let's review", "review https://github.com/.../pull/123", or runs /code-review.
 ---
 
 # Code Review
@@ -120,3 +120,17 @@ Questions, or next file?
 | Staged only    | `git diff --cached`      |
 | vs main        | `git diff main...HEAD`   |
 | Last N commits | `git diff HEAD~N..HEAD`  |
+
+## External PR URLs
+
+When given a GitHub URL like `https://github.com/owner/repo/pull/123`:
+
+1. Parse owner, repo, and PR number from URL
+2. Use `-R owner/repo` flag for gh commands:
+
+```bash
+gh pr view 123 -R owner/repo --json title,body,author,state,additions,deletions,files,baseRefName,headRefName
+gh pr diff 123 -R owner/repo
+```
+
+3. Follow the standard review protocol above
