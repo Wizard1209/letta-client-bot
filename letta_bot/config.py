@@ -42,6 +42,10 @@ class Config(BaseSettings):
     openai_api_key: str | None = None
     whisper_model: str = 'gpt-4o-mini-transcribe'
 
+    # ElevenLabs config for audio transcription (optional)
+    elevenlabs_api_key: str | None = None
+    elevenlabs_stt_model: str = 'scribe_v2'
+
     @field_validator('admin_ids', mode='before')
     def split_ids(cls, ids: int | str | None) -> list[int]:
         if not ids:

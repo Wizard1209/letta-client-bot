@@ -1,21 +1,19 @@
-"""Audio transcription module using OpenAI Whisper API.
+"""Audio transcription module supporting multiple engines.
 
-Handles voice messages and audio files from Telegram, converting them
-to text for Letta agent processing.
+Supports OpenAI Whisper and ElevenLabs Scribe for transcribing voice messages
+and audio files from Telegram.
 """
 
 import logging
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import Protocol
 
 from aiogram import Bot
 from aiogram.types import Audio, Message, Voice
 from aiogram.utils.chat_action import ChatActionSender
 
 LOGGER = logging.getLogger(__name__)
-
-# Max file size for Whisper API (25MB)
-MAX_FILE_SIZE = 25 * 1024 * 1024
 
 # MIME type to file extension mapping (initialized once as module constant)
 # Telegram voice messages are always audio/ogg with Opus codec
@@ -44,22 +42,109 @@ class TranscriptionError(Exception):
     pass
 
 
+class TranscriptionEngine(Protocol):
+    """Protocol for transcription engine implementations."""
+
+    max_file_size: int
+    engine_name: str
+
+    async def transcribe_file(self, file_path: Path) -> str:
+        """Transcribe audio file to text.
+
+        Args:
+            file_path: Path to the audio file.
+
+        Returns:
+            Transcribed text.
+
+        Raises:
+            TranscriptionError: If transcription fails.
+        """
+        ...
+
+
+class OpenAITranscriptionEngine:
+    """OpenAI Whisper transcription engine."""
+
+    max_file_size = 25 * 1024 * 1024  # 25MB
+    engine_name = 'OpenAI Whisper'
+
+    def __init__(self, api_key: str, model: str = 'gpt-4o-mini-transcribe') -> None:
+        """Initialize OpenAI transcription engine.
+
+        Args:
+            api_key: OpenAI API key.
+            model: Whisper model to use.
+        """
+        from openai import AsyncOpenAI
+
+        self.client = AsyncOpenAI(api_key=api_key)
+        self.model = model
+
+    async def transcribe_file(self, file_path: Path) -> str:
+        """Transcribe audio file using OpenAI Whisper API."""
+        try:
+            response = await self.client.audio.transcriptions.create(
+                model=self.model,
+                file=file_path,
+            )
+            return response.text
+        except Exception as e:
+            raise TranscriptionError(f'Whisper API error: {e}') from e
+
+
+class ElevenLabsTranscriptionEngine:
+    """ElevenLabs Scribe transcription engine."""
+
+    max_file_size = 100 * 1024 * 1024  # 100MB
+    engine_name = 'ElevenLabs Scribe'
+
+    def __init__(self, api_key: str, model: str = 'scribe_v2') -> None:
+        """Initialize ElevenLabs transcription engine.
+
+        Args:
+            api_key: ElevenLabs API key.
+            model: Scribe model to use (scribe_v1 or scribe_v2).
+        """
+        from elevenlabs import AsyncElevenLabs
+
+        if not api_key:
+            raise TranscriptionError('No api key provided')
+
+        self.client = AsyncElevenLabs(api_key=api_key)
+        self.model = model
+
+    async def transcribe_file(self, file_path: Path) -> str:
+        """Transcribe audio file using ElevenLabs Scribe API."""
+        from elevenlabs import SpeechToTextChunkResponseModel
+
+        try:
+            with open(file_path, 'rb') as audio_file:
+                response = await self.client.speech_to_text.convert(
+                    file=audio_file,
+                    model_id=self.model,
+                    tag_audio_events=True,
+                )
+            # Without multichannel/webhook, response is SpeechToTextChunkResponseModel
+            if not isinstance(response, SpeechToTextChunkResponseModel):
+                raise TranscriptionError('Unexpected response type from ElevenLabs API')
+            return response.text
+        except TranscriptionError:
+            raise
+        except Exception as e:
+            raise TranscriptionError(f'ElevenLabs Scribe API error: {e}') from e
+
+
 class TranscriptionService:
     """Service for transcribing voice messages and audio files."""
 
-    def __init__(self, openai_api_key: str, model: str = 'gpt-4o-mini-transcribe') -> None:
+    def __init__(self, engine: TranscriptionEngine) -> None:
         """Initialize the transcription service.
 
         Args:
-            openai_api_key: OpenAI API key for Whisper access.
-            model: Whisper model to use. Options: whisper-1, gpt-4o-transcribe,
-                   gpt-4o-mini-transcribe
+            engine: Transcription engine to use.
         """
-        # Import here to avoid loading openai if not configured
-        from openai import AsyncOpenAI
-
-        self.client = AsyncOpenAI(api_key=openai_api_key)
-        self.model = model
+        self.engine = engine
 
     async def transcribe_message_content(
         self,
@@ -100,19 +185,17 @@ class TranscriptionService:
         File is auto-deleted when context exits.
         """
         if isinstance(content, Voice):
-            if content.file_size and content.file_size > MAX_FILE_SIZE:
-                raise TranscriptionError(
-                    f'Voice message too large ({content.file_size / 1024 / 1024:.1f}MB). '
-                    f'Maximum size is 25MB.'
-                )
-            suffix = '.ogg'
+            label, suffix = 'Voice message', '.ogg'
         else:
-            if content.file_size and content.file_size > MAX_FILE_SIZE:
-                raise TranscriptionError(
-                    f'Audio file too large ({content.file_size / 1024 / 1024:.1f}MB). '
-                    f'Maximum size is 25MB.'
-                )
+            label = 'Audio file'
             suffix = self._get_extension(content.file_name, content.mime_type)
+
+        max_size = self.engine.max_file_size
+        if content.file_size and content.file_size > max_size:
+            raise TranscriptionError(
+                f'{label} too large ({content.file_size / 1024 / 1024:.1f}MB). '
+                f'Maximum size is {max_size / 1024 / 1024:.0f}MB.'
+            )
 
         with NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
             tmp_path = Path(tmp.name)
@@ -123,15 +206,8 @@ class TranscriptionService:
             except Exception as e:
                 raise TranscriptionError(f'Failed to download file: {e}') from e
 
-            # Transcribe
-            try:
-                response = await self.client.audio.transcriptions.create(
-                    model=self.model,
-                    file=tmp_path,
-                )
-                return response.text
-            except Exception as e:
-                raise TranscriptionError(f'Whisper API error: {e}') from e
+            # Transcribe using the configured engine
+            return await self.engine.transcribe_file(tmp_path)
 
     def _get_extension(self, file_name: str | None, mime_type: str | None) -> str:
         """Determine file extension from filename or MIME type.
@@ -163,7 +239,6 @@ class TranscriptionService:
             LOGGER.warning(f'Unknown MIME type for audio file: {mime_type}')
 
         # Default to .ogg (most common for Telegram voice/unknown audio)
-        # Whisper API supports OGG, so this is a safe fallback
         return '.ogg'
 
 
@@ -174,7 +249,12 @@ _transcription_service: TranscriptionService | None = None
 def get_transcription_service() -> TranscriptionService | None:
     """Get or create the global transcription service.
 
-    Reads configuration from CONFIG. Returns None if OpenAI API key not configured.
+    Engine selection based on available API keys (ElevenLabs prioritized):
+    - If ELEVENLABS_API_KEY set → ElevenLabs Scribe
+    - Else if OPENAI_API_KEY set → OpenAI Whisper
+    - Else → None
+
+    Returns None if no API key available.
     """
     global _transcription_service
 
@@ -183,10 +263,18 @@ def get_transcription_service() -> TranscriptionService | None:
 
     from letta_bot.config import CONFIG
 
-    if CONFIG.openai_api_key is None:
+    engine: TranscriptionEngine | None = None
+
+    if CONFIG.elevenlabs_api_key:
+        engine = ElevenLabsTranscriptionEngine(
+            CONFIG.elevenlabs_api_key, CONFIG.elevenlabs_stt_model
+        )
+    elif CONFIG.openai_api_key:
+        engine = OpenAITranscriptionEngine(CONFIG.openai_api_key, CONFIG.whisper_model)
+
+    if engine is None:
         return None
 
-    _transcription_service = TranscriptionService(
-        CONFIG.openai_api_key, CONFIG.whisper_model
-    )
+    LOGGER.info('Transcription engine: %s', engine.engine_name)
+    _transcription_service = TranscriptionService(engine)
     return _transcription_service

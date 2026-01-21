@@ -292,9 +292,8 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
     if message.voice or message.audio:
         transcription_service = get_transcription_service()
         if transcription_service is None:
-            await message.answer(
-                **Text('Audio not supported. OpenAI API key not configured.').as_kwargs()
-            )
+            msg = 'Audio transcription not available. No API key configured.'
+            await message.answer(**Text(msg).as_kwargs())
             return
 
         tag = 'voice_transcript' if message.voice else 'audio_transcript'

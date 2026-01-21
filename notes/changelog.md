@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 **Added:**
 • Image support: send photos to your assistant and it can see and analyze them (uses Letta's multimodal API with base64 encoding)
 • Document upload: send files (PDF, code, text, markdown, configs) to your assistant for analysis and RAG-indexed search (~10MB limit)
+• ElevenLabs Scribe transcription engine: alternative to OpenAI Whisper with 100MB file size limit and automatic language detection (prioritized when API key configured)
 
 **Changed:**
 • Renamed `/botaccess` → `/access` with clearer description emphasizing this grants general bot access only (identity), not assistant capabilities

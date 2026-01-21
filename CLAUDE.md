@@ -609,6 +609,7 @@ letta_bot/
   letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
   images.py            # Image processing: download Telegram photos, convert to base64 for Letta multimodal API
   documents.py         # Document processing: download Telegram files, upload to Letta folders for RAG
+  transcription.py     # Audio transcription: OpenAI Whisper and ElevenLabs Scribe engines for voice/audio messages
   utils.py             # Utility functions (async cache decorator with TTL, UUID validation)
   queries/             # EdgeQL queries and auto-generated Python modules
     upsert_user.edgeql                      # Register/update user (upsert on telegram_id)
@@ -671,6 +672,10 @@ Environment variables via `.env` (provide `.env.example`):
 - `ADMIN_IDS` - Comma-separated list of Telegram user IDs with admin access (if not set, no admin commands available)
 - `INFO_DIR` - Absolute path to directory containing info markdown files (default: `<project_root>/notes`)
 - `LOGGING_LEVEL` - Logging verbosity level (default: `INFO`, options: DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `OPENAI_API_KEY` - OpenAI API key for Whisper transcription (voice/audio messages)
+- `WHISPER_MODEL` - OpenAI Whisper model (default: `gpt-4o-mini-transcribe`)
+- `ELEVENLABS_API_KEY` - ElevenLabs API key for Scribe transcription (prioritized over OpenAI if set)
+- `ELEVENLABS_STT_MODEL` - ElevenLabs Scribe model (default: `scribe_v2`)
 
 ## Deployment
 
