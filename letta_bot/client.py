@@ -225,9 +225,7 @@ async def get_or_create_agent_folder(agent_id: str, telegram_id: int) -> str:
         # Find by name and attach (suppress ConflictError if already attached)
         async for existing in client.folders.list(name=folder_name):
             with suppress(ConflictError):
-                await client.agents.folders.attach(
-                    folder_id=existing.id, agent_id=agent_id
-                )
+                await client.agents.folders.attach(folder_id=existing.id, agent_id=agent_id)
             return existing.id
         raise
 
