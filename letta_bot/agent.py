@@ -341,9 +341,7 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
                 file_id = result['file_id']
 
                 # Update status message to show upload complete
-                await status_msg.edit_text(
-                    **Text(f'✅ Uploaded "{file_name}"').as_kwargs()
-                )
+                await status_msg.edit_text(**Text(f'✅ Uploaded "{file_name}"').as_kwargs())
 
                 msg = f'File "{file_name}" ready (id: {file_id})'
                 if message.caption:

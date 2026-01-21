@@ -27,6 +27,7 @@ from aiogram.utils.formatting import (
 )
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
 
+from letta_bot.utils import merge_with_entity
 from md_tg import markdown_to_telegram
 
 LOGGER = logging.getLogger(__name__)
@@ -629,17 +630,22 @@ async def send_markdown_message(message: Message, content: str) -> None:
         await message.answer(text, entities=entities)
 
 
-def _format_reasoning_message(reasoning_text: str) -> str:
-    """Format reasoning message as markdown with blockquote.
+async def send_reasoning_message(message: Message, reasoning_text: str) -> None:
+    """Send reasoning message with expandable blockquote.
+
+    Header stays visible, content is wrapped in expandable_blockquote.
 
     Args:
+        message: Telegram message to reply to
         reasoning_text: Raw reasoning content
-
-    Returns:
-        Markdown string with header and blockquoted content
     """
-    quoted_lines = '\n> '.join(reasoning_text.split('\n'))
-    return f'*Agent reasoning:*\n> {quoted_lines}'
+    chunks = merge_with_entity(
+        header=Italic('Agent reasoning:'),
+        content=reasoning_text,
+        entity_type='expandable_blockquote',
+    )
+    for text, entities in chunks:
+        await message.answer(text, entities=entities)
 
 
 # =============================================================================
@@ -688,11 +694,10 @@ class AgentStreamHandler:
         if message_type == 'reasoning_message':
             reasoning_text = getattr(event, 'reasoning', '')
             if reasoning_text:
-                reasoning_markdown = _format_reasoning_message(reasoning_text)
                 try:
-                    await send_markdown_message(self.telegram_message, reasoning_markdown)
+                    await send_reasoning_message(self.telegram_message, reasoning_text)
                 except Exception as e:
-                    await _send_error_message(self.telegram_message, e, reasoning_markdown)
+                    await _send_error_message(self.telegram_message, e, reasoning_text)
             return
 
         if message_type == 'tool_call_message':
