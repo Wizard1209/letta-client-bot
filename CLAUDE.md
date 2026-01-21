@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**See also**: `CONTRIBUTION.md` for setup instructions, planned features, technical TODOs, and detailed policies.
+**See also**: @CONTRIBUTION.md for setup instructions, planned features, technical TODOs, and detailed policies.
 
 ## Project Overview
 
@@ -453,10 +453,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 
 ## Development Commands
 
-**See `CONTRIBUTION.md`** for complete development workflows including:
-- Adding new EdgeQL queries (`uv run gel-py` to generate Python modules)
-- Feature development checklist
-- Testing and deployment procedures
+See @CONTRIBUTION.md for complete development workflows.
 
 **Dependency management**: Use `uv` exclusively (NOT pip or poetry)
 
@@ -508,75 +505,16 @@ docker-compose -f deploy/docker-compose.yaml up -d --build
 
 Development scripts for Letta API operations live in `devscripts/`. Scripts use **sync Letta client** (not async) and **plain env loading** via `bootstrap.py`.
 
-### Running Scripts
-
 ```bash
 uv run python -m devscripts.list_identities
 uv run python -m devscripts.delete_agents agent-uuid1 agent-uuid2
 uv run python -m devscripts.folders list
-uv run python -m devscripts.folders delete folder-uuid1 folder-uuid2
-```
-
-### Testing Scripts
-
-```bash
 uv run python -m devscripts.test_folder_workflow        # Test folder attach/upload/detach cycle
-uv run python -m devscripts.test_folder_workflow --keep # Keep resources after test
-uv run python -m devscripts.test_upload_limits          # Find Letta file size limits
-uv run python -m devscripts.test_upload_limits --binary-search --min 1 --max 50
-```
-
-### Testing Custom Tools
-
-`run_tool.py` injects same context as Letta cloud runtime (`client`, `LETTA_AGENT_ID`):
-
-```bash
-uv run python -m devscripts.run_tool -l                              # list tools
+uv run python -m devscripts.run_tool -l                 # List tools
 uv run python -m devscripts.run_tool -a <agent-id> notify_via_telegram "Hello"
-uv run python -m devscripts.run_tool search_x_posts "TzKT" 24 20     # uses .agent_id file
 ```
 
-Agent ID sources: `--agent-id` CLI > `LETTA_AGENT_ID` env > `.agent_id` file
-
-### Writing Scripts
-
-Import from `devscripts.bootstrap`:
-
-```python
-"""Description of the script.
-
-Usage:
-    uv run python -m devscripts.my_script [args]
-"""
-
-from devscripts.bootstrap import env, letta, gel
-
-
-def main() -> None:
-    project_id = env('LETTA_PROJECT_ID')
-    agents = letta.agents.list()
-    users = gel.query('select User { telegram_id }')
-
-
-if __name__ == '__main__':
-    main()
-```
-
-**Bootstrap provides:**
-
-- `env(key, default=None)` - get env var
-- `letta` - sync Letta client
-- `gel` - sync Gel client
-
-**Key rules:**
-
-1. Sync clients only (no async/await)
-2. Import from `devscripts.bootstrap`, NOT `letta_bot.config`
-3. Use `env()` for env vars, NOT `CONFIG`
-4. Include usage docstring at top
-5. Use argparse for CLI args
-
-**Note:** devscripts are excluded from mypy and type annotation checks (see pyproject.toml)
+Writing conventions and bootstrap API documented in `.claude/rules/devscripts.md` (loads automatically when editing scripts).
 
 ## Code Quality Standards
 
@@ -951,108 +889,12 @@ Always test note rendering in Telegram:
 - **Automatic conversion** - `markdown_to_telegram()` converts to Telegram entities via `md_tg` module
 - **Same pipeline as agent responses** - info notes use identical formatting as agent message responses
 
-## EdgeQL Quick Reference
+## EdgeQL
 
-**Database**: Gel is a graph-relational database. EdgeQL is its query language, blending object-oriented, graph, and relational concepts.
+Gel is a graph-relational database using EdgeQL (object-oriented query language). Queries live in `letta_bot/queries/*.edgeql` and auto-generate Python modules.
 
-### Core Concepts
-
-**Objects and Links (not Tables and Foreign Keys)**:
-
-- Schema uses **object types** with **properties** and **links** (relations)
-- Example:
-
-  ```edgeql
-  type Person {
-    required name: str;
-  }
-
-  type Movie {
-    required title: str;
-    multi actors: Person;
-  }
-  ```
-
-**Structured Results (not Flat Rows)**:
-
-- Queries return nested objects, not flat row lists
-- No need for explicit JOINs - use shapes to fetch related data
-- Example:
-  ```edgeql
-  select Movie {
-    title,
-    actors: { name }
-  }
-  filter .title = "The Matrix"
-  ```
-
-**Composable and Strongly Typed**:
-
-- Embed queries within queries (subqueries, nested mutations)
-- Strongly typed - schema enforces consistency
-- Shape expressions (curly braces) dictate result structure
-
-### Syntax Patterns
-
-**Data Retrieval**:
-
-```edgeql
-# Basic select with nested data
-select Issue {
-  number,
-  status: { name },
-  assignee: { firstname, lastname }
-}
-filter .status.name = "Open"
+```bash
+uv run gel-py   # Regenerate Python modules after modifying .edgeql files
 ```
 
-**Data Modification**:
-
-```edgeql
-# Insert
-insert Person {
-  name := "Alice"
-}
-
-# Nested insert with links
-insert Movie {
-  title := "The Matrix Resurrections",
-  actors := (
-    select Person
-    filter .name in {"Keanu Reeves", "Carrie-Anne Moss"}
-  )
-}
-
-# Update
-update Person
-filter .name = "Alice"
-set {
-  name := "Alice Smith"
-}
-
-# Delete
-delete Person
-filter .name = "Alice Smith"
-```
-
-**WITH Blocks (temporary views)**:
-
-```edgeql
-with
-  active_users := select User filter .is_active
-select active_users {
-  firstname,
-  friends: { firstname }
-}
-```
-
-### Best Practices
-
-1. **Embrace Object Modeling**: Model data with object types and links; avoid translating legacy relational schemas directly
-2. **Favor Composability**: Use shapes and subqueries for readable, reusable query fragments
-3. **Leverage Nested Fetching**: Fetch complex object graphs directly using shapes instead of manual joins
-4. **Use Transactions**: Rely on transaction statements (`start transaction`, `commit`, `rollback`) for multi-step operations
-5. **Consistent Typing**: Maintain clear, strict type definitions in schemas
-
-- always use make check for mandatory pipeline
-- we have `devscripts/` folder for project development scripts and testing
+EdgeQL syntax reference and patterns documented in `.claude/rules/database.md` (loads automatically when editing queries).
