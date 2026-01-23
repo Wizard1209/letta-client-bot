@@ -292,9 +292,8 @@ async def clear_messages(message: Message, agent_id: str) -> None:
                 '🤖 ',
                 Bold(agent.name),
                 '\n\n',
-                '⚠️ Are you sure you want to clear messages from context?\n\n',
-                'This will remove all messages from your agent\'s context window. '
-                'It will not delete messages from history or affect the agent\'s memory.',
+                '⚠️ Clear context messages?\n\n',
+                'This won\'t affect memory or message history.',
             ).as_kwargs(),
             reply_markup=builder.as_markup(),
         )
