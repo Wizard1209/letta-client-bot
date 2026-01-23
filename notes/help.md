@@ -13,7 +13,7 @@
 /switch - Switch between your assistants
 /current - View current assistant info and memory status
 /context - View assistant context window breakdown
-/clearmsg - Clear message history of current assistant
+/clear - Clear message history of current assistant
 /access - Request general bot access (identity only, no assistant)
 /notify - Enable/disable proactive notifications
 

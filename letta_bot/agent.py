@@ -43,7 +43,7 @@ class SwitchAssistantCallback(CallbackData, prefix='switch'):
     agent_id: str
 
 
-class ClearMessagesCallback(CallbackData, prefix='clearmsg'):
+class ClearMessagesCallback(CallbackData, prefix='clear'):
     confirm: bool
 
 
@@ -266,7 +266,7 @@ async def context_handler(message: Message, agent_id: str) -> None:
 
 
 @agent_commands_router.message(
-    Command('clearmsg'), flags={'require_identity': True, 'require_agent': True}
+    Command('clear'), flags={'require_identity': True, 'require_agent': True}
 )
 async def clear_messages(message: Message, agent_id: str) -> None:
     """Show confirmation prompt for clearing message history."""
@@ -318,9 +318,7 @@ async def handle_clear_messages(
 
     if not callback_data.confirm:
         if isinstance(callback.message, Message):
-            await callback.message.edit_text(
-                **Text('❌ Cancelled').as_kwargs()
-            )
+            await callback.message.delete()
         await callback.answer()
         return
 
