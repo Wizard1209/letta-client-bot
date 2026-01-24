@@ -20,7 +20,6 @@ from letta_bot.errors import setup_error_handler
 from letta_bot.info import info_router, load_info_command_content
 from letta_bot.middlewares import setup_middlewares
 from letta_bot.response_handler import send_markdown_message
-from letta_bot.tools import tools_router
 
 LOGGER = logging.getLogger(__name__)
 
@@ -49,10 +48,8 @@ def setup_bot_handlers(dp: Dispatcher) -> None:
     LOGGER.info('Auth handlers initialized')
     # Agent messages and management commands
     # NOTE: all other messages fall to the agent
-    agent_commands_router.include_router(tools_router)
     agent_commands_router.include_router(agent_router)
     dp.include_router(agent_commands_router)
-    LOGGER.info('Tools handlers initialized')
     LOGGER.info('Agent handlers initialized')
 
 
@@ -103,7 +100,7 @@ if __name__ == '__main__':
 
     args: argparse.Namespace = parser.parse_args()
 
-    bot = Bot(CONFIG.bot_token)
+    bot = Bot(CONFIG.telegram_bot_token)
 
     if args.polling:
         asyncio.run(run_polling(bot, args))

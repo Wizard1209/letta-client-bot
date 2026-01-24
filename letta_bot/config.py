@@ -11,7 +11,7 @@ class Config(BaseSettings):
     else:
         model_config = SettingsConfigDict()
 
-    bot_token: str
+    telegram_bot_token: str
 
     webhook_host: str
     webhook_path: str = ''

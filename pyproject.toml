@@ -8,7 +8,7 @@ dependencies = [
   "aiogram>=3.22.0",
   "elevenlabs>=2.31.0",
   "gel>=3.1.0",
-  "letta-client>=1.6.5",
+  "letta-client==1.7.0",
   "mistune>=3.1.4",
   "openai>=2.8.1",
   "pydantic-settings>=2.11.0",
@@ -29,6 +29,7 @@ exclude = [
   "devscripts/",
   "letta_bot/queries/*_async_edgeql.py",
   "letta_bot/custom_tools/",
+  "letta_bot/_archived/",
 ]
 
 [tool.ruff.lint]
@@ -80,6 +81,7 @@ exclude = [
   "letta_bot/queries/.*_async_edgeql\\.py$",
   "devscripts/",
   "letta_bot/custom_tools/",
+  "letta_bot/_archived/",
   "tests/",
 ]
 plugins = ['pydantic.mypy']

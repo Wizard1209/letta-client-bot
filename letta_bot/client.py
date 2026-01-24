@@ -9,12 +9,10 @@ Isolating the client here prevents circular import issues.
 
 from contextlib import suppress
 import logging
-from pathlib import Path
 from typing import Any, BinaryIO
 
 from letta_client import APIError, AsyncLetta as LettaClient, ConflictError
-from letta_client.types.identity import Identity
-from letta_client.types.tool import Tool
+from letta_client.types.agent_state import Identity
 
 from letta_bot.config import CONFIG
 
@@ -112,8 +110,8 @@ async def create_agent_from_template(
     await client.templates.agents.create(**kwargs)
 
 
-async def get_default_agent(identity_id: str) -> str:
-    """Get the oldest agent for a given identity.
+async def get_oldest_agent_id(identity_id: str) -> str:
+    """Get the oldest agent ID for a given identity.
 
     Args:
         identity_id: The Letta identity ID
@@ -278,46 +276,3 @@ async def get_file_status(folder_id: str, file_id: str) -> str:
     if file_obj.processing_status == 'error':
         raise LettaProcessingError(file_obj.error_message or 'Unknown processing error')
     return file_obj.processing_status
-
-
-# =============================================================================
-# Tool Management
-# =============================================================================
-
-
-async def register_notify_tool() -> Tool:
-    """Register the notify_via_telegram tool with Letta from source file.
-
-    Returns:
-        The registered tool object
-
-    Raises:
-        Exception: If tool registration fails
-    """
-    tool_file = Path(__file__).parent / 'custom_tools' / 'notify_via_telegram.py'
-    source_code = tool_file.read_text()
-
-    return await client.tools.upsert(
-        source_code=source_code,
-        tags=['telegram', 'notification', 'messaging'],
-        default_requires_approval=False,
-    )
-
-
-async def register_schedule_message_tool() -> Tool:
-    """Register the schedule_message tool with Letta from source file.
-
-    Returns:
-        The registered tool object
-
-    Raises:
-        Exception: If tool registration fails
-    """
-    tool_file = Path(__file__).parent / 'custom_tools' / 'schedule_message.py'
-    source_code = tool_file.read_text()
-
-    return await client.tools.upsert(
-        source_code=source_code,
-        tags=['telegram', 'scheduling', 'delayed-message'],
-        default_requires_approval=False,
-    )

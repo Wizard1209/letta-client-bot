@@ -1,11 +1,11 @@
 ---
 name: update-docs
-description: Updates CLAUDE.md based on recent project changes. Use when user says "update docs", "add to CLAUDE.md", "document this", or runs /update-docs command.
+description: Updates CLAUDE.md and other project docs based on recent changes. Use when user says "update docs", "add to CLAUDE.md", "document this", or runs /update-docs command.
 ---
 
-# Update CLAUDE.md
+# Update Project Documentation
 
-Maintains project documentation by analyzing git history and syncing CLAUDE.md with code changes.
+Maintains project documentation by analyzing git history and syncing CLAUDE.md, help.md, botfather_commands.txt, and other docs with code changes.
 
 ## Quick Start
 
@@ -58,6 +58,23 @@ Sections found:
 For each affected area:
 1. **Existing sections needing updates** - list specific changes
 2. **New sections to add** - describe what they'd cover
+3. **Other documentation files** - check if changes require updates beyond CLAUDE.md
+
+#### Other Documentation Files
+
+When analyzing changes, also check these files:
+
+| Changed Files | Documentation to Update |
+|---------------|------------------------|
+| New `/command` handler in `auth.py`, `agent.py`, etc. | `notes/help.md`, `deploy/botfather_commands.txt` |
+| New user-facing agent tool | `notes/help.md` (if users need to know about it) |
+| Authorization or onboarding flow changes | `notes/about.md` |
+| User-facing features | `notes/changelog.md` (`[Latest additions]` section) |
+
+**Detection hints:**
+- New `@router.message(Command('...'))` → likely needs help.md + botfather_commands.txt
+- New tool in `custom_tools/` → check if user-facing or agent-internal
+- Changes to middleware flow → may affect about.md
 
 Present to engineer:
 ```
@@ -74,6 +91,11 @@ Changes detected since last CLAUDE.md update (<commit>):
 **Potential NEW sections:**
 • [Proposed Title] - would document X
   └─ files: new_module.py
+
+**Other docs to update:**
+• notes/help.md - new /command added
+• deploy/botfather_commands.txt - new /command added
+• notes/changelog.md - user-facing feature
 
 Which changes should I document?
 ```
@@ -111,7 +133,8 @@ git diff master -- CLAUDE.md
 ## Quality Checks
 
 Before finalizing:
-- [ ] All identified changes documented
+- [ ] All identified changes documented in CLAUDE.md
+- [ ] Other docs updated (help.md, botfather_commands.txt, about.md, changelog.md)
 - [ ] No merge conflicts with master
 - [ ] Matches existing formatting style
 - [ ] Cross-references still valid
