@@ -4,7 +4,6 @@ switch - Switch between your assistants
 current - View current assistant info and memory usage
 context - Show context window breakdown for current assistant
 access - Request general bot access (no assistant)
-notify - Enable proactive assistant behavior
 help - How to use the bot
 about - About available assistants
 privacy - Privacy policy

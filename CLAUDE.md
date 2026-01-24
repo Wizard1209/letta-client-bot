@@ -421,7 +421,9 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - `open_files`: "📂 Opening files..." with file list and line ranges
   - `grep_files`: "🔍 Searching in files..." with pattern, filter, and context lines
   - `semantic_search_files`: "🔍 Searching by meaning..." with query and limit
-  - `schedule_message`: "⏱️ Setting self activation..." with human-readable delay and message
+  - `schedule_message`: "⏱️ Setting self activation..." with human-readable delay/cron and message
+  - `list_scheduled_messages`: "📋 Checking scheduled messages..."
+  - `delete_scheduled_message`: "🗑️ Canceling scheduled message..." with schedule ID
   - `notify_via_telegram`: "📲 Sending message..." with owner-only indicator
   - Generic tools: "🔧 Using tool..." with tool name and JSON arguments
 - **Message formatting pipeline**:
@@ -667,8 +669,6 @@ Environment variables via `.env` (provide `.env.example`):
 - `BACKEND_PORT` - Port for the webhook server (default: `80`)
 - `GEL_INSTANCE` - Gel/EdgeDB instance identifier (required for Gel storage)
 - `GEL_SECRET_KEY` - Gel/EdgeDB authentication secret key (required for Gel storage)
-- `SCHEDULER_URL` - Scheduler service base URL for schedule_message tool (delayed message delivery)
-- `SCHEDULER_API_KEY` - Scheduler API key for schedule_message tool (delayed message delivery)
 - `ADMIN_IDS` - Comma-separated list of Telegram user IDs with admin access (if not set, no admin commands available)
 - `INFO_DIR` - Absolute path to directory containing info markdown files (default: `<project_root>/notes`)
 - `LOGGING_LEVEL` - Logging verbosity level (default: `INFO`, options: DEBUG, INFO, WARNING, ERROR, CRITICAL)

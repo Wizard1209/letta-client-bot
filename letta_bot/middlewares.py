@@ -50,7 +50,8 @@ async def _validate_selected_agent(
     """
     try:
         agent = await client.agents.retrieve(
-            agent_id, include=AGENT_INCLUDE  # type: ignore[arg-type]
+            agent_id,
+            include=AGENT_INCLUDE,  # type: ignore[arg-type]
         )
     except NotFoundError:
         return None
@@ -357,7 +358,8 @@ class AgentMiddleware(BaseMiddleware):
                 )
                 return None
             agent = await client.agents.retrieve(
-                agent_id, include=AGENT_INCLUDE  # type: ignore[arg-type]
+                agent_id,
+                include=AGENT_INCLUDE,  # type: ignore[arg-type]
             )
             selection_changed = True
 

@@ -14,16 +14,11 @@
 /current - View current assistant info and memory status
 /context - View assistant context window breakdown
 /access - Request general bot access (identity only, no assistant)
-/notify - Enable/disable proactive notifications
 
 ──────────────────────────────
 
 **How to Use**
 
 Use /new to browse available AI assistant templates and create yours. An administrator will review and approve your request.
-
-**Proactive Notifications**
-
-Use /notify to allow your assistant to send you messages on its own initiative and schedule reminders for itself.
 
 Need help? Use /contact to reach support.
