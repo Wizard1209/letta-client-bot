@@ -10,8 +10,10 @@ from aiogram.types.base import TelegramObject
 from aiogram.utils.formatting import Text
 from gel import AsyncIOExecutor
 from letta_client import NotFoundError
+from letta_client.types.agent_state import AgentState
 
-from letta_bot.client import client, get_agent_identity_ids, get_default_agent
+from letta_bot.client import client, get_oldest_agent_id
+from letta_bot.config import CONFIG
 from letta_bot.queries.get_allowed_identity_async_edgeql import (
     get_allowed_identity as get_allowed_identity_query,
 )
@@ -28,6 +30,46 @@ from letta_bot.utils import async_cache
 LOGGER = logging.getLogger(__name__)
 
 upsert_user_cached = async_cache(ttl=43200)(upsert_user)
+
+
+# =============================================================================
+# Agent Resolution Helpers
+# =============================================================================
+
+AGENT_INCLUDE = ['agent.identities', 'agent.secrets']
+
+
+async def _validate_selected_agent(
+    agent_id: str,
+    identity_id: str,
+) -> AgentState | None:
+    """Validate agent exists and available to the identity.
+
+    Returns:
+        AgentState if valid, None if not found or doesn't belong to identity
+    """
+    try:
+        agent = await client.agents.retrieve(
+            agent_id, include=AGENT_INCLUDE  # type: ignore[arg-type]
+        )
+    except NotFoundError:
+        return None
+
+    identity_ids = [i.id for i in (agent.identities or [])]
+    if identity_id not in identity_ids:
+        return None
+
+    return agent
+
+
+async def _set_secrets(agent: AgentState) -> None:
+    """Inject required secrets if missing."""
+    has_token = any(s.key == 'TELEGRAM_BOT_TOKEN' for s in (agent.secrets or []))
+    if not has_token:
+        LOGGER.info(f'Injecting TELEGRAM_BOT_TOKEN for agent {agent.id}')
+        await client.agents.update(
+            agent.id, secrets={'TELEGRAM_BOT_TOKEN': CONFIG.telegram_bot_token}
+        )
 
 
 class MediaGroupMiddleware(BaseMiddleware):
@@ -259,18 +301,14 @@ class IdentityMiddleware(BaseMiddleware):
 
 
 class AgentMiddleware(BaseMiddleware):
-    """Middleware that ensures user has a valid selected agent.
+    """Resolve identity to a ready-to-use agent.
 
-    Prerequisites: IdentityMiddleware must run first (provides identity in data).
-
-    If check passes, injects agent_id into handler data.
-    If check fails, sends error message and blocks handler execution.
-
-    Behavior:
-    1. If no selected_agent: auto-selects the oldest agent
-    2. If selected_agent exists: validates it still belongs to identity
-    3. If validation fails: tries to auto-select another agent
-    4. If no agents available: sends error and blocks handler
+    Linear state machine:
+    1. RESOLVE    → get agent (existing or default)
+    2. SET_SECRETS → inject token if missing
+    3. PERSIST    → save selection if changed
+    4. NOTIFY     → inform user if changed
+    5. INJECT     → data['agent_id']
     """
 
     async def __call__(
@@ -284,13 +322,12 @@ class AgentMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         if not get_flag(data, 'require_identity'):
-            LOGGER.critical('require_agent middleware without identity')
-            raise RuntimeError('require_agent middleware without identity')
+            raise RuntimeError('require_agent flag requires require_identity flag')
 
         # Required for business logic - require Message or CallbackQuery
         if not isinstance(event, (Message, CallbackQuery)):
             raise TypeError(
-                f'require_identity flag on unsupported event type: {type(event).__name__}'
+                f'require_agent flag on unsupported event type: {type(event).__name__}'
             )
 
         # Required for business logic - require from_user, type already verified
@@ -302,44 +339,49 @@ class AgentMiddleware(BaseMiddleware):
         # Get identity from data (injected by IdentityMiddleware)
         identity = cast(GetIdentityResult, data['identity'])
 
-        # TODO: streamline all the selection logic, i believe it could be much cleaner
-        agent_id: str | None = identity.selected_agent
-        reselect = False
+        # 1. RESOLVE: existing selection → default
+        agent: AgentState | None = None
+        selection_changed = False
 
-        if agent_id:
-            # Validate agent still belongs to user
-            try:
-                identity_ids = await get_agent_identity_ids(agent_id)
-                if identity.identity_id not in identity_ids:
-                    agent_id = None
-                    reselect = True
-            except NotFoundError:
-                # Agent was deleted
-                agent_id = None
-                reselect = True
+        if identity.selected_agent:
+            agent = await _validate_selected_agent(
+                identity.selected_agent, identity.identity_id
+            )
 
-        if agent_id is None:
+        if agent is None:
             try:
-                agent_id = await get_default_agent(identity.identity_id)
-                agent = await client.agents.retrieve(agent_id)
-                # Save newly selected agent
-                await set_selected_agent_query(
-                    gel_client, identity_id=identity.identity_id, agent_id=agent_id
-                )
-                if reselect:
-                    msg = f'🔄 Switched to {agent.name} (previous unavailable)'
-                else:
-                    msg = f'🤖 Auto-selected assistant {agent.name}'
-                await event.answer(**Text(msg).as_kwargs())
+                agent_id = await get_oldest_agent_id(identity.identity_id)
             except IndexError:
-                # Authorization - no agents available
                 await event.answer(
                     **Text('❌ No assistants yet — use /new to request one').as_kwargs()
                 )
                 return None
+            agent = await client.agents.retrieve(
+                agent_id, include=AGENT_INCLUDE  # type: ignore[arg-type]
+            )
+            selection_changed = True
 
-        # Inject agent_id into handler data
-        data['agent_id'] = agent_id
+        # 2. SET_SECRETS
+        await _set_secrets(agent)
+
+        # 3. PERSIST
+        if selection_changed:
+            await set_selected_agent_query(
+                gel_client, identity_id=identity.identity_id, agent_id=agent.id
+            )
+
+        # 4. NOTIFY
+        if selection_changed:
+            was_reselect = identity.selected_agent is not None
+            msg = (
+                f'🔄 Switched to {agent.name} (previous unavailable)'
+                if was_reselect
+                else f'🤖 Auto-selected assistant {agent.name}'
+            )
+            await event.answer(**Text(msg).as_kwargs())
+
+        # 5. INJECT
+        data['agent_id'] = agent.id
         return await handler(event, data)
 
 

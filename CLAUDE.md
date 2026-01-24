@@ -903,3 +903,27 @@ uv run gel-py   # Regenerate Python modules after modifying .edgeql files
 ```
 
 EdgeQL syntax reference and patterns documented in `.claude/rules/database.md` (loads automatically when editing queries).
+
+## Letta Python SDK API Reference
+
+**Source of truth**: Local SDK at `.venv/lib/python3.13/site-packages/letta_client/`
+
+- `resources/` - available client methods
+- `types/` - response/request types
+
+**Direct HTTP pattern** (for endpoints removed from SDK):
+
+```python
+from letta_client.types.agent_state import Identity
+
+identities = await client.get(
+    '/v1/identities/',
+    cast_to=list[Identity],
+    options={'params': {'identifier_key': 'tg-123'}},
+)
+```
+
+## External References
+
+- **Letta Python SDK Changelog**: https://github.com/letta-ai/letta-python/blob/main/CHANGELOG.md
+- **Letta Docs**: https://docs.letta.com/

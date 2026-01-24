@@ -548,7 +548,7 @@ wheels = [
 
 [[package]]
 name = "letta-client"
-version = "1.6.5"
+version = "1.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -558,9 +558,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e3/78/b9fd25d48bb3f3dca1f8c857ea682b3154fb806bbb79a00653042dce22b9/letta_client-1.6.5.tar.gz", hash = "sha256:6ee89b3165d1e98653c59a918688700fd86dfd34f3cab53d1c854bf71e158567", size = 263048 }
+sdist = { url = "https://files.pythonhosted.org/packages/20/b8/8e527339cac25c7f5d51c70ce969440b9e0a11efd7db14bbbaefeaa0ec91/letta_client-1.7.0.tar.gz", hash = "sha256:6baf5c025e1f2859cd5ea278048eb1c892dd56d2071742d413bab386c4e90e23", size = 270079 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/62/ff/23edcc22ae366e40b1b5fe34bcfc88db8a4086ae71960addafc9748ac749/letta_client-1.6.5-py3-none-any.whl", hash = "sha256:82119aa68562ffaa03cf8644716a720f184550aa9d8b82c2ac8f79ab798de10a", size = 407356 },
+    { url = "https://files.pythonhosted.org/packages/3e/06/393b7e7fa4af35e4e9dc49b7fbf381b224749b501fe79e953900e9980902/letta_client-1.7.0-py3-none-any.whl", hash = "sha256:025cfdfed8f545a6f91551c798f53139600914fdca001576618e6ca62a347e7a", size = 415599 },
 ]
 
 [[package]]
@@ -589,7 +589,7 @@ requires-dist = [
     { name = "aiogram", specifier = ">=3.22.0" },
     { name = "elevenlabs", specifier = ">=2.31.0" },
     { name = "gel", specifier = ">=3.1.0" },
-    { name = "letta-client", specifier = ">=1.6.5" },
+    { name = "letta-client", specifier = "==1.7.0" },
     { name = "mistune", specifier = ">=3.1.4" },
     { name = "openai", specifier = ">=2.8.1" },
     { name = "pydantic-settings", specifier = ">=2.11.0" },

@@ -175,6 +175,12 @@ def _format_tool_by_name(
         case 'schedule_message':
             return _format_schedule_message(args_obj)
 
+        case 'list_scheduled_messages':
+            return _format_list_scheduled_messages(args_obj)
+
+        case 'delete_scheduled_message':
+            return _format_delete_scheduled_message(args_obj)
+
         case 'notify_via_telegram':
             return _format_notify_via_telegram(args_obj)
 
@@ -305,11 +311,15 @@ def _format_schedule_message(args_obj: dict[str, Any]) -> dict[str, Any]:
     message_to_self = args_obj.get('message_to_self', '')
     delay_seconds = args_obj.get('delay_seconds')
     schedule_at = args_obj.get('schedule_at', '')
+    cron_expression = args_obj.get('cron_expression', '')
 
     elements: list[Any] = [Italic('⏱️ Setting self activation...')]
 
     # Show timing first (most important info)
-    if delay_seconds is not None:
+    if cron_expression:
+        # Recurring schedule with cron expression
+        elements.append(Text(Bold('Schedule: '), f'recurring ({cron_expression})'))
+    elif delay_seconds is not None and delay_seconds > 0:
         td = timedelta(seconds=delay_seconds)
         total_seconds = int(td.total_seconds())
 
@@ -336,6 +346,21 @@ def _format_schedule_message(args_obj: dict[str, Any]) -> dict[str, Any]:
     elements.append(as_key_value('Message', f'"{message_to_self}"'))
 
     return as_line(*elements, sep='\n').as_kwargs()
+
+
+def _format_list_scheduled_messages(args_obj: dict[str, Any]) -> dict[str, Any]:
+    """Format list_scheduled_messages tool call."""
+    return Italic('📋 Checking scheduled messages...').as_kwargs()
+
+
+def _format_delete_scheduled_message(args_obj: dict[str, Any]) -> dict[str, Any]:
+    """Format delete_scheduled_message tool call."""
+    scheduled_message_id = args_obj.get('scheduled_message_id', '')
+    return as_line(
+        Italic('🗑️ Canceling scheduled message...'),
+        as_key_value('ID', scheduled_message_id),
+        sep='\n',
+    ).as_kwargs()
 
 
 def _format_notify_via_telegram(args_obj: dict[str, Any]) -> dict[str, Any]:

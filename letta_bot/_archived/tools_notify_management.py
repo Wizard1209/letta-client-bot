@@ -1,4 +1,16 @@
-"""Tool management: attach, detach, and configure tools for agents."""
+"""ARCHIVED: Tool management for /notify command.
+
+This module was archived when scheduling tools moved to agent templates.
+The /notify command dynamically attached/detached:
+- schedule_message, list_scheduled_messages, delete_scheduled_message
+- notify_via_telegram (requires TELEGRAM_BOT_TOKEN env var)
+- proactive_messaging_protocol memory block
+
+Preserved for reference - may be repurposed for future tool management commands.
+
+Original module: letta_bot/tools.py
+Archived: 2025-01-22
+"""
 
 from enum import Enum
 import hashlib
@@ -14,7 +26,13 @@ from aiogram.utils.formatting import Bold, Code, Text, as_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from letta_client.types.agent_state import AgentState
 
-from letta_bot.client import client, register_notify_tool, register_schedule_message_tool
+from letta_bot.client import (
+    client,
+    register_delete_scheduled_message_tool,
+    register_list_scheduled_messages_tool,
+    register_notify_tool,
+    register_schedule_message_tool,
+)
 from letta_bot.config import CONFIG
 from letta_bot.utils import version_needs_update
 
@@ -22,12 +40,12 @@ LOGGER = logging.getLogger(__name__)
 
 # Memory block configuration (must be before functions that use them)
 NOTIFICATION_TOOL_BLOCK_LABEL = 'proactive_messaging_protocol'
-NOTIFICATION_TOOL_BLOCK_VERSION = '1.1.1'
+NOTIFICATION_TOOL_BLOCK_VERSION = '2.0.0'
 NOTIFICATION_MEMORY_BLOCK_DESC = (
-    'How to use scheduling and notification tools to enable proactive behavior: '
-    'scheduling reminders and follow-ups, sending notifications at specific times '
-    'across timezones, creating recurring check-ins, understanding conversational '
-    'vs silent communication modes, context preservation, and timing verification'
+    'How to act proactively: schedule future messages to yourself, reach users via '
+    'notify_via_telegram. Covers scheduling patterns (delay/timestamp/cron), timezone '
+    'handling, schedule management. Key rule: system message responses are invisible '
+    'to the user.'
 )
 
 
@@ -49,9 +67,15 @@ class ToolUpdateStatus(NamedTuple):
 
 
 def _is_schedule_connected(agent: AgentState) -> bool:
-    """Check if schedule_message tool is attached."""
+    """Check if scheduling tools are attached (all three required)."""
     tools = agent.tools or []
-    return any(t.name == 'schedule_message' for t in tools)
+    tool_names = {t.name for t in tools}
+    required_tools = {
+        'schedule_message',
+        'list_scheduled_messages',
+        'delete_scheduled_message',
+    }
+    return required_tools.issubset(tool_names)
 
 
 def _is_notify_connected(agent: AgentState) -> bool:
@@ -93,19 +117,21 @@ def _check_code_match(agent: AgentState, tool_name: str) -> bool:
 
 
 def _check_schedule_current(agent: AgentState) -> ToolUpdateStatus:
-    """Check if schedule_message tool code and env vars are current.
+    """Check if scheduling tools code is current.
 
-    Note: LETTA_AGENT_ID is injected by Letta runtime, not by us.
+    Native Letta scheduling API doesn't require env vars - client is injected
+    by runtime. Checks all three scheduling tools: schedule_message,
+    list_scheduled_messages, delete_scheduled_message.
     """
-    env_vars = agent.tool_exec_environment_variables or []
-    env_dict = {v.key: v.value for v in env_vars}
+    # Check code match for all three scheduling tools
+    schedule_match = _check_code_match(agent, 'schedule_message')
+    list_match = _check_code_match(agent, 'list_scheduled_messages')
+    delete_match = _check_code_match(agent, 'delete_scheduled_message')
 
-    code_match = _check_code_match(agent, 'schedule_message')
-    env_match = (
-        env_dict.get('LETTA_API_KEY') == CONFIG.letta_api_key
-        and env_dict.get('SCHEDULER_URL') == CONFIG.scheduler_url
-        and env_dict.get('SCHEDULER_API_KEY') == CONFIG.scheduler_api_key
-    )
+    code_match = schedule_match and list_match and delete_match
+
+    # Native API doesn't need env vars - always consider env as matching
+    env_match = True
 
     return ToolUpdateStatus(code_match=code_match, env_match=env_match)
 
@@ -116,7 +142,7 @@ def _check_notify_current(agent: AgentState) -> ToolUpdateStatus:
     env_dict = {v.key: v.value for v in env_vars}
 
     code_match = _check_code_match(agent, 'notify_via_telegram')
-    env_match = env_dict.get('TELEGRAM_BOT_TOKEN') == CONFIG.bot_token
+    env_match = env_dict.get('TELEGRAM_BOT_TOKEN') == CONFIG.telegram_bot_token
 
     return ToolUpdateStatus(code_match=code_match, env_match=env_match)
 
@@ -458,16 +484,6 @@ def _render_status(
 async def handle_notify_enable(message: Message, agent_id: str) -> None:
     """Enable proactive behavior for the agent (reminders, follow-ups, notifications)."""
     try:
-        # Check if Scheduler API key is configured
-        if not CONFIG.scheduler_api_key:
-            await message.edit_text(
-                **Text(
-                    '❌ Scheduled messages require SCHEDULER_API_KEY to be configured. '
-                    'Please contact the administrator.'
-                ).as_kwargs()
-            )
-            return
-
         agent = await client.agents.retrieve(agent_id=agent_id)
 
         # STEP 1: Enable Scheduling (schedule_message)
@@ -513,45 +529,35 @@ async def handle_notify_update(message: Message, agent_id: str) -> None:
 
 
 async def _enable_schedule_tool(agent_id: str) -> None:
-    """Enable schedule_message tool - completely separate logic."""
-    # Validate required config
-    if not CONFIG.scheduler_url or not CONFIG.scheduler_api_key:
-        raise ValueError('SCHEDULER_URL and SCHEDULER_API_KEY must be configured')
+    """Enable all scheduling tools using Letta's native scheduling API.
 
-    # Check if tool exists and register/attach it
+    Registers and attaches three tools:
+    - schedule_message: Create one-time or recurring schedules
+    - list_scheduled_messages: View active schedules
+    - delete_scheduled_message: Cancel scheduled messages
+
+    Note: Native API doesn't require env vars - client is injected by Letta runtime.
+    """
+    # Register all scheduling tools
     schedule_tool = await register_schedule_message_tool()
+    list_tool = await register_list_scheduled_messages_tool()
+    delete_tool = await register_delete_scheduled_message_tool()
 
-    # Attach tool if not already attached (check ALL tools)
-    if schedule_tool.id:
-        tool_already_attached = False
-        async for tool in client.agents.tools.list(agent_id=agent_id):
-            if tool.id == schedule_tool.id:
-                tool_already_attached = True
-                break
+    # Get currently attached tools
+    attached_tool_ids: set[str] = set()
+    async for tool in client.agents.tools.list(agent_id=agent_id):
+        if tool.id:
+            attached_tool_ids.add(tool.id)
 
-        if not tool_already_attached:
-            await client.agents.tools.attach(agent_id=agent_id, tool_id=schedule_tool.id)
-            LOGGER.info(
-                f'Attached schedule_message tool {schedule_tool.id} to agent {agent_id}'
-            )
-
-    # Set up environment variables for scheduling
-    # Note: LETTA_AGENT_ID is injected by Letta runtime, not by us
-    agent = await client.agents.retrieve(agent_id=agent_id)
-    current_env_vars = agent.tool_exec_environment_variables or []
-
-    env_dict: dict[str, str] = {
-        var.key: var.value
-        for var in current_env_vars
-        if hasattr(var, 'key') and hasattr(var, 'value') and var.value is not None
-    }
-
-    # Add scheduling env vars (LETTA_AGENT_ID is injected by Letta runtime)
-    env_dict['LETTA_API_KEY'] = CONFIG.letta_api_key
-    env_dict['SCHEDULER_URL'] = CONFIG.scheduler_url
-    env_dict['SCHEDULER_API_KEY'] = CONFIG.scheduler_api_key
-
-    await client.agents.update(agent_id=agent_id, secrets=env_dict)
+    # Attach each tool if not already attached
+    for tool, tool_name in [
+        (schedule_tool, 'schedule_message'),
+        (list_tool, 'list_scheduled_messages'),
+        (delete_tool, 'delete_scheduled_message'),
+    ]:
+        if tool.id and tool.id not in attached_tool_ids:
+            await client.agents.tools.attach(agent_id=agent_id, tool_id=tool.id)
+            LOGGER.info(f'Attached {tool_name} tool {tool.id} to agent {agent_id}')
 
 
 async def _enable_notify_tool(agent_id: str) -> None:
@@ -586,7 +592,7 @@ async def _enable_notify_tool(agent_id: str) -> None:
         if hasattr(var, 'key') and hasattr(var, 'value') and var.value is not None
     }
 
-    env_dict['TELEGRAM_BOT_TOKEN'] = CONFIG.bot_token
+    env_dict['TELEGRAM_BOT_TOKEN'] = CONFIG.telegram_bot_token
 
     await client.agents.update(agent_id=agent_id, secrets=env_dict)
 
@@ -625,33 +631,30 @@ async def handle_notify_disable(message: Message, agent_id: str) -> None:
 
 
 async def _disable_schedule_tool(agent_id: str) -> None:
-    """Disable schedule_message tool - completely separate logic."""
-    # Detach the tool (search ALL tools)
-    schedule_tool = None
-    async for tool in client.agents.tools.list(agent_id=agent_id):
-        if tool.name == 'schedule_message':
-            schedule_tool = tool
-            break
+    """Disable all scheduling tools.
 
-    if schedule_tool and schedule_tool.id:
-        await client.agents.tools.detach(agent_id=agent_id, tool_id=schedule_tool.id)
-        LOGGER.info(f'Detached schedule_message tool from agent {agent_id}')
+    Detaches three tools:
+    - schedule_message
+    - list_scheduled_messages
+    - delete_scheduled_message
 
-    # Remove environment variables (LETTA_AGENT_ID is injected by Letta runtime, not ours)
-    agent = await client.agents.retrieve(agent_id=agent_id)
-    current_env_vars = agent.tool_exec_environment_variables or []
-
-    filtered_vars: dict[str, str] = {
-        var.key: var.value
-        for var in current_env_vars
-        if hasattr(var, 'key')
-        and hasattr(var, 'value')
-        and var.value is not None
-        and var.key not in ('LETTA_API_KEY', 'SCHEDULER_URL', 'SCHEDULER_API_KEY')
+    Note: Native API doesn't use env vars, so nothing to clean up.
+    """
+    # Find and detach all scheduling tools
+    scheduling_tool_names = {
+        'schedule_message',
+        'list_scheduled_messages',
+        'delete_scheduled_message',
     }
-    await client.agents.update(
-        agent_id=agent_id, tool_exec_environment_variables=filtered_vars
-    )
+    tools_to_detach: list[tuple[str, str]] = []
+
+    async for tool in client.agents.tools.list(agent_id=agent_id):
+        if tool.name in scheduling_tool_names and tool.id:
+            tools_to_detach.append((tool.id, tool.name))
+
+    for tool_id, tool_name in tools_to_detach:
+        await client.agents.tools.detach(agent_id=agent_id, tool_id=tool_id)
+        LOGGER.info(f'Detached {tool_name} tool from agent {agent_id}')
 
 
 async def _disable_notify_tool(agent_id: str) -> None:
