@@ -35,6 +35,7 @@ LOGGER = logging.getLogger(__name__)
 # Telegram message limit in characters
 TELEGRAM_MAX_LEN = 4096
 
+
 # =============================================================================
 # Stream Event Formatting (Helper Functions)
 # =============================================================================
@@ -659,6 +660,7 @@ async def send_reasoning_message(message: Message, reasoning_text: str) -> None:
     """Send reasoning message with expandable blockquote.
 
     Header stays visible, content is wrapped in expandable_blockquote.
+    Code blocks (```) are stripped (pre entities break blockquote).
 
     Args:
         message: Telegram message to reply to
@@ -666,7 +668,7 @@ async def send_reasoning_message(message: Message, reasoning_text: str) -> None:
     """
     chunks = merge_with_entity(
         header=Italic('Agent reasoning:'),
-        content=reasoning_text,
+        content=reasoning_text.replace('```', ''),
         entity_type='expandable_blockquote',
     )
     for text, entities in chunks:

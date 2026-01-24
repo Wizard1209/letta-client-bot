@@ -43,6 +43,10 @@ class SwitchAssistantCallback(CallbackData, prefix='switch'):
     agent_id: str
 
 
+class ClearMessagesCallback(CallbackData, prefix='clear'):
+    confirm: bool
+
+
 @agent_commands_router.message(Command('switch'), flags={'require_identity': True})
 async def switch(message: Message, identity: GetIdentityResult) -> None:
     """List user's assistants and allow switching between them."""
@@ -259,6 +263,77 @@ async def context_handler(message: Message, agent_id: str) -> None:
     except Exception as e:
         LOGGER.error(f'Error fetching context info: {e}')
         await status_msg.edit_text(**Text('❌ Error fetching context info').as_kwargs())
+
+
+@agent_commands_router.message(
+    Command('clear'), flags={'require_identity': True, 'require_agent': True}
+)
+async def clear_messages(message: Message, agent_id: str) -> None:
+    """Show confirmation prompt for clearing message history."""
+    if not message.from_user:
+        return
+
+    try:
+        agent = await client.agents.retrieve(agent_id)
+
+        builder = InlineKeyboardBuilder()
+        builder.button(
+            text='❌ Cancel',
+            callback_data=ClearMessagesCallback(confirm=False).pack(),
+        )
+        builder.button(
+            text='🗑️ Clear',
+            callback_data=ClearMessagesCallback(confirm=True).pack(),
+        )
+        builder.adjust(2)
+
+        await message.answer(
+            **Text(
+                '🤖 ',
+                Bold(agent.name),
+                '\n\n',
+                '⚠️ Clear context messages?\n\n',
+                'This won\'t affect memory or message history.',
+            ).as_kwargs(),
+            reply_markup=builder.as_markup(),
+        )
+
+    except APIError as e:
+        LOGGER.error(f'Error retrieving agent {agent_id}: {e}')
+        await message.answer(**Text('❌ Error retrieving assistant info').as_kwargs())
+
+
+@agent_commands_router.callback_query(
+    ClearMessagesCallback.filter(), flags={'require_identity': True, 'require_agent': True}
+)
+async def handle_clear_messages(
+    callback: CallbackQuery,
+    callback_data: ClearMessagesCallback,
+    agent_id: str,
+) -> None:
+    """Handle message history clearing confirmation."""
+    if not callback.from_user or not callback.message:
+        return
+
+    if not callback_data.confirm:
+        if isinstance(callback.message, Message):
+            await callback.message.delete()
+        await callback.answer()
+        return
+
+    try:
+        await client.agents.messages.reset(agent_id=agent_id)
+
+        if isinstance(callback.message, Message):
+            await callback.message.edit_text(
+                **Text('✅ Message history cleared').as_kwargs()
+            )
+
+        await callback.answer('✅ Cleared')
+
+    except APIError as e:
+        LOGGER.error(f'Error clearing messages for agent {agent_id}: {e}')
+        await callback.answer('❌ Error clearing messages')
 
 
 @agent_router.message(flags={'require_identity': True, 'require_agent': True})

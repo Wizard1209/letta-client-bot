@@ -9,15 +9,16 @@ All notable changes to this project will be documented in this file.
 • Document upload: send files (PDF, code, text, markdown, configs) to your assistant for analysis and RAG-indexed search (~10MB limit)
 • ElevenLabs Scribe transcription engine: alternative to OpenAI Whisper with 100MB file size limit and automatic language detection (prioritized when API key configured)
 • Native scheduling tools: schedule with delay, timestamp, or cron expressions; list and delete scheduled messages via Letta's built-in API
+• `/clear` command to clear messages from agent's context window
 
 **Changed:**
 • Renamed `/botaccess` → `/access` with clearer description emphasizing this grants general bot access only (identity), not assistant capabilities
-
-**Removed:**
-• `/notify` command: scheduling now built into agents via native Letta API (no setup required)
 • Album uploads now rejected with clear "send one file at a time" message
 • Reasoning messages now display in collapsible blockquote (tap to expand full reasoning)
 • Message formatting migrated to native Telegram entities via custom md_tg module (replaces telegramify-markdown library)
+
+**Removed:**
+• `/notify` command: scheduling now built into agents via native Letta API (no setup required)
 
 **[1.1.0] - 2025-12-09**
 
