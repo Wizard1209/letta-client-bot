@@ -5,7 +5,6 @@ current - View current assistant info and memory usage
 context - Show context window breakdown for current assistant
 clear - Clear message history of current assistant
 access - Request general bot access (no assistant)
-notify - Enable proactive assistant behavior
 help - How to use the bot
 about - About available assistants
 privacy - Privacy policy
