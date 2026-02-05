@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A production-ready multi-user Telegram bot that leverages **Letta's identity system** for per-user agent isolation. Unlike the official letta-telegram bot (chat-scoped for single-user use), this bot is user-scoped and designed for larger client deployments with custom authentication.
+A production-ready multi-user Telegram bot with **tag-based per-user agent isolation**. Unlike the official letta-telegram bot (chat-scoped for single-user use), this bot is user-scoped and designed for larger client deployments with custom authentication.
 
 ## High-Level Architecture Summary
 
 ### Core Concept
 
-Multi-user Telegram bot that manages per-user Letta agents through an identity-based authorization system. Users request agents from available templates, admins approve requests, and the bot handles identity creation and agent provisioning.
+Multi-user Telegram bot that manages per-user Letta agents through a tag-based authorization system. Users request agents from available templates, admins approve requests, and the bot handles agent provisioning with identity tags.
 
 ### Key Principles
 
@@ -21,14 +21,14 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 
 ## Core Architecture
 
-### Letta Identity System
+### Tag-Based Identity System
 
-- **Single API key with per-user isolation**: Server manages one Letta API key; each Telegram user maps to a unique Letta identity
-- **Flow**: `Telegram User → Letta Identity → Agents with identity_ids`
-- **Identity format**: Identities use `tg-{telegram_id}` prefix as `identifier_key` (e.g., `tg-123456789`)
-- **Identity creation with retry logic**: Attempts creation first; if identity exists, retrieves it by identifier_key
-- **Agent operations** use `identity_ids=[identity.id]` for automatic scoping; list agents via identity-specific endpoints
-- **Selected agent tracking**: Each identity stores `selected_agent` ID for message routing; auto-selects oldest agent if none set
+- **Single API key with per-user isolation**: Server manages one Letta API key; each Telegram user is associated with agents via tags
+- **Flow**: `Telegram User → Local Identity Record → Agents with identity-tg-{telegram_id} tags`
+- **Tag format**: Agents use `identity-tg-{telegram_id}` for access control, `owner-tg-{telegram_id}` for ownership, `creator-tg-{telegram_id}` for creator tracking
+- **No external identity API**: Identity records are local (database only), no Letta Identity API calls needed
+- **Agent operations** filter by `identity-tg-{telegram_id}` tag; access validation checks tag presence on agent
+- **Selected agent tracking**: Each local identity stores `selected_agent` ID for message routing; auto-selects oldest agent if none set
 
 ### Agent Templates
 
@@ -49,7 +49,7 @@ Multi-user Telegram bot that manages per-user Letta agents through an identity-b
 **Database Schema (Object Types)**:
 
 - **User**: Telegram user information (telegram_id, username, first_name, full_name)
-- **Identity**: Letta identity mapping (identifier_key, identity_id, selected_agent)
+- **Identity**: Local identity record (identifier_key, selected_agent) — no Letta identity UUID stored
 - **AuthorizationRequest**: Access requests with status tracking (pending/allowed/denied)
 
 **Generated Query Modules**:
@@ -99,10 +99,10 @@ The bot uses **Aiogram's middleware system** for dependency injection and access
 
 - Triggered by `flags={'require_agent': True}` (requires `require_identity` too)
 - **Validation flow**:
-  1. If `selected_agent` exists: validate via `get_agent_identity_ids()`
+  1. If `selected_agent` exists: validate user has access via `identity-tg-{telegram_id}` tag
   2. If `NotFoundError`: agent deleted, trigger reselect
-  3. If identity not in agent's identities: trigger reselect
-  4. If no `selected_agent` or reselect needed: auto-select oldest agent via `get_default_agent()`
+  3. If user's identity tag not in agent's tags: trigger reselect
+  4. If no `selected_agent` or reselect needed: auto-select oldest agent via `get_oldest_agent_by_user()`
   5. Save new selection to database via `set_selected_agent_query()`
 - **User notifications**:
   - First-time: `🤖 Auto-selected assistant *{name}* — you can write now`
@@ -371,8 +371,8 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Shows user details, request UUID, resource type, and resource ID
   - For each request displays quick approve command: `/allow <request_uuid>`
 - Admin approves request: `/allow <request_uuid>`
-  - **Identity requests**: Creates Letta identity with `tg-{telegram_id}` format, stores in database
-  - **Agent requests**: Creates agent from template using `client.templates.agents.create()`
+  - **Identity requests**: Creates local identity record with `tg-{telegram_id}` identifier_key (no Letta API call)
+  - **Agent requests**: Creates agent from template with `identity-tg-{telegram_id}`, `owner-tg-{telegram_id}`, and `creator-tg-{telegram_id}` tags
   - User receives approval notification
 - Admin denies request: `/deny <request_uuid> [reason]`
   - Updates request status to denied
@@ -508,12 +508,14 @@ docker-compose -f deploy/docker-compose.yaml up -d --build
 Development scripts for Letta API operations live in `devscripts/`. Scripts use **sync Letta client** (not async) and **plain env loading** via `bootstrap.py`.
 
 ```bash
-uv run python -m devscripts.list_identities
 uv run python -m devscripts.delete_agents agent-uuid1 agent-uuid2
 uv run python -m devscripts.folders list
 uv run python -m devscripts.test_folder_workflow        # Test folder attach/upload/detach cycle
 uv run python -m devscripts.run_tool -l                 # List tools
 uv run python -m devscripts.run_tool -a <agent-id> notify_via_telegram "Hello"
+uv run python -m devscripts.list_users                  # List users and their agents via tags
+uv run python -m devscripts.migrate_identities_to_tags  # Migrate agents from identity API to tags
+uv run python -m devscripts.migrate_identities_to_tags --dry-run  # Preview migration
 ```
 
 Writing conventions and bootstrap API documented in `.claude/rules/devscripts.md` (loads automatically when editing scripts).
@@ -603,7 +605,7 @@ letta_bot/
   filters.py           # Filters for admin access control
   auth.py              # All authorization: user requests (/access, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
   agent.py             # Agent operations: /switch, /current, /context, and message routing to Letta agents
-  client.py            # Shared Letta client instance and Letta API operations (identity, agent, folder, tool management)
+  client.py            # Shared Letta client instance and Letta API operations (agent, folder, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
   tools.py             # Tool management: attach/detach/configure agent tools (/notify for proactive mode)
   broadcast.py         # Bot-level messaging: admin notifications, user broadcasts
@@ -731,17 +733,17 @@ docker-compose -f deploy/docker-compose.yaml down
 
 ## Key Technical Considerations
 
-**Identity ID Format:**
-Use consistent identifier_key format: telegram user ID as-is. Letta generates the actual identity.id UUID.
+**Tag Format:**
+- Access control: `identity-tg-{telegram_id}` — grants user access to agent
+- Ownership: `owner-tg-{telegram_id}` — identifies who owns the agent
+- Creator: `creator-tg-{telegram_id}` — identifies who created the agent
+- Local identifier: `tg-{telegram_id}` stored in database Identity.identifier_key
 
-**Agent Ownership Validation:**
-Always verify agent belongs to user's identity before operations. Never trust client-provided agent IDs without checking.
+**Agent Access Validation:**
+Always verify user has access via `identity-tg-{telegram_id}` tag before operations. Never trust client-provided agent IDs without checking tags.
 
 **Error Messages:**
 Be specific: "Agent not found" vs "Agent not found or you don't have access" - helps debugging while maintaining security.
-
-**Tags for Agents:**
-Recommend tagging all agents with `["telegram", "user:{telegram_id}"]` for additional filtering/analytics even beyond identity system.
 
 ## Error Handling Policy
 
@@ -911,16 +913,17 @@ EdgeQL syntax reference and patterns documented in `.claude/rules/database.md` (
 - `resources/` - available client methods
 - `types/` - response/request types
 
-**Direct HTTP pattern** (for endpoints removed from SDK):
+**Tag-based agent listing pattern**:
 
 ```python
-from letta_client.types.agent_state import Identity
+# List agents accessible to a user
+identity_tag = f'identity-tg-{telegram_id}'
+async for agent in client.agents.list(tags=[identity_tag]):
+    print(agent.name)
 
-identities = await client.get(
-    '/v1/identities/',
-    cast_to=list[Identity],
-    options={'params': {'identifier_key': 'tg-123'}},
-)
+# Check if user has access to specific agent
+agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
+has_access = agent.tags and identity_tag in agent.tags
 ```
 
 ## External References
