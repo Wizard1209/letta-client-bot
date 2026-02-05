@@ -13,12 +13,11 @@ from letta_client import APIError
 
 from letta_bot.broadcast import notify_admins
 from letta_bot.client import (
-    attach_identity_to_agent,
+    add_user_to_agent,
     client,
     create_agent_from_template,
-    get_agent_identity_ids,
     get_agent_owner_telegram_id,
-    get_or_create_letta_identity,
+    list_agents_by_user,
 )
 from letta_bot.config import CONFIG
 from letta_bot.filters import AdminOnlyFilter
@@ -380,24 +379,17 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
     match resource_type:
         # NOTE: For now requested only if user doesn't have allowed identity
         case ResourceType.ACCESS_IDENTITY:
-            # TODO: check if identity exists
+            # Check if identity exists in local database
             identity_result = await get_identity_query(
                 gel_client, telegram_id=result.user.telegram_id
             )
             if not identity_result:
-                # if identity doesn't exist create identity with letta
-                name, id_ = resource_id.rsplit(':', 1)
-                # TODO: change identity prefix based on local or prod env
-                letta_identity = await get_or_create_letta_identity(
-                    identifier_key=f'tg-{id_}', name=name
-                )
+                # Create local identity record (no Letta API call needed)
+                telegram_id = result.user.telegram_id
                 await create_identity_query(
                     gel_client,
-                    telegram_id=int(id_),
-                    identifier_key=letta_identity.identifier_key,
-                    # TODO: ask "Why two identity IDs and why
-                    # the first one is optional in SDK and used for access"
-                    identity_id=letta_identity.id or letta_identity.identifier_key,
+                    telegram_id=telegram_id,
+                    identifier_key=f'tg-{telegram_id}',
                 )
 
         case ResourceType.CREATE_AGENT_FROM_TEMPLATE:
@@ -405,22 +397,17 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                 gel_client, telegram_id=result.user.telegram_id
             )
             if not identity_result:
-                # TODO: Handle case when user doesn't have identity
-                # should create identity first
-                raise NotImplementedError(
+                # Should not happen - identity request is approved before agent request
+                raise RuntimeError(
                     'Cannot create agent from template without identity'
                 )
             await create_agent_from_template(
                 template_id=resource_id,
-                identity_id=identity_result[0].identity_id,
-                tags=[
-                    f'owner-tg-{result.user.telegram_id}',
-                    f'creator-tg-{result.user.telegram_id}',
-                ],
+                telegram_id=result.user.telegram_id,
             )
 
         case ResourceType.ACCESS_AGENT:
-            # Attach agent to requester's identity
+            # Grant user access to agent via identity tag
             identity_result = await get_identity_query(
                 gel_client, telegram_id=result.user.telegram_id
             )
@@ -433,7 +420,7 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                 )
                 return
 
-            # Check if agent still exists before attaching
+            # Check if agent still exists before granting access
             try:
                 agent = await client.agents.retrieve(
                     agent_id=resource_id, include=['agent.tags']
@@ -510,8 +497,8 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                     )
                     return
 
-            await attach_identity_to_agent(
-                agent_id=resource_id, identity_id=identity_result[0].identity_id
+            await add_user_to_agent(
+                agent_id=resource_id, telegram_id=result.user.telegram_id
             )
 
     await update_auth_request_status_query(
@@ -531,18 +518,29 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
             )
         else:
             # ACCESS_AGENT or CREATE_AGENT_FROM_TEMPLATE
-            agents = await client.identities.agents.list(
-                identity_id=identity_result[0].identity_id, limit=2, order='desc'
-            )
-            has_multiple = len(agents.items) > 1
+            # Count user's agents to check if multiple
+            agent_count = 0
+            newest_agent = None
+            async for agent in list_agents_by_user(result.user.telegram_id):
+                if agent_count == 0:
+                    newest_agent = agent
+                agent_count += 1
+                if agent_count >= 2:
+                    break
+
+            has_multiple = agent_count > 1
             hint = '\nUse /switch to select it.' if has_multiple else ''
 
             if resource_type == ResourceType.ACCESS_AGENT:
                 agent = await client.agents.retrieve(agent_id=resource_id)
                 user_message = f'✅ Access to "{agent.name}" granted!{hint}'
             else:
-                agent = agents.items[0]  # newest
-                user_message = f'✅ Your new assistant "{agent.name}" is ready!{hint}'
+                # For new agent, use the newest one we found
+                if newest_agent:
+                    name = newest_agent.name
+                    user_message = f'✅ Your new assistant "{name}" is ready!{hint}'
+                else:
+                    user_message = '✅ Your new assistant is ready!'
         await bot.send_message(
             chat_id=result.user.telegram_id,
             **Text(user_message).as_kwargs(),
@@ -722,9 +720,9 @@ async def attach_to_agent(
         )
         return
 
-    # First, check if agent exists and get identity info
+    # First, check if agent exists and if user already has access
     try:
-        agent_identity_ids = await get_agent_identity_ids(agent_id)
+        agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
     except APIError as e:
         LOGGER.error(f'Failed to retrieve agent {agent_id}: {e}')
         await message.answer(
@@ -736,7 +734,8 @@ async def attach_to_agent(
         return
 
     try:
-        if identity.identity_id in agent_identity_ids:
+        identity_tag = f'identity-tg-{message.from_user.id}'
+        if agent.tags and identity_tag in agent.tags:
             await message.answer(
                 **Text('✅ You already have access to this assistant.').as_kwargs()
             )
@@ -759,10 +758,13 @@ async def attach_to_agent(
 
         owner_telegram_id = await get_agent_owner_telegram_id(agent_id)
 
-        if len(agent_identity_ids) > 0 and not owner_telegram_id:
+        # Check for invalid state: has identity tags but no owner tag
+        has_identity_tags = agent.tags and any(
+            tag.startswith('identity-tg-') for tag in agent.tags
+        )
+        if has_identity_tags and not owner_telegram_id:
             LOGGER.error(
-                f'Agent {agent_id} has {len(agent_identity_ids)} identities '
-                f'but no owner tag. Invalid state.'
+                f'Agent {agent_id} has identity tags but no owner tag. Invalid state.'
             )
             await message.answer(
                 **Text(
@@ -931,7 +933,7 @@ async def handle_agent_access_callback(
                 return
 
         if callback_data.action == 'approve':
-            # Get requester's identity
+            # Check requester has identity in local database
             requester_identity = await get_identity_query(
                 gel_client, telegram_id=request.user.telegram_id
             )
@@ -940,16 +942,16 @@ async def handle_agent_access_callback(
                 await callback.answer('❌ Requester identity not found')
                 return
 
-            # Attach agent to requester's identity
+            # Grant requester access to agent via identity tag
             try:
-                await attach_identity_to_agent(
+                await add_user_to_agent(
                     agent_id=agent_id,
-                    identity_id=requester_identity[0].identity_id,
+                    telegram_id=request.user.telegram_id,
                 )
             except Exception as attach_error:
                 LOGGER.error(
                     f'Failed to attach agent {agent_id} to identity '
-                    f'{requester_identity[0].identity_id} '
+                    f'{requester_identity[0].identifier_key} '
                     f'for request {request_id}: {attach_error}'
                 )
                 await callback.answer('❌ Failed to attach assistant')
@@ -962,7 +964,7 @@ async def handle_agent_access_callback(
             if not result:
                 LOGGER.warning(
                     f'Agent {agent_id} attached to identity '
-                    f'{requester_identity[0].identity_id} '
+                    f'{requester_identity[0].identifier_key} '
                     f'but request {request_id} not found or already processed'
                 )
                 await callback.answer('❌ Request already processed')

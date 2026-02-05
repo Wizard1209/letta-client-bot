@@ -1,7 +1,6 @@
 select Identity {
     user: {*},
     identifier_key,
-    identity_id,
     selected_agent,
     created_at,
 }

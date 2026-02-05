@@ -59,31 +59,28 @@ def notify_via_telegram(
     # Use injected client to fetch agent data
     # `client` is automatically injected by Letta runtime
     try:
-        agent = client.agents.retrieve(agent_id=agent_id, include=['agent.identities'])
+        agent = client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
     except Exception as e:
         return f'Error retrieving agent data: {str(e)}'
+
+    tags = agent.tags or []
 
     # Determine recipients
     if owner_only:
         # Get owner from agent tags (format: owner-tg-{telegram_id})
-        tags = agent.tags or []
         owner_ids = [tag[9:] for tag in tags if tag.startswith('owner-tg-')]
         if not owner_ids:
             return 'Error: owner_only=True but no owner-tg-* tag found on agent'
         chat_ids = owner_ids[:1]
     else:
-        # Get all telegram identities attached to this agent
-        identities = agent.identities or []
+        # Get all telegram users with access via identity tags (format: identity-tg-{telegram_id})
         chat_ids = [
-            identity.identifier_key[3:]
-            for identity in identities
-            if hasattr(identity, 'identifier_key')
-            and identity.identifier_key
-            and identity.identifier_key.startswith('tg-')
-            and identity.identifier_key[3:].isdigit()
+            tag[12:]  # len('identity-tg-') = 12
+            for tag in tags
+            if tag.startswith('identity-tg-') and tag[12:].isdigit()
         ]
         if not chat_ids:
-            return 'Error: No telegram users found (no identities with tg-* identifier_key)'
+            return 'Error: No telegram users found (no identity-tg-* tags on agent)'
 
     # Escape MarkdownV2 special characters
     escaped = re.sub(r'([_*\[\]()~`>#+=|{}.!-])', r'\\\1', message)

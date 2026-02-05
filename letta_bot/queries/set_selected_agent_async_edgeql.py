@@ -33,14 +33,14 @@ async def set_selected_agent(
     executor: gel.AsyncIOExecutor,
     *,
     agent_id: str,
-    identity_id: str,
+    telegram_id: int,
 ) -> SetSelectedAgentResult | None:
     return await executor.query_single(
         """\
         update Identity
-        filter .identity_id = <str>$identity_id
+        filter .user.telegram_id = <int64>$telegram_id
         set { selected_agent := <str>$agent_id };\
         """,
         agent_id=agent_id,
-        identity_id=identity_id,
+        telegram_id=telegram_id,
     )

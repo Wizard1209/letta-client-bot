@@ -32,13 +32,13 @@ class ResetSelectedAgentResult(NoPydanticValidation):
 async def reset_selected_agent(
     executor: gel.AsyncIOExecutor,
     *,
-    identity_id: str,
+    telegram_id: int,
 ) -> ResetSelectedAgentResult | None:
     return await executor.query_single(
         """\
         update Identity
-        filter .identity_id = <str>$identity_id
+        filter .user.telegram_id = <int64>$telegram_id
         set { selected_agent := {} };\
         """,
-        identity_id=identity_id,
+        telegram_id=telegram_id,
     )
