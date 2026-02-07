@@ -344,6 +344,16 @@ async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
     # Build text content layer by layer
     text_parts: list[str] = []
 
+    # Layer 0: Message metadata (context for the agent)
+    user = message.from_user
+    day_name = message.date.strftime('%A')
+    date_str = message.date.strftime('%B %d')
+    time_str = message.date.strftime('%H:%M')
+    text_parts.append(
+        f'<metadata>Message received via Telegram from {user.first_name}'
+        f' on {day_name}, {date_str} at {time_str} UTC.</metadata>'
+    )
+
     # Layer 1: Reply context (quote takes priority over full reply)
     if message.quote:
         # User quoted a specific part of the message
