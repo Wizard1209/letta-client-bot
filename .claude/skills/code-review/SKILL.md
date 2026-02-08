@@ -5,7 +5,7 @@ description: Reviews code changes with brief annotations. Use when user says "re
 
 # Code Review
 
-Interactive guided tour through code changes.
+Interactive guided tour through code changes. You are walking a human through the code to help them understand it.
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ git diff HEAD --stat
 
 ### 1. Overview (2-3 sentences max)
 
-What the PR/changes accomplish at high level.
+What the PR/changes accomplish at high level. Focus on the *purpose* — what problem does this solve and why.
 
 ### 2. Offer Branch Switch
 
@@ -41,14 +41,23 @@ Show grouped file list so user sees full scope:
 | Docs         | `README.md`, `CHANGELOG` |
 ```
 
+Then ask: "Where do you want to start, or should I go in order?"
+
 ### 4. File-by-File Tour
 
-Walk through each changed file:
+**CRITICAL: Send ONE stop per message. Wait for user response before continuing.**
 
-- Brief description of what changed
+Never combine multiple stops. Never send the full review at once. The user must have space to ask questions, discuss, or skip ahead at each stop.
+
+At each stop:
+- Explain *why* this file changed (its role in the bigger picture)
+- Describe changes in plain language — what the code *does*, not just what lines differ
+- Keep it scannable: short bullets, no paragraphs
 - At complex points: offer to trace execution flow
-- Batch small/related files into single stops (e.g., utils + related refactors)
-- End each stop clearly: "Questions, or next file?"
+- Batch small/related files into single stops (e.g., query files + generated code)
+- DO NOT mix concerns/suggestions into the tour — collect them for wrap-up
+
+End each stop clearly: "Questions, or next?"
 
 ### 5. Flow Tracing (on-demand)
 
@@ -68,32 +77,54 @@ This shows how pieces connect across files.
 
 ### 6. Wrap-up
 
-Quick summary of key changes when tour completes:
+Only after completing the tour (or user asks to wrap up), present:
 
 ```markdown
-**PR Summary:**
-- Main feature added
-- Supporting changes
-- Dependencies/config updates
+**Summary:**
+- [1-sentence description of the main change]
+- [Supporting changes]
 
-Ready to merge, or any concerns?
+**Concerns:** (if any)
+- [Specific issue with file reference]
+- [Specific issue with file reference]
+
+**Nits:** (if any, keep brief)
+- [Minor observations]
+
+Ready to merge, or want to discuss any concerns?
 ```
 
+Concerns and suggestions go HERE, not during the tour stops. The tour is for understanding, the wrap-up is for judgment.
+
 ## Tour Stop Format
+
+Keep stops SHORT. Aim for 5-8 lines of content, not 20.
 
 ```markdown
 ## [filename.py](path/to/file.py) (+X/-Y)
 
-**What changed:**
-• Change 1
-• Change 2
+**Why:** [One sentence — this file's role in the change]
 
-**Key point:** [explanation of important logic]
+• [What the code does now, in plain language]
+• [Key behavioral difference from before]
+• [Notable design choice, if any]
 
-→ Want to trace how [feature X] flows through the code?
+→ Want to trace how [feature X] flows?
 
-Questions, or next file?
+Questions, or next?
 ```
+
+**Bad stop** (too technical, too dense):
+> `get_or_create_letta_identity()` removed entirely. `create_agent_from_template()` now takes `telegram_id: int` instead of `identity_id: str` and builds tags internally using f-strings. New `list_agents_by_user()` wraps `client.agents.list(tags=[identity_tag])`. The `attach_identity_to_agent()` was replaced by `add_user_to_agent()` which retrieves agent, appends tag, updates. Race condition possible if two approvals happen simultaneously...
+
+**Good stop** (human-readable, focused):
+> **Why:** This is the main Letta API layer — all identity API calls lived here.
+>
+> • Deleted identity creation/retrieval — no more Letta Identity API
+> • Agent operations now filter by tags instead of identity IDs
+> • New helpers: list user's agents, validate access, add user to agent
+>
+> Questions, or next?
 
 ## Guidelines
 
@@ -110,6 +141,7 @@ Questions, or next file?
 - Formatting-only
 - Comment typos
 - Lock files, generated code
+- Auto-generated files that mirror manual changes (batch with their source)
 
 ## Scope Options
 
