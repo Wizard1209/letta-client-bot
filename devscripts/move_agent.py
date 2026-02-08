@@ -9,7 +9,7 @@ import argparse
 
 from letta_client import APIError
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config
 
 
 def move_agent(agent_id: str, target_project_id: str) -> tuple[str, bool, str | None]:
@@ -23,6 +23,7 @@ def move_agent(agent_id: str, target_project_id: str) -> tuple[str, bool, str | 
 
 def main(agent_ids: list[str], target_project_id: str) -> None:
     """Move specified agents to target project."""
+    print_config(target_project=target_project_id)
     if not agent_ids:
         print('\nNo agent IDs provided.')
         return

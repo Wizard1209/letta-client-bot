@@ -12,29 +12,8 @@ Usage:
 
 import argparse
 import time
-from pathlib import Path
 
-from devscripts.bootstrap import env, letta
-
-
-def get_agent_id(cli_agent_id: str | None) -> str:
-    """Resolve agent ID from CLI, env, or file."""
-    if cli_agent_id:
-        return cli_agent_id
-
-    # Try env var
-    agent_id = env('LETTA_AGENT_ID', '')
-    if agent_id:
-        return agent_id
-
-    # Try .agent_id file
-    agent_id_file = Path(__file__).parent.parent / '.agent_id'
-    if agent_id_file.exists():
-        return agent_id_file.read_text().strip()
-
-    raise ValueError(
-        'Agent ID required. Provide via --agent-id, LETTA_AGENT_ID env, or .agent_id file'
-    )
+from devscripts.bootstrap import letta, print_config, resolve_agent_id
 
 
 def test_schedule_api(agent_id: str) -> None:
@@ -138,12 +117,13 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    try:
-        agent_id = get_agent_id(args.agent_id)
-        test_schedule_api(agent_id)
-    except ValueError as e:
-        print(f'Error: {e}')
+    agent_id = resolve_agent_id(args.agent_id)
+    if not agent_id:
+        print('Error: Agent ID required. Provide via --agent-id, LETTA_AGENT_ID env, or .agent_id file')
         return
+
+    print_config(agent_id=agent_id)
+    test_schedule_api(agent_id)
 
 
 if __name__ == '__main__':

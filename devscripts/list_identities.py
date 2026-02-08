@@ -4,11 +4,12 @@ Usage:
     uv run python -m devscripts.list_identities
 """
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config
 
 
 def main() -> None:
     """List all identities with their agents."""
+    print_config()
     identities = list(letta.identities.list())
 
     if not identities:

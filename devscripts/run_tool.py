@@ -28,28 +28,10 @@ import os
 from pathlib import Path
 import sys
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config, resolve_agent_id
 
 PROJECT_ROOT = Path(__file__).parent.parent
 TOOLS_DIR = PROJECT_ROOT / 'letta_bot' / 'custom_tools'
-AGENT_ID_FILE = PROJECT_ROOT / '.agent_id'
-
-
-def get_agent_id(cli_agent_id: str | None) -> str | None:
-    """Get agent ID from CLI arg, env var, or .agent_id file."""
-    # 1. CLI argument
-    if cli_agent_id:
-        return cli_agent_id
-
-    # 2. Environment variable
-    if env_id := os.environ.get('LETTA_AGENT_ID'):
-        return env_id
-
-    # 3. .agent_id file
-    if AGENT_ID_FILE.exists():
-        return AGENT_ID_FILE.read_text().strip()
-
-    return None
 
 
 def load_tool_function(tool_name: str):
@@ -119,13 +101,14 @@ def main():
         return 1
 
     # Resolve and inject agent ID
-    agent_id = get_agent_id(args.agent_id)
+    agent_id = resolve_agent_id(args.agent_id)
     if agent_id:
         os.environ['LETTA_AGENT_ID'] = agent_id
-        print(f'Agent ID: {agent_id}')
     else:
         print('Warning: No agent ID found (some tools may fail)')
-        print(f'  Set via: --agent-id, LETTA_AGENT_ID env, or {AGENT_ID_FILE}')
+        print('  Set via: --agent-id, LETTA_AGENT_ID env, or .agent_id file')
+
+    print_config(agent_id=agent_id or '(none)')
 
     # Load tool with injected client
     try:

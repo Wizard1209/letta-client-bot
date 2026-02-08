@@ -14,7 +14,7 @@ import sys
 
 from letta_client import APIError
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config
 
 
 def create_test_file(size_mb: float) -> io.BytesIO:
@@ -164,6 +164,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    print_config()
 
     print('Creating test folder...')
     folder_id = create_test_folder()

@@ -121,7 +121,7 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ## Devscripts
 
-Development scripts for Letta API operations live in `devscripts/`. All scripts use **sync clients** and **plain env loading** via `bootstrap.py`.
+Development scripts for Letta API operations live in `devscripts/`. All scripts use **sync clients** and `CONFIG` from `letta_bot.config` via `bootstrap.py`.
 
 ### Running Scripts
 
@@ -140,16 +140,13 @@ Usage:
     uv run python -m devscripts.my_script [args]
 """
 
-import argparse
-
-from devscripts.bootstrap import env, letta, gel
+from devscripts.bootstrap import letta, gel, print_config, resolve_agent_id
+from letta_bot.config import CONFIG
 
 
 def main() -> None:
     """Main entry point."""
-    # Access env vars
-    project_id = env('LETTA_PROJECT_ID')
-    optional_var = env('OPTIONAL_VAR', 'default')
+    print_config()  # Always print key inputs first
 
     # Use sync Letta client
     agents = letta.agents.list()
@@ -165,17 +162,19 @@ if __name__ == '__main__':
 **Key principles:**
 
 1. **Sync clients only** - no `async`/`await`, no `asyncio.run()`
-2. **Import from bootstrap** - `from devscripts.bootstrap import env, letta, gel`
-3. **Plain env access** - `env('VAR')` or `env('VAR', 'default')`
-4. **No CONFIG** - don't import `letta_bot.config.CONFIG`, use `env()` directly
-5. **Module docstring** - include usage example at top of file
-6. **argparse for CLI args** - when script accepts arguments
+2. **Import clients from bootstrap** - `from devscripts.bootstrap import letta, gel, print_config`
+3. **Use `CONFIG.field`** for env vars already in Config (e.g., `CONFIG.openai_api_key`)
+4. **Use `resolve_agent_id()`** for agent ID resolution (CLI > env > .agent_id file)
+5. **Always call `print_config()`** at script start (pass extra kwargs for script-specific inputs)
+6. **Module docstring** - include usage example at top of file
+7. **argparse for CLI args** - when script accepts arguments
 
 **Available from bootstrap:**
 
-- `env(key, default=None)` - get env var (raises KeyError if not set and no default)
-- `letta` - sync Letta client (lazy-loaded)
-- `gel` - sync Gel client (lazy-loaded)
+- `letta` - sync Letta client (created at import time)
+- `gel` - sync Gel client (created at import time)
+- `print_config(**extra)` - print masked config values for verification
+- `resolve_agent_id(cli_arg=None)` - resolve agent ID from CLI > env > .agent_id file
 
 ### Testing Custom Tools
 

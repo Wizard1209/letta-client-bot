@@ -19,7 +19,7 @@ import argparse
 import time
 from io import BytesIO
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config
 
 
 def print_section(title: str) -> None:
@@ -96,6 +96,7 @@ def main() -> None:
         help='Keep agent and folder after test (no cleanup)',
     )
     args = parser.parse_args()
+    print_config()
 
     agent_id: str | None = None
     folder_id: str | None = None

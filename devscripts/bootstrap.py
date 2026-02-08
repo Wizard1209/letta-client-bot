@@ -1,103 +1,70 @@
-"""Bootstrap module for devscripts - sync clients with plain env loading.
+"""Bootstrap module for devscripts - sync clients using project CONFIG.
 
 Usage:
-    from devscripts.bootstrap import letta, gel, env
+    from devscripts.bootstrap import letta, gel, print_config, resolve_agent_id
+    from letta_bot.config import CONFIG
 
-    # Access env vars directly
-    print(env('SOME_VAR'))
-    print(env('OPTIONAL_VAR', 'default'))
-
-    # Use sync Letta client
-    agents = letta.agents.list()
-
-    # Use sync Gel client
-    result = gel.query('select User { telegram_id }')
+    def main() -> None:
+        print_config()
+        agents = letta.agents.list()
 
 All scripts should:
-1. Import from this module (not letta_bot.client or letta_bot.config)
+1. Import clients from this module
 2. Use sync operations (no asyncio)
-3. Access env vars via env() helper
+3. Use CONFIG for env vars
+4. Always call print_config() at script start
 """
 
-from functools import lru_cache
 import logging
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+import gel as _gel_module
+from letta_client import Letta
 
-# Load .env from project root (once at import time)
-_PROJECT_ROOT = Path(__file__).parent.parent
-load_dotenv(_PROJECT_ROOT / '.env')
+from letta_bot.config import CONFIG
 
-# Suppress noisy HTTP logs by default
+# Suppress noisy HTTP logs
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 
+# Sync Letta client (devscripts are sync-only)
+letta = Letta(
+    api_key=CONFIG.letta_api_key,
+    project_id=CONFIG.letta_project_id,
+    timeout=120,
+)
 
-def env(key: str, default: str | None = None) -> str:
-    """Get environment variable with optional default.
+# Sync Gel client
+gel = _gel_module.create_client()
 
-    Args:
-        key: Environment variable name
-        default: Default value if not set (None means required)
-
-    Returns:
-        Environment variable value
-
-    Raises:
-        KeyError: If variable not set and no default provided
-    """
-    value = os.environ.get(key)
-    if value is None:
-        if default is None:
-            raise KeyError(f'{key} not set in environment')
-        return default
-    return value
+# Agent ID file location
+_AGENT_ID_FILE = Path(__file__).parent.parent / '.agent_id'
 
 
-@lru_cache
-def get_letta():
-    """Get sync Letta client (cached).
 
-    Returns:
-        Letta: Sync Letta client instance
-    """
-    from letta_client import Letta
-
-    return Letta(
-        api_key=env('LETTA_API_KEY'),
-        project_id=env('LETTA_PROJECT_ID'),
-        timeout=120,
-    )
+def _mask(value: str) -> str:
+    """Show last 4 chars of a secret."""
+    if len(value) <= 4:
+        return '****'
+    return f'...{value[-4:]}'
 
 
-@lru_cache
-def get_gel():
-    """Get sync Gel client (cached).
-
-    Returns:
-        gel.Client: Sync Gel client instance
-    """
-    import gel as gel_module
-
-    return gel_module.create_client()
+def print_config(**extra: str) -> None:
+    """Print key config values for verification. Call at script start."""
+    print(f'  project:  {_mask(CONFIG.letta_project_id)}')
+    print(f'  api_key:  {_mask(CONFIG.letta_api_key)}')
+    for name, value in extra.items():
+        print(f'  {name}:  {value}')
+    print()
 
 
-# Lazy client proxies - import once, use everywhere
-class _LazyClient:
-    """Lazy proxy that creates client on first access."""
-
-    def __init__(self, factory):
-        self._factory = factory
-        self._client = None
-
-    def __getattr__(self, name):
-        if self._client is None:
-            self._client = self._factory()
-        return getattr(self._client, name)
-
-
-# Pre-configured clients (lazy-loaded)
-letta = _LazyClient(get_letta)
-gel = _LazyClient(get_gel)
+def resolve_agent_id(cli_arg: str | None = None) -> str | None:
+    """Resolve agent ID from CLI arg > env > .agent_id file."""
+    if cli_arg:
+        return cli_arg
+    if env_id := os.environ.get('LETTA_AGENT_ID'):
+        return env_id
+    if _AGENT_ID_FILE.exists():
+        return _AGENT_ID_FILE.read_text().strip()
+    return None
