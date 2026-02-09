@@ -518,27 +518,22 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
             )
         else:
             # ACCESS_AGENT or CREATE_AGENT_FROM_TEMPLATE
-            # Count user's agents to check if multiple
-            agent_count = 0
-            newest_agent = None
-            async for agent in list_agents_by_user(result.user.telegram_id):
-                if agent_count == 0:
-                    newest_agent = agent
-                agent_count += 1
-                if agent_count >= 2:
-                    break
-
-            has_multiple = agent_count > 1
+            agents = [
+                agent
+                async for agent in list_agents_by_user(
+                    result.user.telegram_id, limit=2, order='desc'
+                )
+            ]
+            has_multiple = len(agents) > 1
             hint = '\nUse /switch to select it.' if has_multiple else ''
 
             if resource_type == ResourceType.ACCESS_AGENT:
                 agent = await client.agents.retrieve(agent_id=resource_id)
                 user_message = f'✅ Access to "{agent.name}" granted!{hint}'
             else:
-                # For new agent, use the newest one we found
-                if newest_agent:
-                    name = newest_agent.name
-                    user_message = f'✅ Your new assistant "{name}" is ready!{hint}'
+                # For new agent, use the newest one
+                if agents:
+                    user_message = f'✅ Your new assistant "{agents[0].name}" is ready!{hint}'
                 else:
                     user_message = '✅ Your new assistant is ready!'
         await bot.send_message(

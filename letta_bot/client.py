@@ -68,17 +68,23 @@ async def create_agent_from_template(
     await client.templates.agents.create(template_version=template_version, tags=tags)
 
 
-async def list_agents_by_user(telegram_id: int) -> AsyncIterator[AgentState]:
+async def list_agents_by_user(
+    telegram_id: int,
+    limit: int | None = None,
+    order: str | None = None,
+) -> AsyncIterator[AgentState]:
     """List all agents accessible to a telegram user.
 
     Args:
         telegram_id: Telegram user ID
+        limit: Maximum number of agents to return
+        order: Sort order ('asc' for oldest first, 'desc' for newest first)
 
     Yields:
         AgentState objects for each agent with identity-tg-{telegram_id} tag
     """
     identity_tag = f'identity-tg-{telegram_id}'
-    async for agent in client.agents.list(tags=[identity_tag]):
+    async for agent in client.agents.list(tags=[identity_tag], limit=limit, order=order):
         yield agent
 
 
