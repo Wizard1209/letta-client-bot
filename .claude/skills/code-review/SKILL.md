@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Reviews code changes with brief annotations. Use when user says "review code", "review changes", "what changed", "review pull request", "review PR", "review the pr", "review this pr", "review [name]'s pr", "review new pr", "review latest pr", "let's review", "review https://github.com/.../pull/123", or runs /code-review.
+description: Reviews code changes with concrete feedback. Use when user says "review code", "review changes", "what changed", "review pull request", "review PR", "review the pr", "review this pr", "review [name]'s pr", "review new pr", "review latest pr", "let's review", "code review", "code review?", "review https://github.com/.../pull/123", or runs /code-review. ALSO trigger when user has just been exploring a PR/diff and asks for review, feedback, or opinions — even without the exact word "review". Also trigger when user mentions a PR by number or URL with intent to understand it — e.g. "walk me through PR <n>", "explain PR <n>", "show me PR <n>", "what's in PR <n>", "go over PR <n>", "break down PR <n>".
 ---
 
 # Code Review
@@ -10,14 +10,27 @@ Interactive guided tour through code changes. You are walking a human through th
 ## Quick Start
 
 ```bash
-# For PRs: get PR info and diff
-gh pr list
-gh pr view <number>
-gh pr diff <number>
+# For PRs: get file list and size
+gh pr view <number> --json additions,deletions,files
+gh pr diff <number> --name-only
 
 # For local changes
-git diff HEAD --stat
+git diff HEAD --name-only
 ```
+
+## Large PRs (>1500 lines changed)
+
+Never load the full diff at once — it will crash context.
+
+```bash
+# 1. Get file list with sizes
+gh pr view <number> --json files --jq '.files[] | "\(.additions)+\(.deletions) \(.path)"'
+
+# 2. Diff one file at a time during tour stops
+gh pr diff <number> | awk '/^diff --git a\/<file>/,/^diff --git/{if(/^diff --git/ && !/\/<file>/)exit; print}'
+```
+
+Walk files one at a time — only load each file's diff at its tour stop.
 
 ## Review Protocol
 
@@ -25,23 +38,24 @@ git diff HEAD --stat
 
 What the PR/changes accomplish at high level. Focus on the *purpose* — what problem does this solve and why.
 
-### 2. Offer Branch Switch
+### 2. Branch Check
 
-For PRs, offer to checkout the branch so user can explore in IDE alongside.
+For PRs, check if user is on the PR branch. If not, note it once: "You're on `main`, PR branch is `fix-fee-padding`." Don't ask — user will switch if they want to.
 
 ### 3. Tour Map
 
-Show grouped file list so user sees full scope:
+Show grouped file list ordered top-down for understanding:
 
-```markdown
-| Group        | Files                    |
-| ------------ | ------------------------ |
-| Core feature | `main.py`, `helper.py`   |
-| Utilities    | `utils.py`, `config.py`  |
-| Docs         | `README.md`, `CHANGELOG` |
-```
+1. **Docs/config** — README, CHANGELOG, configs, types, specs
+2. **High-level** — entry points, APIs, service interfaces, route definitions
+3. **Implementation** — core logic, helpers, utilities
+4. **Tests** — verify the above matches intent
 
-Then ask: "Where do you want to start, or should I go in order?"
+**Ordering principle:** each stop should build on what the user already learned.
+
+**Signals:** types/specs/schemas before implementation, interfaces before their consumers, small supporting changes batch together, tests last.
+
+Then start the tour in this order. User can say "skip to X" anytime.
 
 ### 4. File-by-File Tour
 
@@ -59,7 +73,16 @@ At each stop:
 
 End each stop clearly: "Questions, or next?"
 
-### 5. Flow Tracing (on-demand)
+### 5. Git Context (on-demand)
+
+When a change seems non-obvious, check `git blame` or `git log` on the modified lines to explain why the old code existed and what this change replaces:
+
+```bash
+git log --oneline -5 -- path/to/file.ts
+git blame path/to/file.ts -L 130,140
+```
+
+### 6. Flow Tracing (on-demand)
 
 When user wants to understand a specific feature deeper, trace the execution path:
 
@@ -75,7 +98,7 @@ Back up the stack with result
 
 This shows how pieces connect across files.
 
-### 6. Wrap-up
+### 7. Wrap-up
 
 Only after completing the tour (or user asks to wrap up), present:
 
@@ -166,3 +189,41 @@ gh pr diff 123 -R owner/repo
 ```
 
 3. Follow the standard review protocol above
+
+## PR Diff Links
+
+For PR reviews, generate clickable links that jump to the exact change in GitHub's diff view.
+
+**Generate link:**
+```bash
+OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner) PR=<number> FILE="path/to/file.ts" LINE=<right-side-line> && echo "https://github.com/$OWNER_REPO/pull/$PR/files#diff-$(echo -n "$FILE" | sha256sum | cut -d' ' -f1)R$LINE"
+```
+
+**URL anatomy:**
+```
+https://github.com/<owner>/<repo>/pull/<PR>/files
+  #diff-<SHA-256 of file path>
+  R<line>                        ← right side (new). Use L<line> for left (old/removed)
+```
+
+**Line number:** Use the right-side line from diff hunk headers. `@@ -133,7 +133,7 @@` means new side starts at 133 — count offset from there.
+
+**When to include:** Key changes, complex logic, security-sensitive spots. Not every line — just where jumping to the diff helps.
+
+## Posting Comments on PR
+
+**PR-level comment** (conversation tab):
+```bash
+gh pr comment <number> --body "comment text here"
+```
+
+**Inline comment on a specific diff line** (Files Changed tab):
+```bash
+gh api -X POST "/repos/{owner}/{repo}/pulls/{number}/comments" \
+  -f body="comment text" \
+  -f commit_id="$(gh pr view <number> --json headRefOid -q .headRefOid)" \
+  -f path="path/to/file.ts" \
+  -F position=<diff_position>
+```
+
+`position` is the 1-based line offset within the diff hunk (not the file line number). Count from the `@@` header: first line after `@@` is position 1.
