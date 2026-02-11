@@ -1,3 +1,3 @@
 update Identity
-filter .identity_id = <str>$identity_id
+filter .user.telegram_id = <int64>$telegram_id
 set { selected_agent := {} };

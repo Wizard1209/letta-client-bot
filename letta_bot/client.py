@@ -2,17 +2,19 @@
 
 This module provides:
 1. A single Letta client instance used across the application
-2. Pure Letta API operations (identity, agent, tool management)
+2. Pure Letta API operations (agent, tool management)
+3. Tag-based user-agent association (replaces Letta Identity API)
 
 Isolating the client here prevents circular import issues.
 """
 
+from collections.abc import AsyncIterator
 from contextlib import suppress
 import logging
-from typing import Any, BinaryIO
+from typing import BinaryIO
 
-from letta_client import APIError, AsyncLetta as LettaClient, ConflictError
-from letta_client.types.agent_state import Identity
+from letta_client import AsyncLetta as LettaClient, ConflictError, NotFoundError
+from letta_client.types.agent_state import AgentState
 
 from letta_bot.config import CONFIG
 
@@ -35,129 +37,126 @@ LOGGER = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Identity Management
-# =============================================================================
-
-
-async def get_or_create_letta_identity(identifier_key: str, name: str) -> Identity:
-    """Create identity in Letta API with retry logic.
-
-    Returns identity object with .id attribute.
-
-    States:
-    1. Attempt retrieval by identifier_key
-    2. If fails, attempt creation
-    3. If creation also fails, raise error
-    """
-    try:
-        # List identities by identifier_key
-        # Note: Client is already configured with project, so it auto-scopes
-        # New pagination API: await to get page, then access .items
-        page = await client.identities.list(
-            project_id=CONFIG.letta_project_id, identifier_key=identifier_key
-        )
-        identities = page.items
-
-        if identities:
-            identity = identities[0]
-            LOGGER.info(f'Retrieved existing identity: {identity.id}')
-            return identity
-
-        LOGGER.info(f'No identity found for {identifier_key}')
-        # Create identity if not existed
-        identity = await client.identities.create(
-            identifier_key=identifier_key,
-            name=name,
-            identity_type='user',
-        )
-        LOGGER.info(f'Created identity: {identity.id}')
-        return identity
-    except ConflictError:
-        LOGGER.critical(
-            f"Identity already exists but couldn't be retrieved {identifier_key}"
-        )
-        raise
-    except APIError:
-        LOGGER.critical(f'Identity creation and retrieval failed: {identifier_key}')
-        raise
-
-
-# =============================================================================
-# Agent Management
+# Agent Management (Tag-Based)
 # =============================================================================
 
 
 async def create_agent_from_template(
-    template_id: str, identity_id: str, tags: list[str] | None = None
+    template_id: str, telegram_id: int, extra_tags: list[str] | None = None
 ) -> None:
-    """Create agent from template in Letta API."""
+    """Create agent from template in Letta API.
+
+    Automatically adds identity, owner, and creator tags for the telegram user.
+    """
     # Local import to avoid circular dependency
     from letta_bot.auth import NewAssistantCallback
 
     info = NewAssistantCallback.unpack(template_id)
 
     # Use new templates.agents.create() API
-    # Client is already configured with project, so it auto-scopes
     template_version = f'{info.template_name}:{info.version}'
 
-    # Prepare kwargs with optional tags
-    kwargs: dict[str, Any] = {
-        'template_version': template_version,
-        'identity_ids': [identity_id],
-    }
-    if tags is not None:
-        kwargs['tags'] = tags
-    await client.templates.agents.create(**kwargs)
+    # Build tags: identity (access), owner, and creator
+    tags = [
+        f'identity-tg-{telegram_id}',
+        f'owner-tg-{telegram_id}',
+        f'creator-tg-{telegram_id}',
+    ]
+    if extra_tags:
+        tags.extend(extra_tags)
+
+    await client.templates.agents.create(template_version=template_version, tags=tags)
 
 
-async def get_oldest_agent_id(identity_id: str) -> str:
-    """Get the oldest agent ID for a given identity.
+async def list_agents_by_user(
+    telegram_id: int,
+    limit: int | None = None,
+    order: str | None = None,
+) -> AsyncIterator[AgentState]:
+    """List all agents accessible to a telegram user.
 
     Args:
-        identity_id: The Letta identity ID
+        telegram_id: Telegram user ID
+        limit: Maximum number of agents to return
+        order: Sort order ('asc' for oldest first, 'desc' for newest first)
+
+    Yields:
+        AgentState objects for each agent with identity-tg-{telegram_id} tag
+    """
+    identity_tag = f'identity-tg-{telegram_id}'
+    async for agent in client.agents.list(tags=[identity_tag], limit=limit, order=order):
+        yield agent
+
+
+async def get_oldest_agent_by_user(telegram_id: int) -> str:
+    """Get the oldest agent ID for a telegram user.
+
+    Args:
+        telegram_id: Telegram user ID
 
     Returns:
         Agent ID of the oldest agent
 
     Raises:
-        IndexError: If no agents exist for the identity
+        IndexError: If no agents exist for the user
     """
-    # New pagination API: await to get page, then access .items
-    page = await client.identities.agents.list(
-        identity_id=identity_id, limit=1, order='asc'
-    )
+    identity_tag = f'identity-tg-{telegram_id}'
+    # Get first page with oldest agent (asc order)
+    page = await client.agents.list(tags=[identity_tag], limit=1, order='asc')
     return page.items[0].id
 
 
-async def attach_identity_to_agent(agent_id: str, identity_id: str) -> None:
-    """Attach an identity to an existing agent.
-
-    Args:
-        agent_id: The ID of the agent to attach identity to
-        identity_id: The ID of the identity to attach
-
-    Raises:
-        APIError: If the attach operation fails
-    """
-    await client.agents.identities.attach(agent_id=agent_id, identity_id=identity_id)
-
-
-async def get_agent_identity_ids(agent_id: str) -> list[str]:
-    """Get all identity IDs associated with an agent.
+async def add_user_to_agent(agent_id: str, telegram_id: int) -> None:
+    """Grant a telegram user access to an agent by adding identity tag.
 
     Args:
         agent_id: The ID of the agent
-
-    Returns:
-        List of identity IDs attached to the agent (empty list if none)
+        telegram_id: Telegram user ID to grant access
 
     Raises:
-        APIError: If the retrieve operation fails
+        APIError: If the update operation fails
     """
-    agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.identities'])
-    if agent.identities is None:
-        return []
-    return [identity.id for identity in agent.identities]
+    agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
+    existing_tags = list(agent.tags) if agent.tags else []
+
+    identity_tag = f'identity-tg-{telegram_id}'
+    if identity_tag not in existing_tags:
+        await client.agents.update(agent_id=agent_id, tags=existing_tags + [identity_tag])
+
+
+async def validate_agent_access(agent_id: str, telegram_id: int) -> AgentState | None:
+    """Check if telegram user has access to agent.
+
+    Args:
+        agent_id: The ID of the agent
+        telegram_id: Telegram user ID
+
+    Returns:
+        AgentState if user has access, None if not found or no access
+    """
+    try:
+        agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
+    except NotFoundError:
+        return None
+
+    identity_tag = f'identity-tg-{telegram_id}'
+    if agent.tags and identity_tag in agent.tags:
+        return agent
+
+    return None
+
+
+async def check_user_has_agent_access(agent_id: str, telegram_id: int) -> bool:
+    """Check if telegram user has access to agent (lightweight version).
+
+    Args:
+        agent_id: The ID of the agent
+        telegram_id: Telegram user ID
+
+    Returns:
+        True if user has access, False otherwise
+    """
+    return await validate_agent_access(agent_id, telegram_id) is not None
 
 
 async def get_agent_owner_telegram_id(agent_id: str) -> int | None:
@@ -211,7 +210,6 @@ async def get_or_create_agent_folder(agent_id: str, telegram_id: int) -> str:
 
     # Create and attach new folder with metadata
     metadata: dict[str, object] = {
-        'creator-tg': str(telegram_id),
         'owner-tg': str(telegram_id),
     }
     try:

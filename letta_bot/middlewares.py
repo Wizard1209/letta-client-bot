@@ -12,7 +12,7 @@ from gel import AsyncIOExecutor
 from letta_client import NotFoundError
 from letta_client.types.agent_state import AgentState
 
-from letta_bot.client import client, get_oldest_agent_id
+from letta_bot.client import client, get_oldest_agent_by_user
 from letta_bot.config import CONFIG
 from letta_bot.queries.get_allowed_identity_async_edgeql import (
     get_allowed_identity as get_allowed_identity_query,
@@ -36,17 +36,17 @@ upsert_user_cached = async_cache(ttl=43200)(upsert_user)
 # Agent Resolution Helpers
 # =============================================================================
 
-AGENT_INCLUDE = ['agent.identities', 'agent.secrets']
+AGENT_INCLUDE = ['agent.tags', 'agent.secrets']
 
 
 async def _validate_selected_agent(
     agent_id: str,
-    identity_id: str,
+    telegram_id: int,
 ) -> AgentState | None:
-    """Validate agent exists and available to the identity.
+    """Validate agent exists and user has access via identity tag.
 
     Returns:
-        AgentState if valid, None if not found or doesn't belong to identity
+        AgentState if valid, None if not found or user doesn't have access
     """
     try:
         agent = await client.agents.retrieve(
@@ -56,8 +56,8 @@ async def _validate_selected_agent(
     except NotFoundError:
         return None
 
-    identity_ids = [i.id for i in (agent.identities or [])]
-    if identity_id not in identity_ids:
+    identity_tag = f'identity-tg-{telegram_id}'
+    if not agent.tags or identity_tag not in agent.tags:
         return None
 
     return agent
@@ -302,7 +302,7 @@ class IdentityMiddleware(BaseMiddleware):
 
 
 class AgentMiddleware(BaseMiddleware):
-    """Resolve identity to a ready-to-use agent.
+    """Resolve user to a ready-to-use agent.
 
     Linear state machine:
     1. RESOLVE    → get agent (existing or default)
@@ -339,19 +339,18 @@ class AgentMiddleware(BaseMiddleware):
         gel_client = cast(AsyncIOExecutor, data['gel_client'])
         # Get identity from data (injected by IdentityMiddleware)
         identity = cast(GetIdentityResult, data['identity'])
+        telegram_id = event.from_user.id
 
         # 1. RESOLVE: existing selection → default
         agent: AgentState | None = None
         selection_changed = False
 
         if identity.selected_agent:
-            agent = await _validate_selected_agent(
-                identity.selected_agent, identity.identity_id
-            )
+            agent = await _validate_selected_agent(identity.selected_agent, telegram_id)
 
         if agent is None:
             try:
-                agent_id = await get_oldest_agent_id(identity.identity_id)
+                agent_id = await get_oldest_agent_by_user(telegram_id)
             except IndexError:
                 await event.answer(
                     **Text('❌ No assistants yet — use /new to request one').as_kwargs()
@@ -369,7 +368,7 @@ class AgentMiddleware(BaseMiddleware):
         # 3. PERSIST
         if selection_changed:
             await set_selected_agent_query(
-                gel_client, identity_id=identity.identity_id, agent_id=agent.id
+                gel_client, telegram_id=telegram_id, agent_id=agent.id
             )
 
         # 4. NOTIFY

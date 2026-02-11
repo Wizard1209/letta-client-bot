@@ -34,16 +34,14 @@ module default {
     }
 
     # Authorization record - separate from User for clean separation of concerns
+    # Identity maps Telegram user to local identity (no Letta identity API dependency)
     type Identity {
         required user: User {
             constraint exclusive;
         }
 
-        # Letta identity reference (UUID string)
+        # Local identity key (format: tg-{telegram_id})
         required identifier_key: str {
-            constraint exclusive;
-        }
-        required identity_id: str {
             constraint exclusive;
         }
 

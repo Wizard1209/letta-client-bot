@@ -30,7 +30,6 @@ class GetIdentityResult(NoPydanticValidation):
     id: uuid.UUID
     user: GetIdentityResultUser
     identifier_key: str
-    identity_id: str
     selected_agent: str | None
     created_at: datetime.datetime
 
@@ -58,7 +57,6 @@ async def get_identity(
         select Identity {
             user: {*},
             identifier_key,
-            identity_id,
             selected_agent,
             created_at,
         }

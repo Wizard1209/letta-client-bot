@@ -34,17 +34,14 @@ async def create_identity(
     *,
     telegram_id: int,
     identifier_key: str,
-    identity_id: str,
 ) -> CreateIdentityResult:
     return await executor.query_single(
         """\
         insert Identity {
             user := (select User filter .telegram_id = <int64>$telegram_id),
-            identifier_key := <str>$identifier_key,
-            identity_id := <str>$identity_id
+            identifier_key := <str>$identifier_key
         };\
         """,
         telegram_id=telegram_id,
         identifier_key=identifier_key,
-        identity_id=identity_id,
     )
