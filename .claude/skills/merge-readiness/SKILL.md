@@ -1,6 +1,6 @@
 ---
 name: merge-readiness
-description: Validates branch is ready for merge with step-by-step checklist. Use when user asks "is everything ready for merge?", "ready to merge?", "can I merge?", "merge checklist", "pr ready?", "confirm merge", "confirm this merge request", "confirm pr", or "verify merge readiness".
+description: Validates branch/PR is ready for merge with step-by-step checklist. Use when user mentions readiness, merge validation, or pre-merge checks — any variation of "ready to merge", "is this ready", "make sure it's ready", "check readiness", "confirm merge/pr", "merge checklist", "can I merge", "validate before merge", or similar intent around verifying a branch or PR is mergeable.
 ---
 
 # Merge Readiness Checklist

@@ -11,7 +11,7 @@ from gel import AsyncIOExecutor
 from httpx import ReadTimeout
 from letta_client import APIError
 
-from letta_bot.client import LettaProcessingError, client
+from letta_bot.client import LettaProcessingError, client, list_agents_by_user
 from letta_bot.documents import (
     DocumentProcessingError,
     FileTooLargeError,
@@ -53,11 +53,11 @@ async def switch(message: Message, identity: GetIdentityResult) -> None:
     if not message.from_user:
         return
 
-    # List all agents for this identity
+    # List all agents for this user (via identity tags)
     try:
         # Collect ALL agents across all pages
         all_agents = []
-        async for agent in client.identities.agents.list(identity_id=identity.identity_id):
+        async for agent in list_agents_by_user(message.from_user.id):
             all_agents.append(agent)
 
         if not all_agents:
@@ -86,7 +86,7 @@ async def switch(message: Message, identity: GetIdentityResult) -> None:
         )
 
     except APIError as e:
-        LOGGER.error(f'Error listing agents for identity {identity.identity_id}: {e}')
+        LOGGER.error(f'Error listing agents for user {message.from_user.id}: {e}')
         await message.answer(**Text('Error retrieving your assistants').as_kwargs())
 
 
@@ -108,30 +108,41 @@ async def handle_switch_assistant(
         await callback.answer('Already selected')
         return
 
+    # Fetch all user's agents first (used for validation and keyboard rebuild)
+    try:
+        all_agents = [agent async for agent in list_agents_by_user(callback.from_user.id)]
+    except APIError as e:
+        LOGGER.error(f'Error listing agents for user {callback.from_user.id}: {e}')
+        await callback.answer('❌ Error retrieving assistants')
+        return
+
+    # Validate user has access to the requested agent
+    valid_ids = {agent.id for agent in all_agents}
+    if callback_data.agent_id not in valid_ids:
+        await callback.answer('❌ Assistant not available')
+        return
+
     # Update selected agent in database
     await set_selected_agent_query(
-        gel_client, identity_id=identity.identity_id, agent_id=callback_data.agent_id
+        gel_client, telegram_id=callback.from_user.id, agent_id=callback_data.agent_id
     )
 
-    # Rebuild keyboard with updated selection
-    try:
-        builder = InlineKeyboardBuilder()
-        async for agent in client.identities.agents.list(identity_id=identity.identity_id):
-            is_selected = agent.id == callback_data.agent_id
-            button_text = f'{"✅ " if is_selected else ""}{agent.name}'
-            builder.button(
-                text=button_text,
-                callback_data=SwitchAssistantCallback(agent_id=agent.id).pack(),
-            )
-        builder.adjust(1)
+    # Rebuild keyboard with updated selection (using already fetched agents)
+    builder = InlineKeyboardBuilder()
+    for agent in all_agents:
+        is_selected = agent.id == callback_data.agent_id
+        button_text = f'{"✅ " if is_selected else ""}{agent.name}'
+        builder.button(
+            text=button_text,
+            callback_data=SwitchAssistantCallback(agent_id=agent.id).pack(),
+        )
+    builder.adjust(1)
 
-        # Update keyboard to show new selection
-        if isinstance(callback.message, Message):
-            await callback.message.edit_reply_markup(
-                reply_markup=builder.as_markup(),
-            )
-    except APIError as e:
-        LOGGER.error(f'Error updating keyboard: {e}')
+    # Update keyboard to show new selection
+    if isinstance(callback.message, Message):
+        await callback.message.edit_reply_markup(
+            reply_markup=builder.as_markup(),
+        )
 
     # Toast notification for success
     await callback.answer('✅ Assistant switched')
@@ -293,7 +304,7 @@ async def clear_messages(message: Message, agent_id: str) -> None:
                 Bold(agent.name),
                 '\n\n',
                 '⚠️ Clear context messages?\n\n',
-                'This won\'t affect memory or message history.',
+                "This won't affect memory or message history.",
             ).as_kwargs(),
             reply_markup=builder.as_markup(),
         )
