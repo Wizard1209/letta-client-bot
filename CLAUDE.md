@@ -382,12 +382,24 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 **Phase 4: Message Routing and Response Processing**
 
 - Authorized users send messages to bot
-- **Message content processing** (builds multimodal content parts):
-  - Text: plain text, quotes, replies, captions
-  - Voice/audio: transcribed via external service, wrapped in XML tags
+- **Content-type handlers** (`agent.py`): Each message type has a dedicated handler using aiogram's `F` filters:
+  - `handle_document` (F.document) - document uploads with per-user concurrency control
+  - `handle_photo` (F.photo) - multimodal image content
+  - `handle_audio` (F.voice | F.audio) - voice/audio transcription
+  - `handle_video` (F.video) - unsupported notification
+  - `handle_sticker` (F.sticker) - unsupported notification
+  - `handle_text` (catch-all) - text messages
+- **Handler registration order matters**: Specific filters must come before catch-all (first match wins)
+- **Message context building** (shared across handlers via `MessageContext` dataclass):
+  - Metadata: `<metadata>` tag with user name, day of week, date, time (UTC)
+  - Reply context: `<quote>` (quoted text) or `<reply_to>` (first 100 chars of reply)
+  - Caption: `<caption>` tag for media messages
+- **Content-type-specific processing**:
+  - Text: plain text content
+  - Voice/audio: transcribed via external service, wrapped in XML tags (`<voice_transcript>`, `<audio_transcript>`)
   - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected)
   - **Documents**: validated by type/size, uploaded to per-agent Letta folder, processed asynchronously with status polling
-  - Unsupported: video and stickers notify user, don't block message
+  - Unsupported: video and stickers notify user, don't process further
 - **Document processing** (`documents.py`):
   - Accepts any file type (no MIME type restrictions)
   - Size limit: ~10MB (Letta API constraint)
@@ -604,7 +616,7 @@ letta_bot/
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
   auth.py              # All authorization: user requests (/access, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
-  agent.py             # Agent operations: /switch, /current, /context, and message routing to Letta agents
+  agent.py             # Agent operations: /switch, /current, /context, /clear, and content-type message handlers (document, photo, audio, video, sticker, text)
   client.py            # Shared Letta client instance and Letta API operations (agent, folder, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
   tools.py             # Tool management: attach/detach/configure agent tools (/notify for proactive mode)
