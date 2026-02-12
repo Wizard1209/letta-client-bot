@@ -25,7 +25,7 @@ from letta_bot.images import (
     ImageContentPart,
     ImageProcessingError,
     TextContentPart,
-    process_telegram_photo,
+    process_telegram_image,
 )
 from letta_bot.letta_sdk_extensions import context_window_overview
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
@@ -661,7 +661,7 @@ async def handle_photo(message: Message, bot: Bot, agent_id: str) -> None:
 
     # Process image (highest resolution)
     try:
-        image_part = await process_telegram_photo(bot, message.photo[-1])
+        image_part = await process_telegram_image(bot, message.photo[-1])
         ctx.add_image(image_part)
     except ImageProcessingError as e:
         LOGGER.warning(
@@ -726,10 +726,44 @@ async def handle_video(message: Message) -> None:
     await message.answer(**Text('Video content is not supported').as_kwargs())
 
 
-@agent_router.message(F.sticker, flags={'require_identity': True, 'require_agent': True})
-async def handle_sticker(message: Message) -> None:
-    """Notify user that stickers are not supported."""
-    await message.answer(**Text('Stickers are not yet supported').as_kwargs())
+@agent_router.message(
+    F.sticker & ~F.sticker.is_animated & ~F.sticker.is_video,
+    flags={'require_identity': True, 'require_agent': True},
+)
+async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> None:
+    """Handle regular (static) stickers as images."""
+    if not message.from_user or not message.sticker:
+        return
+
+    ctx = init_message_context(message)
+
+    # Process sticker as image
+    try:
+        image_part = await process_telegram_image(bot, message.sticker)
+        ctx.add_image(image_part)
+    except ImageProcessingError as e:
+        LOGGER.warning(
+            'Sticker processing failed: %s, telegram_id=%s',
+            e,
+            message.from_user.id,
+        )
+        ctx.prepend_text(f'<sticker_processing_error>{e}</sticker_processing_error>')
+
+    # Send to agent
+    content_parts = ctx.build_content_parts()
+    if content_parts:
+        await send_to_agent(message, bot, agent_id, content_parts)
+
+
+@agent_router.message(
+    F.sticker & (F.sticker.is_animated | F.sticker.is_video),
+    flags={'require_identity': True, 'require_agent': True},
+)
+async def handle_animated_sticker(message: Message) -> None:
+    """Notify user that animated/video stickers are not supported."""
+    await message.answer(
+        **Text('Animated and video stickers are not supported').as_kwargs()
+    )
 
 
 @agent_router.message(flags={'require_identity': True, 'require_agent': True})

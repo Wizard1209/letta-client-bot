@@ -387,7 +387,8 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - `handle_photo` (F.photo) - multimodal image content
   - `handle_audio` (F.voice | F.audio) - voice/audio transcription
   - `handle_video` (F.video) - unsupported notification
-  - `handle_sticker` (F.sticker) - unsupported notification
+  - `handle_regular_sticker` (F.sticker & ~is_animated & ~is_video) - static stickers as images
+  - `handle_animated_sticker` (F.sticker & is_animated | is_video) - unsupported notification
   - `handle_text` (catch-all) - text messages
 - **Handler registration order matters**: Specific filters must come before catch-all (first match wins)
 - **Message context building** (shared across handlers via `MessageContext` dataclass):
@@ -399,7 +400,8 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Voice/audio: transcribed via external service, wrapped in XML tags (`<voice_transcript>`, `<audio_transcript>`)
   - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected)
   - **Documents**: validated by type/size, uploaded to per-agent Letta folder, processed asynchronously with status polling
-  - Unsupported: video and stickers notify user, don't process further
+  - **Stickers**: regular (static) stickers processed as images; animated/video stickers unsupported
+  - Unsupported: video and animated/video stickers notify user, don't process further
 - **Document processing** (`documents.py`):
   - Accepts any file type (no MIME type restrictions)
   - Size limit: ~10MB (Letta API constraint)
@@ -623,7 +625,7 @@ letta_bot/
   broadcast.py         # Bot-level messaging: admin notifications, user broadcasts
   response_handler.py  # Agent response stream processing and message formatting
   letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
-  images.py            # Image processing: download Telegram photos, convert to base64 for Letta multimodal API
+  images.py            # Image processing: download Telegram photos/stickers, convert to base64 for Letta multimodal API
   documents.py         # Document processing: download Telegram files, upload to Letta folders for RAG
   transcription.py     # Audio transcription: OpenAI Whisper and ElevenLabs Scribe engines for voice/audio messages
   utils.py             # Utility functions (async cache decorator with TTL, UUID validation)

@@ -1,4 +1,4 @@
-"""Image processing utilities for Telegram photos.
+"""Image processing utilities for Telegram photos and stickers.
 
 This module handles downloading images from Telegram and converting them
 to base64-encoded content parts for Letta's multimodal API.
@@ -6,12 +6,20 @@ to base64-encoded content parts for Letta's multimodal API.
 
 import base64
 import logging
-from typing import BinaryIO, Literal, TypedDict
+from typing import BinaryIO, Literal, Protocol, TypedDict, runtime_checkable
 
 from aiogram import Bot
-from aiogram.types import PhotoSize
 
 from letta_bot.utils import get_mime_type
+
+
+@runtime_checkable
+class HasFileId(Protocol):
+    """Protocol for objects with file_id attribute (PhotoSize, Sticker, etc.)."""
+
+    @property
+    def file_id(self) -> str: ...
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,22 +59,22 @@ class ImageProcessingError(Exception):
 DEFAULT_MEDIA_TYPE = 'image/jpeg'
 
 
-async def download_telegram_image(bot: Bot, photo: PhotoSize) -> tuple[bytes, str]:
-    """Download image from Telegram and return raw bytes with file path.
+async def download_telegram_file(bot: Bot, file_obj: HasFileId) -> tuple[bytes, str]:
+    """Download file from Telegram and return raw bytes with file path.
 
     Args:
         bot: Aiogram Bot instance
-        photo: PhotoSize object (use message.photo[-1] for highest resolution)
+        file_obj: Any object with file_id (PhotoSize, Sticker, etc.)
 
     Returns:
-        Tuple of (image_bytes, file_path)
+        Tuple of (file_bytes, file_path)
 
     Raises:
         ImageProcessingError: If download fails
     """
     try:
         # Get file info (needed for file_path to detect MIME type)
-        file = await bot.get_file(photo.file_id)
+        file = await bot.get_file(file_obj.file_id)
 
         if not file.file_path:
             raise ImageProcessingError('Telegram returned empty file_path')
@@ -117,18 +125,15 @@ def build_image_content_part(base64_data: str, media_type: str) -> ImageContentP
     }
 
 
-async def process_telegram_photo(bot: Bot, photo: PhotoSize) -> ImageContentPart:
-    """Process a Telegram photo into a Letta image content part.
+async def process_telegram_image(bot: Bot, file_obj: HasFileId) -> ImageContentPart:
+    """Process a Telegram image (photo or sticker) into a Letta image content part.
 
-    This is the main entry point for image processing. It:
-    1. Downloads the image from Telegram
-    2. Encodes it to base64
-    3. Detects the MIME type
-    4. Builds the Letta content structure
+    Downloads the file from Telegram, encodes to base64, detects MIME type,
+    and builds the Letta content structure.
 
     Args:
         bot: Aiogram Bot instance
-        photo: PhotoSize object (use message.photo[-1] for highest resolution)
+        file_obj: Any object with file_id (PhotoSize, Sticker, etc.)
 
     Returns:
         Letta image content part ready for API request
@@ -136,13 +141,9 @@ async def process_telegram_photo(bot: Bot, photo: PhotoSize) -> ImageContentPart
     Raises:
         ImageProcessingError: If any step fails
     """
-    # Download image
-    image_data, file_path = await download_telegram_image(bot, photo)
+    image_data, file_path = await download_telegram_file(bot, file_obj)
 
-    # Encode to base64
     base64_data = encode_image_to_base64(image_data)
-
-    # Detect MIME type from file path
     media_type = get_mime_type(file_path) or DEFAULT_MEDIA_TYPE
 
     LOGGER.info(
