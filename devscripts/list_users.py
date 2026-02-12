@@ -6,15 +6,17 @@ Usage:
 
 from collections import defaultdict
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config
 
 
 def main() -> None:
     """List users by identity-tg-* tags and their agents."""
+    print_config()
+
     # Group agents by telegram_id from identity-tg-* tags
     users: dict[int, list] = defaultdict(list)
 
-    print('\nScanning agents...')
+    print('Scanning agents...')
 
     for agent in letta.agents.list():
         # Fetch full agent with tags

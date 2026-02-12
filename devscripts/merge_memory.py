@@ -22,7 +22,8 @@ from itertools import islice
 from letta_client import APIError
 from openai import OpenAI
 
-from devscripts.bootstrap import env, letta
+from devscripts.bootstrap import letta, print_config
+from letta_bot.config import CONFIG
 
 MERGE_PROMPT = """You are a precise text merger. Your task is to merge two text blocks into one.
 
@@ -47,7 +48,7 @@ Please perform these steps:
 
 def get_openai_client() -> OpenAI:
     """Get sync OpenAI client."""
-    return OpenAI(api_key=env('OPENAI_API_KEY'))
+    return OpenAI(api_key=CONFIG.openai_api_key)
 
 
 def get_agent_blocks(agent_id: str) -> dict[str, dict]:
@@ -172,7 +173,8 @@ def send_system_message(agent_id: str, message: str) -> bool:
 
 def main(source_agent_id: str, target_agent_id: str, auto_approve: bool = False) -> None:
     """Merge memory blocks from source to target agent."""
-    print(f'\n📦 Memory Merge: {source_agent_id} → {target_agent_id}')
+    print_config(source=source_agent_id, target=target_agent_id)
+    print(f'📦 Memory Merge: {source_agent_id} → {target_agent_id}')
     if auto_approve:
         print('   (Auto-approve mode)')
     print()

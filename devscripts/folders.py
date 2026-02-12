@@ -9,7 +9,7 @@ import argparse
 
 from letta_client import APIError
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config
 
 
 def list_folders() -> None:
@@ -82,6 +82,7 @@ def delete_folders(folder_ids: list[str]) -> None:
 
 
 def main() -> None:
+    print_config()
     parser = argparse.ArgumentParser(description='Manage Letta folders')
     subparsers = parser.add_subparsers(dest='command', required=True)
 

@@ -505,7 +505,7 @@ docker-compose -f deploy/docker-compose.yaml up -d --build
 
 ## Devscripts
 
-Development scripts for Letta API operations live in `devscripts/`. Scripts use **sync Letta client** (not async) and **plain env loading** via `bootstrap.py`.
+Development scripts for Letta API operations live in `devscripts/`. Scripts use **sync Letta client** (not async) and `CONFIG` from `letta_bot.config` via `bootstrap.py`.
 
 ```bash
 uv run python -m devscripts.delete_agents agent-uuid1 agent-uuid2

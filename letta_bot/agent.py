@@ -304,7 +304,7 @@ async def clear_messages(message: Message, agent_id: str) -> None:
                 Bold(agent.name),
                 '\n\n',
                 '⚠️ Clear context messages?\n\n',
-                'This won\'t affect memory or message history.',
+                "This won't affect memory or message history.",
             ).as_kwargs(),
             reply_markup=builder.as_markup(),
         )

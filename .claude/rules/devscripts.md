@@ -5,7 +5,7 @@ paths:
 
 # Writing Devscripts
 
-Import from `devscripts.bootstrap`:
+Import from `devscripts.bootstrap` and `letta_bot.config`:
 
 ```python
 """Description of the script.
@@ -14,13 +14,13 @@ Usage:
     uv run python -m devscripts.my_script [args]
 """
 
-from devscripts.bootstrap import env, letta, gel
+from devscripts.bootstrap import letta, gel, print_config, resolve_agent_id
+from letta_bot.config import CONFIG
 
 
 def main() -> None:
-    project_id = env('LETTA_PROJECT_ID')
+    print_config()  # Always print key inputs first
     agents = letta.agents.list()
-    users = gel.query('select User { telegram_id }')
 
 
 if __name__ == '__main__':
@@ -29,16 +29,18 @@ if __name__ == '__main__':
 
 ## Bootstrap API
 
-- `env(key, default=None)` - get env var
-- `letta` - sync Letta client
-- `gel` - sync Gel client
-
+- `letta` - sync Letta client (created at import time)
+- `gel` - sync Gel client (created at import time)
+- `print_config(**extra)` - print masked config values; pass extra kwargs for script-specific inputs
+- `resolve_agent_id(cli_arg=None)` - resolve agent ID from CLI > env > .agent_id file
 ## Key Rules
 
 1. Sync clients only (no async/await)
-2. Import from `devscripts.bootstrap`, NOT `letta_bot.config`
-3. Use `env()` for env vars, NOT `CONFIG`
-4. Include usage docstring at top
-5. Use argparse for CLI args
+2. Import clients from `devscripts.bootstrap`, config from `letta_bot.config`
+3. Use `CONFIG.field` for env vars
+4. Use `resolve_agent_id()` for agent ID resolution
+5. Always call `print_config()` at script start (pass extra kwargs for script-specific inputs)
+6. Include usage docstring at top
+7. Use argparse for CLI args
 
 **Note:** devscripts are excluded from mypy and type annotation checks (see pyproject.toml)

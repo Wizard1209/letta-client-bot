@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from letta_client import APIError
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config
 
 
 @dataclass
@@ -165,8 +165,9 @@ def migrate_agent(agent_id: str, dry_run: bool) -> AgentMigration:
 
 def main(dry_run: bool = False) -> None:
     """Migrate all agents from Letta Identity API to tag-based system."""
+    print_config()
     mode = '[DRY RUN] ' if dry_run else ''
-    print(f'\n{mode}Migrating agents from Letta Identity API to tags...\n')
+    print(f'{mode}Migrating agents from Letta Identity API to tags...\n')
 
     results: list[AgentMigration] = []
 
