@@ -19,6 +19,8 @@ import logging
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv; load_dotenv(Path(__file__).parent.parent / '.env')
+
 import gel as _gel_module
 from letta_client import Letta
 
