@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass, field
 import logging
 
@@ -28,6 +29,7 @@ from letta_bot.images import (
     process_telegram_image,
 )
 from letta_bot.letta_sdk_extensions import context_window_overview
+from letta_bot.middlewares import PendingMediaGroup
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
@@ -647,29 +649,77 @@ async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
 
 
 @agent_router.message(F.photo, flags={'require_identity': True, 'require_agent': True})
-async def handle_photo(message: Message, bot: Bot, agent_id: str) -> None:
-    """Handle photo messages with multimodal content."""
+async def handle_photo(
+    message: Message,
+    bot: Bot,
+    agent_id: str,
+    media_group: PendingMediaGroup | None = None,
+) -> None:
+    """Handle photo messages with multimodal content.
+
+    Args:
+        message: Telegram message (first message if album)
+        bot: Aiogram Bot instance
+        agent_id: Letta agent ID
+        media_group: Injected by MediaGroupBufferMiddleware for albums
+    """
+    # F.photo filter guarantees message.photo exists
     if not message.from_user or not message.photo:
         return
 
     ctx = init_message_context(message)
 
-    # Add caption if present
-    caption = build_caption(message)
-    if caption:
-        ctx.add_text(caption)
+    if media_group:
+        # Album: process all photos together
+        if media_group.caption:
+            ctx.add_text(f'<caption>{media_group.caption}</caption>')
 
-    # Process image (highest resolution)
-    try:
-        image_part = await process_telegram_image(bot, message.photo[-1])
-        ctx.add_image(image_part)
-    except ImageProcessingError as e:
-        LOGGER.warning(
-            'Image processing failed: %s, telegram_id=%s',
-            e,
-            message.from_user.id,
-        )
-        ctx.prepend_text(f'<image_processing_error>{e}</image_processing_error>')
+        # Process all photos in parallel (middleware ensures all messages have photos)
+        tasks = [
+            process_telegram_image(bot, m.photo[-1])
+            for m in media_group.messages
+            if m.photo  # defensive check
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Add successful results, log errors
+        successful_count = 0
+        for i, result in enumerate(results):
+            if isinstance(result, BaseException):
+                LOGGER.warning(
+                    'Album image %d processing failed: %s, telegram_id=%s',
+                    i + 1,
+                    result,
+                    message.from_user.id,
+                )
+            else:
+                # result is ImageContentPart
+                ctx.add_image(result)
+                successful_count += 1
+
+        # If all images failed, add error context
+        if successful_count == 0 and results:
+            ctx.prepend_text(
+                '<image_processing_error>'
+                'Failed to process all images in album'
+                '</image_processing_error>'
+            )
+    else:
+        # Single photo — add caption and process
+        caption = build_caption(message)
+        if caption:
+            ctx.add_text(caption)
+
+        try:
+            image_part = await process_telegram_image(bot, message.photo[-1])
+            ctx.add_image(image_part)
+        except ImageProcessingError as e:
+            LOGGER.warning(
+                'Image processing failed: %s, telegram_id=%s',
+                e,
+                message.from_user.id,
+            )
+            ctx.prepend_text(f'<image_processing_error>{e}</image_processing_error>')
 
     # Send to agent
     content_parts = ctx.build_content_parts()

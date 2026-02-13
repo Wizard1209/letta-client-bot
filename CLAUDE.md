@@ -82,12 +82,15 @@ The bot uses **Aiogram's middleware system** for dependency injection and access
   - User not authorized → `❌ No access — use /new or /access to request`
 - Injects `identity: GetIdentityResult` into handler data
 
-**MediaGroupMiddleware** (`middlewares.py`):
+**MediaGroupBufferMiddleware** (`middlewares.py`):
 
-- Rejects Telegram media groups (albums) with a single response message
-- Prevents duplicate error messages when user sends multiple files at once
-- Configurable predicate to filter which events trigger rejection
-- Currently registered for documents and photos in `setup_middlewares()`
+- Buffers photo albums and processes them as a single request to the agent
+- For photo albums: collects all photos with same `media_group_id`, waits 1 second, then triggers handler with aggregated data
+- For single photos: passes through with rate limiting (5 photos per minute per user)
+- For document albums: rejects with error message (sequential processing too slow)
+- Album rate limit: 1 album per minute per user
+- Injects `media_group: PendingMediaGroup` into handler data for albums
+- Status message flow: "📷 Receiving photos..." → "⏳ Processing N photo(s)..." → deleted on success
 
 **RateLimitMiddleware** (`middlewares.py`):
 
@@ -211,8 +214,8 @@ class CustomMiddleware(BaseMiddleware):
 dp.message.outer_middleware.register(UserMiddleware())
 dp.callback_query.outer_middleware.register(UserMiddleware())
 
-# 2. MediaGroupMiddleware (inner) - rejects albums for files/photos
-dp.message.middleware(MediaGroupMiddleware(...))
+# 2. MediaGroupBufferMiddleware (inner) - buffers photo albums, rejects document albums
+dp.message.middleware(MediaGroupBufferMiddleware(...))
 
 # 3. IdentityMiddleware (inner) - checks identity authorization
 dp.message.middleware(IdentityMiddleware())
@@ -398,7 +401,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 - **Content-type-specific processing**:
   - Text: plain text content
   - Voice/audio: transcribed via external service, wrapped in XML tags (`<voice_transcript>`, `<audio_transcript>`)
-  - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected)
+  - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected); photo albums processed together as single request with all images
   - **Documents**: validated by type/size, uploaded to per-agent Letta folder, processed asynchronously with status polling
   - **Stickers**: regular (static) stickers processed as images; animated/video stickers unsupported
   - Unsupported: video and animated/video stickers notify user, don't process further
@@ -406,7 +409,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Accepts any file type (no MIME type restrictions)
   - Size limit: ~10MB (Letta API constraint)
   - Per-user concurrency control via `FileProcessingTracker` (one upload at a time per user)
-  - Media groups (albums) rejected by `MediaGroupMiddleware`
+  - Document albums rejected by `MediaGroupBufferMiddleware` (photo albums supported separately)
   - Files uploaded to agent-specific folders (`uploads-{agent_id}`) and indexed for RAG
   - Auto-attaches `file_handling` memory block to agent on first file upload (teaches agent how to respond to files)
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)

@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 **[Latest additions]**
 
 **Added:**
+• Photo album support: send multiple photos at once and they're processed together as a single request to your assistant
 • Sticker support: regular (static) stickers are now processed as images and sent to your assistant (animated and video stickers remain unsupported)
 • Image support: send photos to your assistant and it can see and analyze them (uses Letta's multimodal API with base64 encoding)
 • Document upload: send files (PDF, code, text, markdown, configs) to your assistant for analysis and RAG-indexed search (~10MB limit)
@@ -14,7 +15,6 @@ All notable changes to this project will be documented in this file.
 
 **Changed:**
 • Renamed `/botaccess` → `/access` with clearer description emphasizing this grants general bot access only (identity), not assistant capabilities
-• Album uploads now rejected with clear "send one file at a time" message
 • Reasoning messages now display in collapsible blockquote (tap to expand full reasoning)
 • Message formatting migrated to native Telegram entities via custom md_tg module (replaces telegramify-markdown library)
 
