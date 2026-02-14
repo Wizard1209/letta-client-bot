@@ -219,6 +219,34 @@ Local TODOs are still in code
 - Implement global error handling for agent message sending using aiogram middlewares <https://docs.aiogram.dev/en/v3.22.0/dispatcher/middlewares.html>
 - Replace manual MarkdownV2 escaping with automatic conversion
 
+### Media Group Handling Problems
+
+Telegram sends every item in an album as a **separate message** with the same `media_group_id`. The current `MediaGroupBufferMiddleware` makes per-message content type decisions (`has_document or not has_photo`), but the full album composition is unknown until all items arrive. This causes several problems:
+
+**1. Mixed album race condition (photo arrives before document)**
+
+- Photo message arrives first → buffered in `MediaGroupBuffer` under its `media_group_id`
+- Document message arrives second → triggers rejection path, sends error to user
+- But the buffered photo is **not removed from the buffer** — the rejection path doesn't touch `MediaGroupBuffer`
+- Timer fires after 1s → `process_group` runs with a partial album (just the photo)
+- Result: user sees error message AND the photo gets processed as a "1-photo album"
+
+**2. Per-message classification is fundamentally unreliable**
+
+- Each message in an album carries only its own content type (photo OR document, never both)
+- The middleware decides on the first message whether to buffer or reject
+- If photos arrive first → they get buffered; if documents arrive first → immediate rejection
+- Arrival order depends on Telegram servers, not user intent
+- There's no way to "undo" buffering when a document shows up later in the same group
+
+**3. Rate limiter placement**
+
+- Album rate limit is checked inside `process_group` callback — after all photos are buffered and the 1s timeout elapsed
+- User sees "📷 Receiving photos..." → waits 1s → "📷 Too many albums. Wait Xs."
+- Rate limiting should ideally happen before buffering to avoid wasted work and confusing UX
+
+**Possible fix direction:** Buffer ALL media group items regardless of type for the 1s window, then classify the complete group after timeout. This way mixed albums can be properly rejected as a whole, and photo-only albums processed together. The `process_group` callback would check content types of all collected messages before deciding to process or reject.
+
 ## GEL
 
 This project uses gel database as a storage layer

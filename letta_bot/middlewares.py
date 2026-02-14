@@ -62,11 +62,10 @@ class MediaGroupBuffer:
 
     def __init__(self, process_timeout: float = 1.0) -> None:
         self._pending: dict[str, PendingMediaGroup] = {}
-        self._lock = asyncio.Lock()
         self.process_timeout = process_timeout
         self._stale_threshold = 60.0  # Clean up groups older than 60s
 
-    async def add_item(
+    def add_item(
         self,
         media_group_id: str,
         message: Message,
@@ -82,41 +81,38 @@ class MediaGroupBuffer:
         Returns:
             The PendingMediaGroup (for status message updates)
         """
-        async with self._lock:
-            # Clean up stale groups
-            self._cleanup_stale()
+        # No lock needed: all operations are sync (no await), atomic in asyncio
+        if media_group_id in self._pending:
+            pending = self._pending[media_group_id]
+            pending.messages.append(message)
 
-            if media_group_id in self._pending:
-                pending = self._pending[media_group_id]
-                pending.messages.append(message)
+            # Update caption if this message has one and we don't have one yet
+            if pending.caption is None and message.caption:
+                pending.caption = message.caption
 
-                # Update caption if this message has one and we don't have one yet
-                if pending.caption is None and message.caption:
-                    pending.caption = message.caption
-
-                # Reset timer
-                if pending.timer_handle:
-                    pending.timer_handle.cancel()
-            else:
-                pending = PendingMediaGroup(
-                    media_group_id=media_group_id,
-                    messages=[message],
-                    caption=message.caption,
-                )
-                self._pending[media_group_id] = pending
-
-            # Schedule processing
-            loop = asyncio.get_running_loop()
-
-            def create_callback_task(gid: str = media_group_id) -> None:
-                asyncio.create_task(self._trigger_callback(gid, callback))
-
-            pending.timer_handle = loop.call_later(
-                self.process_timeout,
-                create_callback_task,
+            # Reset timer
+            if pending.timer_handle:
+                pending.timer_handle.cancel()
+        else:
+            pending = PendingMediaGroup(
+                media_group_id=media_group_id,
+                messages=[message],
+                caption=message.caption,
             )
+            self._pending[media_group_id] = pending
 
-            return pending
+        # Schedule processing
+        loop = asyncio.get_running_loop()
+
+        def create_callback_task(gid: str = media_group_id) -> None:
+            asyncio.create_task(self._trigger_callback(gid, callback))
+
+        pending.timer_handle = loop.call_later(
+            self.process_timeout,
+            create_callback_task,
+        )
+
+        return pending
 
     async def _trigger_callback(
         self,
@@ -124,14 +120,14 @@ class MediaGroupBuffer:
         callback: Callable[[PendingMediaGroup], Awaitable[None]],
     ) -> None:
         """Trigger callback for media group processing."""
-        pending = await self.get_and_remove(media_group_id)
+        pending = self.get_and_remove(media_group_id)
         if pending:
             try:
                 await callback(pending)
             except Exception as e:
                 LOGGER.exception('Media group callback error: %s', e)
 
-    async def get_and_remove(self, media_group_id: str) -> PendingMediaGroup | None:
+    def get_and_remove(self, media_group_id: str) -> PendingMediaGroup | None:
         """Retrieve and remove a pending media group.
 
         Args:
@@ -140,36 +136,10 @@ class MediaGroupBuffer:
         Returns:
             PendingMediaGroup if found, None otherwise
         """
-        async with self._lock:
-            pending = self._pending.pop(media_group_id, None)
-            if pending and pending.timer_handle:
-                pending.timer_handle.cancel()
-            return pending
-
-    def _cleanup_stale(self) -> None:
-        """Remove stale media groups (older than threshold)."""
-        now = time.time()
-        # Collect IDs first, then remove — safe dict iteration pattern
-        stale_ids = [
-            gid
-            for gid, pending in self._pending.items()
-            if now - pending.created_at > self._stale_threshold
-        ]
-        for gid in stale_ids:
-            pending = self._pending.pop(gid, None)
-            if pending and pending.timer_handle:
-                pending.timer_handle.cancel()
-            LOGGER.warning('Cleaned up stale media group: %s', gid)
-
-    def shutdown(self) -> None:
-        """Cancel all pending timers. Call on bot shutdown."""
-        count = len(self._pending)
-        for pending in self._pending.values():
-            if pending.timer_handle:
-                pending.timer_handle.cancel()
-        self._pending.clear()
-        if count > 0:
-            LOGGER.info('MediaGroupBuffer shutdown: cancelled %d pending group(s)', count)
+        pending = self._pending.pop(media_group_id, None)
+        if pending and pending.timer_handle:
+            pending.timer_handle.cancel()
+        return pending
 
 
 # =============================================================================
@@ -215,10 +185,7 @@ async def _set_secrets(agent: AgentState) -> None:
 
 
 class PhotoRateLimiter:
-    """Rate limiter for photo uploads with separate limits for albums and single photos.
-
-    Thread-safe via asyncio.Lock for concurrent request handling.
-    """
+    """Rate limiter for photo uploads with separate limits for albums and single photos."""
 
     def __init__(
         self,
@@ -235,29 +202,26 @@ class PhotoRateLimiter:
         self._album_requests: dict[int, list[float]] = {}
         self._last_cleanup = time.time()
         self._cleanup_interval = 300.0  # Clean up every 5 minutes
-        self._lock = asyncio.Lock()
 
-    async def check_and_record_single(self, user_id: int) -> int | None:
-        """Atomically check and record single photo. Returns wait time or None."""
-        async with self._lock:
-            self._maybe_cleanup()
-            wait = self._check(
-                user_id, self._single_requests, self.single_max, self.single_window
-            )
-            if wait is None:
-                self._record(user_id, self._single_requests)
-            return wait
+    def check_and_record_single(self, user_id: int) -> int | None:
+        """Check and record single photo. Returns wait time or None."""
+        self._maybe_cleanup()
+        wait = self._check(
+            user_id, self._single_requests, self.single_max, self.single_window
+        )
+        if wait is None:
+            self._record(user_id, self._single_requests)
+        return wait
 
-    async def check_and_record_album(self, user_id: int) -> int | None:
-        """Atomically check and record album. Returns wait time or None."""
-        async with self._lock:
-            self._maybe_cleanup()
-            wait = self._check(
-                user_id, self._album_requests, self.album_max, self.album_window
-            )
-            if wait is None:
-                self._record(user_id, self._album_requests)
-            return wait
+    def check_and_record_album(self, user_id: int) -> int | None:
+        """Check and record album. Returns wait time or None."""
+        self._maybe_cleanup()
+        wait = self._check(
+            user_id, self._album_requests, self.album_max, self.album_window
+        )
+        if wait is None:
+            self._record(user_id, self._album_requests)
+        return wait
 
     def _check(
         self,
@@ -366,7 +330,7 @@ class MediaGroupBufferMiddleware(BaseMiddleware):
 
             user_id = event.from_user.id if event.from_user else None
             if user_id and self._rate_limiter:
-                wait_time = await self._rate_limiter.check_and_record_single(user_id)
+                wait_time = self._rate_limiter.check_and_record_single(user_id)
                 if wait_time is not None:
                     await event.answer(f'📷 Too many photos. Wait {wait_time}s.')
                     return None
@@ -420,7 +384,7 @@ class MediaGroupBufferMiddleware(BaseMiddleware):
 
             # Check album rate limit (atomic check-and-record)
             if first_user and rate_limiter:
-                wait_time = await rate_limiter.check_and_record_album(first_user.id)
+                wait_time = rate_limiter.check_and_record_album(first_user.id)
                 if wait_time is not None:
                     await notify_user(f'📷 Too many albums. Wait {wait_time}s.')
                     return  # Don't delete - user needs to see rate limit message
@@ -452,7 +416,7 @@ class MediaGroupBufferMiddleware(BaseMiddleware):
                     await pending.status_message.delete()
 
         # Add to buffer
-        pending = await self._buffer.add_item(media_group_id, event, process_group)
+        pending = self._buffer.add_item(media_group_id, event, process_group)
 
         # Send status message for first item only
         if len(pending.messages) == 1:
@@ -555,22 +519,20 @@ class RateLimitMiddleware(BaseMiddleware):
 
 
 class UserMiddleware(BaseMiddleware):
-    """Registers/updates users in database.
-
-    Uses per-user locks to prevent concurrent upsert conflicts
-    (e.g., when multiple album messages arrive simultaneously).
-    """
+    """Registers/updates users in database."""
 
     def __init__(self) -> None:
         self._user_locks: dict[int, asyncio.Lock] = {}
-        self._locks_lock = asyncio.Lock()
 
-    async def _get_user_lock(self, telegram_id: int) -> asyncio.Lock:
-        """Get or create lock for a specific user."""
-        async with self._locks_lock:
-            if telegram_id not in self._user_locks:
-                self._user_locks[telegram_id] = asyncio.Lock()
-            return self._user_locks[telegram_id]
+    def _get_user_lock(self, telegram_id: int) -> asyncio.Lock:
+        """Get or create lock for a specific user.
+
+        No async lock needed: dict check + set has no await in between,
+        so it's atomic in asyncio's single-threaded event loop.
+        """
+        if telegram_id not in self._user_locks:
+            self._user_locks[telegram_id] = asyncio.Lock()
+        return self._user_locks[telegram_id]
 
     async def __call__(
         self,
@@ -597,7 +559,7 @@ class UserMiddleware(BaseMiddleware):
         }
 
         # Per-user lock prevents concurrent upserts (album messages arrive together)
-        user_lock = await self._get_user_lock(from_user.id)
+        user_lock = self._get_user_lock(from_user.id)
         async with user_lock:
             user = await upsert_user_cached(gel_client, **user_model)
 
@@ -759,9 +721,9 @@ def setup_middlewares(dp: Dispatcher) -> None:
     media_group_buffer = MediaGroupBuffer(process_timeout=1.0)
     photo_rate_limiter = PhotoRateLimiter(
         single_max=5,
-        single_window=60.0,
+        single_window=10.0,
         album_max=1,
-        album_window=60.0,
+        album_window=10.0,
     )
     dp.message.middleware(
         MediaGroupBufferMiddleware(
@@ -770,11 +732,6 @@ def setup_middlewares(dp: Dispatcher) -> None:
             reject_message='📄 Please send files one at a time.',
         )
     )
-
-    # Register shutdown handler to cancel pending timers
-    @dp.shutdown()
-    async def on_shutdown() -> None:
-        media_group_buffer.shutdown()
 
     # Inner middleware - identity and agent checks
     dp.message.middleware(IdentityMiddleware())
