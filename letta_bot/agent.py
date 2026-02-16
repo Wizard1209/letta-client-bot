@@ -201,8 +201,6 @@ async def send_to_agent(
     Raises:
         Re-raises exceptions after logging and notifying user
     """
-    if not message.from_user:
-        return
 
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
@@ -581,8 +579,6 @@ async def handle_clear_messages(
 @agent_router.message(F.document, flags={'require_identity': True, 'require_agent': True})
 async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
     """Handle document uploads with per-user concurrency control."""
-    if not message.from_user or not message.document:
-        return
 
     user_id = message.from_user.id
     ctx = init_message_context(message)
@@ -664,9 +660,6 @@ async def handle_photo(
         media_group: Injected by MediaGroupBufferMiddleware for albums
     """
     # F.photo filter guarantees message.photo exists
-    if not message.from_user or not message.photo:
-        return
-
     ctx = init_message_context(message)
 
     if media_group:
@@ -732,9 +725,6 @@ async def handle_photo(
 )
 async def handle_audio(message: Message, bot: Bot, agent_id: str) -> None:
     """Handle voice messages and audio files with transcription."""
-    if not message.from_user:
-        return
-
     transcription_service = get_transcription_service()
     if transcription_service is None:
         await message.answer(
@@ -782,9 +772,6 @@ async def handle_video(message: Message) -> None:
 )
 async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> None:
     """Handle regular (static) stickers as images."""
-    if not message.from_user or not message.sticker:
-        return
-
     ctx = init_message_context(message)
 
     # Process sticker as image
@@ -822,9 +809,6 @@ async def handle_text(message: Message, bot: Bot, agent_id: str) -> None:
 
     This handler must be registered LAST as it has no content type filter.
     """
-    if not message.from_user:
-        return
-
     ctx = init_message_context(message)
 
     # Add text content
