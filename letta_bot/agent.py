@@ -200,6 +200,7 @@ async def send_to_agent(
     Raises:
         Re-raises exceptions after logging and notifying user
     """
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
@@ -578,6 +579,8 @@ async def handle_clear_messages(
 @agent_router.message(F.document, flags={'require_identity': True, 'require_agent': True})
 async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
     """Handle document uploads with per-user concurrency control."""
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+    assert message.document, 'document required (guaranteed by F.document filter)'
 
     user_id = message.from_user.id
     ctx = init_message_context(message)
@@ -658,6 +661,8 @@ async def handle_album(
         agent_id: Letta agent ID
         photos: Injected by PhotoBufferMiddleware (always present)
     """
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+
     ctx = init_message_context(message)
 
     # Caption: take from first message with caption
@@ -667,11 +672,8 @@ async def handle_album(
             ctx.add_text(caption)
             break
 
-    # Process all photos in parallel
-    tasks = [
-        process_telegram_image(bot, m.photo[-1])
-        for m in photos
-    ]
+    # Process all photos in parallel (photo guaranteed by F.photo filter + buffer)
+    tasks = [process_telegram_image(bot, m.photo[-1]) for m in photos if m.photo]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Add successful results, log errors
@@ -691,9 +693,7 @@ async def handle_album(
     # If all images failed, add error context
     if successful_count == 0 and results:
         ctx.prepend_text(
-            '<image_processing_error>'
-            'Failed to process all images'
-            '</image_processing_error>'
+            '<image_processing_error>Failed to process all images</image_processing_error>'
         )
 
     # Send to agent
@@ -707,6 +707,7 @@ async def handle_album(
 )
 async def handle_audio(message: Message, bot: Bot, agent_id: str) -> None:
     """Handle voice messages and audio files with transcription."""
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
     transcription_service = get_transcription_service()
     if transcription_service is None:
         await message.answer(
@@ -754,6 +755,9 @@ async def handle_video(message: Message) -> None:
 )
 async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> None:
     """Handle regular (static) stickers as images."""
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+    assert message.sticker, 'sticker required (guaranteed by F.sticker filter)'
+
     ctx = init_message_context(message)
 
     # Process sticker as image

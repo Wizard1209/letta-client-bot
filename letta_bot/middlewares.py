@@ -154,7 +154,6 @@ async def _set_secrets(agent: AgentState) -> None:
         )
 
 
-
 class PhotoBufferMiddleware(BaseMiddleware):
     """Buffers all photo messages by user_id before processing.
 
@@ -212,9 +211,7 @@ class PhotoBufferMiddleware(BaseMiddleware):
             # Update status to show processing
             if status_msg:
                 with contextlib.suppress(TelegramAPIError):
-                    await status_msg.edit_text(
-                        f'⏳ Processing {len(messages)} photo(s)...'
-                    )
+                    await status_msg.edit_text(f'⏳ Processing {len(messages)} photo(s)...')
 
             # Inject photos list into handler data
             captured_data['photos'] = messages
