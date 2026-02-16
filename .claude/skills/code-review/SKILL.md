@@ -27,7 +27,10 @@ Never load the full diff at once — it will crash context.
 gh pr view <number> --json files --jq '.files[] | "\(.additions)+\(.deletions) \(.path)"'
 
 # 2. Diff one file at a time during tour stops
-gh pr diff <number> | awk '/^diff --git a\/<file>/,/^diff --git/{if(/^diff --git/ && !/\/<file>/)exit; print}'
+# IMPORTANT: gh pr diff does NOT accept file path arguments (no `-- path/file`)
+# Use awk to extract per-file diffs. Avoid `!` inside awk single quotes (bash interprets it).
+# Working pattern — use BEGIN/flag approach:
+gh pr diff <number> | awk 'BEGIN{p=0} /^diff --git/{p=0} /^diff --git.*<filename>/{p=1} p{print}'
 ```
 
 Walk files one at a time — only load each file's diff at its tour stop.

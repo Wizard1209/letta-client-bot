@@ -1,10 +1,14 @@
+import asyncio
 from collections.abc import Awaitable, Callable
+import contextlib
+from dataclasses import dataclass, field
 import logging
 import time
 from typing import cast
 
 from aiogram import BaseMiddleware, Dispatcher
 from aiogram.dispatcher.flags import get_flag
+from aiogram.exceptions import TelegramAPIError
 from aiogram.types import CallbackQuery, Message
 from aiogram.types.base import TelegramObject
 from aiogram.utils.formatting import Text
@@ -30,6 +34,83 @@ from letta_bot.utils import async_cache
 LOGGER = logging.getLogger(__name__)
 
 upsert_user_cached = async_cache(ttl=43200)(upsert_user)
+
+
+# =============================================================================
+# Photo Buffering
+# =============================================================================
+
+
+@dataclass
+class PendingPhotoBatch:
+    """Buffered photo batch waiting for timeout before processing."""
+
+    messages: list[Message] = field(default_factory=list)
+    status_message: Message | None = None
+    timer_handle: asyncio.TimerHandle | None = None
+
+
+class PhotoBuffer:
+    """Buffer photos by user_id, fire after timeout with no new photos.
+
+    Every photo message is buffered for `process_timeout` seconds.
+    After timeout, the collected batch is passed to the callback as list[Message].
+    """
+
+    def __init__(self, process_timeout: float = 1.0) -> None:
+        self._pending: dict[int, PendingPhotoBatch] = {}
+        self.process_timeout = process_timeout
+
+    def add_photo(
+        self,
+        user_id: int,
+        message: Message,
+        callback: Callable[[list[Message]], Awaitable[None]],
+    ) -> PendingPhotoBatch:
+        """Add photo message to user's buffer.
+
+        Returns:
+            The PendingPhotoBatch (for status message updates)
+        """
+        # No lock needed: all operations are sync (no await), atomic in asyncio
+        if user_id in self._pending:
+            pending = self._pending[user_id]
+            pending.messages.append(message)
+
+            # Reset timer on each new photo
+            if pending.timer_handle:
+                pending.timer_handle.cancel()
+        else:
+            pending = PendingPhotoBatch(messages=[message])
+            self._pending[user_id] = pending
+
+        # Schedule processing
+        loop = asyncio.get_running_loop()
+
+        def create_callback_task(uid: int = user_id) -> None:
+            asyncio.create_task(self._trigger_callback(uid, callback))
+
+        pending.timer_handle = loop.call_later(
+            self.process_timeout,
+            create_callback_task,
+        )
+
+        return pending
+
+    async def _trigger_callback(
+        self,
+        user_id: int,
+        callback: Callable[[list[Message]], Awaitable[None]],
+    ) -> None:
+        """Trigger callback for photo batch processing."""
+        pending = self._pending.pop(user_id, None)
+        if pending:
+            if pending.timer_handle:
+                pending.timer_handle.cancel()
+            try:
+                await callback(pending.messages)
+            except Exception as e:
+                LOGGER.exception('Photo batch callback error: %s', e)
 
 
 # =============================================================================
@@ -73,32 +154,25 @@ async def _set_secrets(agent: AgentState) -> None:
         )
 
 
-class MediaGroupMiddleware(BaseMiddleware):
-    """Rejects media groups (albums) with a single response message.
+class PhotoBufferMiddleware(BaseMiddleware):
+    """Buffers all photo messages by user_id before processing.
+
+    Every photo is buffered for 1s. After timeout, the collected batch
+    (1 or more photos) is passed to the handler as `photos: list[Message]`.
+
+    Rate limiting should be handled by a separate RateLimitMiddleware
+    registered before this middleware in the chain.
 
     Args:
-        predicate: Function to check if event should be filtered (default: always)
-        message: Message to send when media group is detected
+        buffer: PhotoBuffer instance for collecting photos
 
-    Examples:
-        # Reject all media groups
-        MediaGroupMiddleware(message='Please send one file at a time.')
-
-        # Reject only document media groups
-        MediaGroupMiddleware(
-            predicate=lambda e: hasattr(e, 'document') and e.document,
-            message='📄 Please send one file at a time.'
-        )
+    Example:
+        buffer = PhotoBuffer(process_timeout=1.0)
+        dp.message.middleware(PhotoBufferMiddleware(buffer))
     """
 
-    def __init__(
-        self,
-        message: str = 'Please send one item at a time.',
-        predicate: Callable[[TelegramObject], bool] | None = None,
-    ) -> None:
-        self.message = message
-        self.predicate = predicate or (lambda _: True)
-        self._responded_groups: set[str] = set()
+    def __init__(self, buffer: PhotoBuffer) -> None:
+        self._buffer = buffer
 
     async def __call__(
         self,
@@ -106,27 +180,78 @@ class MediaGroupMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, object],
     ) -> object | None:
-        # Skip if predicate returns False
-        if not self.predicate(event):
+        # Only intercept Message events with photos
+        if not isinstance(event, Message) or not event.photo:
             return await handler(event, data)
 
-        # Check for media group
-        media_group_id = getattr(event, 'media_group_id', None)
-        if not media_group_id:
+        user = event.from_user
+        if not user:
             return await handler(event, data)
 
-        # Already responded to this group - silently skip
-        if media_group_id in self._responded_groups:
-            return None
+        user_id = user.id
 
-        # Clear cache if it grows too large (media_group_ids are short-lived)
-        if len(self._responded_groups) > 100:
-            self._responded_groups.clear()
+        # Capture handler and data for delayed callback
+        captured_handler = handler
+        # Shallow copy is safe: aiogram's data contains immutable refs
+        captured_data = data.copy()
 
-        # Respond once and track
-        self._responded_groups.add(media_group_id)
-        if hasattr(event, 'answer'):
-            await event.answer(self.message)
+        async def process_batch(messages: list[Message]) -> None:
+            """Process buffered photo batch."""
+            if not messages:
+                return
+
+            first_message = messages[0]
+            first_user = first_message.from_user
+
+            # Find status message from the pending batch (already deleted from buffer)
+            # We stored it on the batch object, but it's gone now.
+            # Use the status_message we captured via closure.
+            status_msg = batch_status_message
+
+            # Update status to show processing
+            if status_msg:
+                with contextlib.suppress(TelegramAPIError):
+                    await status_msg.edit_text(f'⏳ Processing {len(messages)} photo(s)...')
+
+            # Inject photos list into handler data
+            captured_data['photos'] = messages
+
+            delete_status = True
+            try:
+                await captured_handler(first_message, captured_data)
+            except Exception as e:
+                LOGGER.exception(
+                    'Photo batch handler error: %s, telegram_id=%s',
+                    e,
+                    first_user.id if first_user else 'unknown',
+                )
+                if status_msg:
+                    with contextlib.suppress(TelegramAPIError):
+                        await status_msg.edit_text('❌ Failed to process photos')
+                delete_status = False
+
+            # Clean up status message on success
+            if delete_status and status_msg:
+                with contextlib.suppress(TelegramAPIError):
+                    await status_msg.delete()
+
+        # Add to buffer
+        pending = self._buffer.add_photo(user_id, event, process_batch)
+
+        # Send status message for first photo only
+        batch_status_message: Message | None = None
+        if len(pending.messages) == 1:
+            try:
+                status = await event.answer('📷 Receiving photos...')
+                pending.status_message = status
+                batch_status_message = status
+            except Exception as e:
+                LOGGER.warning('Failed to send status message: %s', e)
+        else:
+            # Subsequent photos: use existing status message
+            batch_status_message = pending.status_message
+
+        # Block handler — will be called via callback after timeout
         return None
 
 
@@ -209,8 +334,8 @@ class RateLimitMiddleware(BaseMiddleware):
         # Check limit
         if len(timestamps) >= self.max_requests:
             wait_time = int(self.window - (now - timestamps[0]))
-            if hasattr(event, 'answer'):
-                await event.answer(self.message.format(wait=wait_time))
+            if isinstance(event, Message):
+                await event.reply(self.message.format(wait=wait_time))
             return None
 
         # Record request
@@ -220,6 +345,21 @@ class RateLimitMiddleware(BaseMiddleware):
 
 
 class UserMiddleware(BaseMiddleware):
+    """Registers/updates users in database."""
+
+    def __init__(self) -> None:
+        self._user_locks: dict[int, asyncio.Lock] = {}
+
+    def _get_user_lock(self, telegram_id: int) -> asyncio.Lock:
+        """Get or create lock for a specific user.
+
+        No async lock needed: dict check + set has no await in between,
+        so it's atomic in asyncio's single-threaded event loop.
+        """
+        if telegram_id not in self._user_locks:
+            self._user_locks[telegram_id] = asyncio.Lock()
+        return self._user_locks[telegram_id]
+
     async def __call__(
         self,
         handler: Callable[[TelegramObject, dict[str, object]], Awaitable[object]],
@@ -244,7 +384,11 @@ class UserMiddleware(BaseMiddleware):
             'language_code': from_user.language_code,
         }
 
-        user = await upsert_user_cached(gel_client, **user_model)
+        # Per-user lock prevents concurrent upserts (album messages arrive together)
+        user_lock = self._get_user_lock(from_user.id)
+        async with user_lock:
+            user = await upsert_user_cached(gel_client, **user_model)
+
         data['user'] = user
 
         # LOGGER.info(f'User upserted: {user.id}') #
@@ -396,17 +540,30 @@ def setup_middlewares(dp: Dispatcher) -> None:
     dp.message.outer_middleware.register(UserMiddleware())
     dp.callback_query.outer_middleware.register(UserMiddleware())
 
-    # Media group rejection for files and images (albums not supported)
-    # Note: concurrent upload blocking handled by file_processing_tracker in agent.py
+    # Document rate limiting (1 per 10s per user)
     dp.message.middleware(
-        MediaGroupMiddleware(
-            predicate=lambda e: (
-                (hasattr(e, 'document') and e.document is not None)
-                or (hasattr(e, 'photo') and e.photo)
-            ),
-            message='📄 Please send one file at a time.',
+        RateLimitMiddleware(
+            max_requests=1,
+            window_seconds=10.0,
+            predicate=lambda e: isinstance(e, Message) and bool(e.document),
+            message="📄 Your document accepted, we can't process more documents"
+            ' for {wait}s.',
         )
     )
+
+    # Photo rate limiting (10 photos per 10s per user)
+    dp.message.middleware(
+        RateLimitMiddleware(
+            max_requests=10,
+            window_seconds=10.0,
+            predicate=lambda e: isinstance(e, Message) and bool(e.photo),
+            message='📷 Your previous photos are being processed. Resend this in {wait}s.',
+        )
+    )
+
+    # Photo buffering (all photos buffered 1s by user_id)
+    photo_buffer = PhotoBuffer(process_timeout=1.0)
+    dp.message.middleware(PhotoBufferMiddleware(buffer=photo_buffer))
 
     # Inner middleware - identity and agent checks
     dp.message.middleware(IdentityMiddleware())

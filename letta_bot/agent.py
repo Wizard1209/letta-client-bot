@@ -1,6 +1,8 @@
+import asyncio
+from dataclasses import dataclass, field
 import logging
 
-from aiogram import Bot, Router
+from aiogram import Bot, F, Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, Message
@@ -21,9 +23,10 @@ from letta_bot.documents import (
 )
 from letta_bot.images import (
     ContentPart,
+    ImageContentPart,
     ImageProcessingError,
     TextContentPart,
-    process_telegram_photo,
+    process_telegram_image,
 )
 from letta_bot.letta_sdk_extensions import context_window_overview
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
@@ -37,6 +40,225 @@ LOGGER = logging.getLogger(__name__)
 
 agent_commands_router = Router(name=f'{__name__}.commands')
 agent_router = Router(name=f'{__name__}.messaging')
+
+
+# =============================================================================
+# Message Context Building (Helper Functions)
+# =============================================================================
+
+
+@dataclass
+class MessageContext:
+    """Accumulates message parts for Letta API request."""
+
+    text_parts: list[str] = field(default_factory=list)
+    image_parts: list[ImageContentPart] = field(default_factory=list)
+
+    def add_text(self, text: str) -> None:
+        """Add text part to context."""
+        self.text_parts.append(text)
+
+    def prepend_text(self, text: str) -> None:
+        """Insert text part at the beginning of context."""
+        self.text_parts.insert(0, text)
+
+    def add_image(self, image: ImageContentPart) -> None:
+        """Add image content part to context."""
+        self.image_parts.append(image)
+
+    def build_content_parts(self) -> list[ContentPart]:
+        """Build final content parts list for Letta API.
+
+        Order: images first, then combined text (per Letta API spec).
+        Returns empty list if no content.
+        """
+        parts: list[ContentPart] = []
+
+        # Images first (per Letta multimodal spec)
+        parts.extend(self.image_parts)
+
+        # Combine all text parts
+        if self.text_parts:
+            combined_text = '\n\n'.join(self.text_parts)
+            text_part: TextContentPart = {'type': 'text', 'text': combined_text}
+            parts.append(text_part)
+
+        return parts
+
+    def has_content(self) -> bool:
+        """Check if context has any content."""
+        return bool(self.text_parts) or bool(self.image_parts)
+
+
+def build_message_metadata(message: Message) -> str:
+    """Build metadata tag for message context.
+
+    Args:
+        message: Telegram message
+
+    Returns:
+        Formatted metadata XML tag, empty string if no user
+    """
+    user = message.from_user
+    if not user:
+        return ''
+
+    day_name = message.date.strftime('%A')
+    date_str = message.date.strftime('%B %d')
+    time_str = message.date.strftime('%H:%M')
+
+    return (
+        f'<metadata>Message received via Telegram from {user.first_name}'
+        f' on {day_name}, {date_str} at {time_str} UTC.</metadata>'
+    )
+
+
+def build_reply_context(message: Message) -> str | None:
+    """Build reply/quote context if present.
+
+    Args:
+        message: Telegram message
+
+    Returns:
+        Formatted reply context or None if no reply
+    """
+    # Quote takes priority (user quoted specific text)
+    if message.quote:
+        return f'<quote>{message.quote.text}</quote>'
+
+    # Full reply without specific quote
+    if message.reply_to_message:
+        reply_text = message.reply_to_message.text
+        if reply_text:
+            preview = reply_text[:100] + ('...' if len(reply_text) > 100 else '')
+            return f'<reply_to>{preview}</reply_to>'
+
+    return None
+
+
+def build_caption(message: Message) -> str | None:
+    """Build caption tag if present.
+
+    Args:
+        message: Telegram message
+
+    Returns:
+        Formatted caption or None
+    """
+    if message.caption:
+        return f'<caption>{message.caption}</caption>'
+    return None
+
+
+def init_message_context(message: Message) -> MessageContext:
+    """Initialize MessageContext with standard layers.
+
+    Adds:
+    - Layer 0: Metadata
+    - Layer 1: Reply context (if present)
+
+    Args:
+        message: Telegram message
+
+    Returns:
+        Initialized MessageContext
+    """
+    ctx = MessageContext()
+
+    # Layer 0: Metadata (always present)
+    metadata = build_message_metadata(message)
+    if metadata:
+        ctx.add_text(metadata)
+
+    # Layer 1: Reply context (optional)
+    reply_ctx = build_reply_context(message)
+    if reply_ctx:
+        ctx.add_text(reply_ctx)
+
+    return ctx
+
+
+# =============================================================================
+# Agent Communication (Shared Logic)
+# =============================================================================
+
+
+async def send_to_agent(
+    message: Message,
+    bot: Bot,
+    agent_id: str,
+    content_parts: list[ContentPart],
+) -> None:
+    """Send message to agent and stream response.
+
+    Args:
+        message: Original Telegram message (for replies)
+        bot: Aiogram Bot instance
+        agent_id: Letta agent ID
+        content_parts: Content parts for Letta API
+
+    Raises:
+        Re-raises exceptions after logging and notifying user
+    """
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+
+    try:
+        async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+            response_stream = await client.agents.messages.stream(
+                agent_id=agent_id,
+                messages=[{'role': 'user', 'content': content_parts}],  # type: ignore[typeddict-item]
+                include_pings=True,
+            )
+
+            handler = AgentStreamHandler(message)
+
+            async for event in response_stream:
+                try:
+                    await handler.handle_event(event)
+                except Exception as e:
+                    LOGGER.error(
+                        'Stream event error: %s, tg_id=%s, agent=%s',
+                        e,
+                        message.from_user.id,
+                        agent_id,
+                    )
+                    continue
+
+    except ReadTimeout:
+        LOGGER.error(
+            'Letta API stopped responding for user %s (agent_id: %s) - '
+            'no data received for 120s (expected pings every ~30s)',
+            message.from_user.id,
+            agent_id,
+        )
+        await message.answer(
+            **Text(
+                '❌ The assistant service stopped responding. '
+                'This may be a temporary issue with Letta API. '
+                'Please try again in a moment.'
+            ).as_kwargs()
+        )
+
+    except APIError as e:
+        LOGGER.error(
+            'Letta API error: status=%s, body=%s, type=%s, telegram_id=%s, agent_id=%s',
+            getattr(e, 'status_code', 'unknown'),
+            getattr(e, 'body', 'no body'),
+            type(e).__name__,
+            message.from_user.id,
+            agent_id,
+        )
+        await message.answer(**Text('Error communicating with assistant').as_kwargs())
+        raise
+
+    except Exception:
+        LOGGER.exception(
+            'Message handler error: telegram_id=%s, agent_id=%s',
+            message.from_user.id,
+            agent_id,
+        )
+        await message.answer(**Text('An unexpected error occurred').as_kwargs())
+        raise
 
 
 class SwitchAssistantCallback(CallbackData, prefix='switch'):
@@ -347,219 +569,245 @@ async def handle_clear_messages(
         await callback.answer('❌ Error clearing messages')
 
 
-@agent_router.message(flags={'require_identity': True, 'require_agent': True})
-async def message_handler(message: Message, bot: Bot, agent_id: str) -> None:
-    if not message.from_user:
-        return
+# =============================================================================
+# Content Type Handlers
+# IMPORTANT: Registration order matters - first match wins in aiogram!
+# Specific content filters must come before catch-all.
+# =============================================================================
 
-    # Build text content layer by layer
-    text_parts: list[str] = []
 
-    # Layer 0: Message metadata (context for the agent)
-    user = message.from_user
-    day_name = message.date.strftime('%A')
-    date_str = message.date.strftime('%B %d')
-    time_str = message.date.strftime('%H:%M')
-    text_parts.append(
-        f'<metadata>Message received via Telegram from {user.first_name}'
-        f' on {day_name}, {date_str} at {time_str} UTC.</metadata>'
-    )
+@agent_router.message(F.document, flags={'require_identity': True, 'require_agent': True})
+async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
+    """Handle document uploads with per-user concurrency control."""
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+    assert message.document, 'document required (guaranteed by F.document filter)'
 
-    # Layer 1: Reply context (quote takes priority over full reply)
-    if message.quote:
-        # User quoted a specific part of the message
-        text_parts.append(f'<quote>{message.quote.text}</quote>')
-    elif message.reply_to_message:
-        # Full reply without specific quote
-        reply = message.reply_to_message
-        if reply.text:
-            preview = reply.text[:100] + ('...' if len(reply.text) > 100 else '')
-            text_parts.append(f'<reply_to>{preview}</reply_to>')
+    user_id = message.from_user.id
+    ctx = init_message_context(message)
 
-    # Layer 2: Text content
-    if message.text:
-        text_parts.append(message.text)
+    # Add caption if present (before document processing)
+    caption = build_caption(message)
+    if caption:
+        ctx.add_text(caption)
 
-    # Layer 3: Caption (for media messages)
-    if message.caption:
-        text_parts.append(f'<caption>{message.caption}</caption>')
-
-    # Layer 4: Audio transcription
-    if message.voice or message.audio:
-        transcription_service = get_transcription_service()
-        if transcription_service is None:
-            msg = 'Audio transcription not available. No API key configured.'
-            await message.answer(**Text(msg).as_kwargs())
+    async with file_processing_tracker.acquire(user_id) as acquired:
+        if not acquired:
+            await message.answer(
+                **Text('📄 Wait for the previous file to finish processing.').as_kwargs()
+            )
             return
 
-        tag = 'voice_transcript' if message.voice else 'audio_transcript'
         try:
-            transcript = await transcription_service.transcribe_message_content(
-                bot, message
+            file_name = message.document.file_name or 'document'
+            status_msg = await message.answer(
+                **Text(f'📄 Uploading "{file_name}"...').as_kwargs()
             )
-            text_parts.append(f'<{tag}>{transcript}</{tag}>')
-        except TranscriptionError as e:
+
+            result = await process_telegram_document(
+                bot, message.document, agent_id, user_id
+            )
+            # Wait for Letta to process the file
+            await wait_for_file_processing(result['folder_id'], result['file_id'])
+
+            file_name = result['file_name']
+            file_id = result['file_id']
+
+            # Update status message to show upload complete
+            await status_msg.edit_text(**Text(f'✅ Uploaded "{file_name}"').as_kwargs())
+
+            ctx.add_text(
+                f'<system_message>File "{file_name}" ready (id: {file_id})</system_message>'
+            )
+
+        except FileTooLargeError as e:
+            await message.answer(**Text(f'📄 {e}').as_kwargs())
+            return
+
+        except (DocumentProcessingError, LettaProcessingError) as e:
+            LOGGER.warning('Document processing failed: %s, telegram_id=%s', e, user_id)
+            ctx.add_text(f'<system_message>File error: {e}</system_message>')
+
+        except APIError as e:
+            status = getattr(e, 'status_code', 'unknown')
+            body = getattr(e, 'body', 'no body')
             LOGGER.warning(
-                '%s failed: %s, telegram_id=%s',
-                tag,
-                e,
+                'Document processing failed: status=%s, body=%s, telegram_id=%s',
+                status,
+                body,
+                user_id,
+            )
+            ctx.add_text(
+                f'<system_message>File error: status={status}, body={body}</system_message>'
+            )
+
+    # Send to agent if we have content
+    content_parts = ctx.build_content_parts()
+    if content_parts:
+        await send_to_agent(message, bot, agent_id, content_parts)
+
+
+@agent_router.message(F.photo, flags={'require_identity': True, 'require_agent': True})
+async def handle_album(
+    message: Message,
+    bot: Bot,
+    agent_id: str,
+    photos: list[Message],
+) -> None:
+    """Handle photo album (single photo is treated as 1-photo album).
+
+    Args:
+        message: First message in the batch
+        bot: Aiogram Bot instance
+        agent_id: Letta agent ID
+        photos: Injected by PhotoBufferMiddleware (always present)
+    """
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+
+    ctx = init_message_context(message)
+
+    # Caption: take from first message with caption
+    for m in photos:
+        caption = build_caption(m)
+        if caption:
+            ctx.add_text(caption)
+            break
+
+    # Process all photos in parallel (photo guaranteed by F.photo filter + buffer)
+    tasks = [process_telegram_image(bot, m.photo[-1]) for m in photos if m.photo]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Add successful results, log errors
+    successful_count = 0
+    for i, result in enumerate(results):
+        if isinstance(result, BaseException):
+            LOGGER.warning(
+                'Photo %d processing failed: %s, telegram_id=%s',
+                i + 1,
+                result,
                 message.from_user.id,
             )
-            text_parts.append(f'<{tag}_error>{e}</{tag}_error>')
+        else:
+            ctx.add_image(result)
+            successful_count += 1
 
-    # Layer 5: File processing (media groups handled by RateLimitMiddleware)
-    if message.document:
-        user_id = message.from_user.id
+    # If all images failed, add error context
+    if successful_count == 0 and results:
+        ctx.prepend_text(
+            '<image_processing_error>Failed to process all images</image_processing_error>'
+        )
 
-        async with file_processing_tracker.acquire(user_id) as acquired:
-            if not acquired:
-                await message.answer(
-                    **Text(
-                        '📄 Wait for the previous file to finish processing.'
-                    ).as_kwargs()
-                )
-                return
+    # Send to agent
+    content_parts = ctx.build_content_parts()
+    if content_parts:
+        await send_to_agent(message, bot, agent_id, content_parts)
 
-            try:
-                file_name = message.document.file_name or 'document'
-                status_msg = await message.answer(
-                    **Text(f'📄 Uploading "{file_name}"...').as_kwargs()
-                )
 
-                result = await process_telegram_document(
-                    bot, message.document, agent_id, user_id
-                )
-                # Wait for Letta to process the file
-                await wait_for_file_processing(result['folder_id'], result['file_id'])
+@agent_router.message(
+    F.voice | F.audio, flags={'require_identity': True, 'require_agent': True}
+)
+async def handle_audio(message: Message, bot: Bot, agent_id: str) -> None:
+    """Handle voice messages and audio files with transcription."""
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+    transcription_service = get_transcription_service()
+    if transcription_service is None:
+        await message.answer(
+            **Text('Audio transcription not available. No API key configured.').as_kwargs()
+        )
+        return
 
-                file_name = result['file_name']
-                file_id = result['file_id']
+    ctx = init_message_context(message)
 
-                # Update status message to show upload complete
-                await status_msg.edit_text(**Text(f'✅ Uploaded "{file_name}"').as_kwargs())
+    # Add caption if present (audio files can have captions)
+    caption = build_caption(message)
+    if caption:
+        ctx.add_text(caption)
 
-                msg = f'File "{file_name}" ready (id: {file_id})'
-                if message.caption:
-                    msg += f'\nUser caption: {message.caption}'
-                text_parts.append(f'<system_message>{msg}</system_message>')
-            except FileTooLargeError as e:
-                await message.answer(**Text(f'📄 {e}').as_kwargs())
-                return
-            except (DocumentProcessingError, LettaProcessingError) as e:
-                LOGGER.warning('Document processing failed: %s, telegram_id=%s', e, user_id)
-                text_parts.append(f'<system_message>File error: {e}</system_message>')
-            except APIError as e:
-                status = getattr(e, 'status_code', 'unknown')
-                body = getattr(e, 'body', 'no body')
-                LOGGER.warning(
-                    'Document processing failed: status=%s, body=%s, telegram_id=%s',
-                    status,
-                    body,
-                    user_id,
-                )
-                error_msg = f'File error: status={status}, body={body}'
-                text_parts.append(f'<system_message>{error_msg}</system_message>')
+    # Determine tag based on content type
+    tag = 'voice_transcript' if message.voice else 'audio_transcript'
 
-    # Unsupported content types
-    if message.video:
-        await message.answer(**Text('Video content is not supported').as_kwargs())
-    if message.sticker:
-        await message.answer(**Text('Stickers are not yet supported').as_kwargs())
+    try:
+        transcript = await transcription_service.transcribe_message_content(bot, message)
+        ctx.add_text(f'<{tag}>{transcript}</{tag}>')
+    except TranscriptionError as e:
+        LOGGER.warning(
+            '%s failed: %s, telegram_id=%s',
+            tag,
+            e,
+            message.from_user.id,
+        )
+        ctx.add_text(f'<{tag}_error>{e}</{tag}_error>')
 
-    # Build content parts for Letta API (image first, then text per spec)
-    content_parts: list[ContentPart] = []
+    # Send to agent
+    content_parts = ctx.build_content_parts()
+    if content_parts:
+        await send_to_agent(message, bot, agent_id, content_parts)
 
-    # Layer 5: Image content (processed first, added to content first)
-    if message.photo:
-        try:
-            # Use highest resolution (last element in photo array)
-            image_part = await process_telegram_photo(bot, message.photo[-1])
-            content_parts.append(image_part)
-        except ImageProcessingError as e:
-            LOGGER.warning(
-                'Image processing failed: %s, telegram_id=%s',
-                e,
-                message.from_user.id,
-            )
-            # Graceful degradation: prepend error to text parts
-            text_parts.insert(0, f'<image_processing_error>{e}</image_processing_error>')
 
-    # Combine text parts
-    message_text = '\n\n'.join(text_parts) if text_parts else None
+@agent_router.message(F.video, flags={'require_identity': True, 'require_agent': True})
+async def handle_video(message: Message) -> None:
+    """Notify user that video is not supported."""
+    await message.answer(**Text('Video content is not supported').as_kwargs())
 
-    # Add text content part if we have text
-    if message_text:
-        text_part: TextContentPart = {'type': 'text', 'text': message_text}
-        content_parts.append(text_part)
 
-    # Check if we have any content to send
-    if not content_parts:
+@agent_router.message(
+    F.sticker & ~F.sticker.is_animated & ~F.sticker.is_video,
+    flags={'require_identity': True, 'require_agent': True},
+)
+async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> None:
+    """Handle regular (static) stickers as images."""
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+    assert message.sticker, 'sticker required (guaranteed by F.sticker filter)'
+
+    ctx = init_message_context(message)
+
+    # Process sticker as image
+    try:
+        image_part = await process_telegram_image(bot, message.sticker)
+        ctx.add_image(image_part)
+    except ImageProcessingError as e:
+        LOGGER.warning(
+            'Sticker processing failed: %s, telegram_id=%s',
+            e,
+            message.from_user.id,
+        )
+        ctx.prepend_text(f'<sticker_processing_error>{e}</sticker_processing_error>')
+
+    # Send to agent
+    content_parts = ctx.build_content_parts()
+    if content_parts:
+        await send_to_agent(message, bot, agent_id, content_parts)
+
+
+@agent_router.message(
+    F.sticker & (F.sticker.is_animated | F.sticker.is_video),
+    flags={'require_identity': True, 'require_agent': True},
+)
+async def handle_animated_sticker(message: Message) -> None:
+    """Notify user that animated/video stickers are not supported."""
+    await message.answer(
+        **Text('Animated and video stickers are not supported').as_kwargs()
+    )
+
+
+@agent_router.message(flags={'require_identity': True, 'require_agent': True})
+async def handle_text(message: Message, bot: Bot, agent_id: str) -> None:
+    """Handle text messages (catch-all handler).
+
+    This handler must be registered LAST as it has no content type filter.
+    """
+    ctx = init_message_context(message)
+
+    # Add text content
+    if message.text:
+        ctx.add_text(message.text)
+
+    # Send to agent
+    content_parts = ctx.build_content_parts()
+    if content_parts:
+        await send_to_agent(message, bot, agent_id, content_parts)
+    else:
         await message.answer(
             **Text(
                 'No supported content provided, I hope to hear more from you'
             ).as_kwargs()
         )
-        return
-
-    # Content ready for Letta API
-    request = content_parts
-
-    try:
-        async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-            response_stream = await client.agents.messages.stream(
-                agent_id=agent_id,
-                messages=[{'role': 'user', 'content': request}],  # type: ignore[typeddict-item]
-                include_pings=True,
-            )
-
-            handler = AgentStreamHandler(message)
-
-            async for event in response_stream:
-                try:
-                    await handler.handle_event(event)
-                except Exception as e:
-                    LOGGER.error(
-                        'Stream event error: %s, tg_id=%s, agent=%s',
-                        e,
-                        message.from_user.id,
-                        agent_id,
-                    )
-                    continue
-
-    except ReadTimeout:
-        # If we timeout, it means Letta stopped sending data (no pings, no response)
-        # This indicates a server-side failure, not a slow agent
-        LOGGER.error(
-            'Letta API stopped responding for user %s (agent_id: %s) - '
-            'no data received for 120s (expected pings every ~30s)',
-            message.from_user.id if message.from_user else 'unknown',
-            agent_id,
-        )
-        await message.answer(
-            **Text(
-                '❌ The assistant service stopped responding. '
-                'This may be a temporary issue with Letta API. '
-                'Please try again in a moment.'
-            ).as_kwargs()
-        )
-
-    except APIError as e:
-        LOGGER.error(
-            'Letta API error: status=%s, body=%s, type=%s, telegram_id=%s, agent_id=%s',
-            getattr(e, 'status_code', 'unknown'),
-            getattr(e, 'body', 'no body'),
-            type(e).__name__,
-            message.from_user.id,
-            agent_id,
-        )
-        await message.answer(**Text('Error communicating with assistant').as_kwargs())
-        raise
-
-    except Exception:
-        LOGGER.exception(
-            'Message handler error: telegram_id=%s, agent_id=%s',
-            message.from_user.id,
-            agent_id,
-        )
-        await message.answer(**Text('An unexpected error occurred').as_kwargs())
-        raise

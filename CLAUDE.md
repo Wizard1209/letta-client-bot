@@ -82,18 +82,19 @@ The bot uses **Aiogram's middleware system** for dependency injection and access
   - User not authorized → `❌ No access — use /new or /access to request`
 - Injects `identity: GetIdentityResult` into handler data
 
-**MediaGroupMiddleware** (`middlewares.py`):
-
-- Rejects Telegram media groups (albums) with a single response message
-- Prevents duplicate error messages when user sends multiple files at once
-- Configurable predicate to filter which events trigger rejection
-- Currently registered for documents and photos in `setup_middlewares()`
-
 **RateLimitMiddleware** (`middlewares.py`):
 
 - Generic rate limiter with configurable key function and predicate
 - Supports per-user, per-chat, or custom rate limiting strategies
-- Available for use but not currently applied to any handlers
+- Used for document rate limiting (1 per 10s per user)
+
+**PhotoBufferMiddleware** (`middlewares.py`):
+
+- Buffers ALL photo messages by `user_id` for 1 second before processing
+- After timeout, collected batch (1 or more photos) passed to handler as `photos: list[Message]`
+- Max 10 photos per batch; extras silently dropped
+- Rate limited: 1 batch per 10s per user (checked BEFORE buffering)
+- Status message flow: "📷 Receiving photos..." → "⏳ Processing N photo(s)..." → deleted on success
 
 **AgentMiddleware** (`middlewares.py`):
 
@@ -211,14 +212,17 @@ class CustomMiddleware(BaseMiddleware):
 dp.message.outer_middleware.register(UserMiddleware())
 dp.callback_query.outer_middleware.register(UserMiddleware())
 
-# 2. MediaGroupMiddleware (inner) - rejects albums for files/photos
-dp.message.middleware(MediaGroupMiddleware(...))
+# 2. RateLimitMiddleware (inner) - document rate limiting (1 per 10s)
+dp.message.middleware(RateLimitMiddleware(...))
 
-# 3. IdentityMiddleware (inner) - checks identity authorization
+# 3. PhotoBufferMiddleware (inner) - buffers photos by user_id, max 10 per batch
+dp.message.middleware(PhotoBufferMiddleware(...))
+
+# 4. IdentityMiddleware (inner) - checks identity authorization
 dp.message.middleware(IdentityMiddleware())
 dp.callback_query.middleware(IdentityMiddleware())
 
-# 4. AgentMiddleware (inner) - validates/selects agent
+# 5. AgentMiddleware (inner) - validates/selects agent
 dp.message.middleware(AgentMiddleware())
 dp.callback_query.middleware(AgentMiddleware())
 ```
@@ -382,17 +386,31 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 **Phase 4: Message Routing and Response Processing**
 
 - Authorized users send messages to bot
-- **Message content processing** (builds multimodal content parts):
-  - Text: plain text, quotes, replies, captions
-  - Voice/audio: transcribed via external service, wrapped in XML tags
-  - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected)
+- **Content-type handlers** (`agent.py`): Each message type has a dedicated handler using aiogram's `F` filters:
+  - `handle_document` (F.document) - document uploads with per-user concurrency control
+  - `handle_photo` (F.photo) - multimodal image content
+  - `handle_audio` (F.voice | F.audio) - voice/audio transcription
+  - `handle_video` (F.video) - unsupported notification
+  - `handle_regular_sticker` (F.sticker & ~is_animated & ~is_video) - static stickers as images
+  - `handle_animated_sticker` (F.sticker & is_animated | is_video) - unsupported notification
+  - `handle_text` (catch-all) - text messages
+- **Handler registration order matters**: Specific filters must come before catch-all (first match wins)
+- **Message context building** (shared across handlers via `MessageContext` dataclass):
+  - Metadata: `<metadata>` tag with user name, day of week, date, time (UTC)
+  - Reply context: `<quote>` (quoted text) or `<reply_to>` (first 100 chars of reply)
+  - Caption: `<caption>` tag for media messages
+- **Content-type-specific processing**:
+  - Text: plain text content
+  - Voice/audio: transcribed via external service, wrapped in XML tags (`<voice_transcript>`, `<audio_transcript>`)
+  - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected); photo albums processed together as single request with all images
   - **Documents**: validated by type/size, uploaded to per-agent Letta folder, processed asynchronously with status polling
-  - Unsupported: video and stickers notify user, don't block message
+  - **Stickers**: regular (static) stickers processed as images; animated/video stickers unsupported
+  - Unsupported: video and animated/video stickers notify user, don't process further
 - **Document processing** (`documents.py`):
   - Accepts any file type (no MIME type restrictions)
   - Size limit: ~10MB (Letta API constraint)
   - Per-user concurrency control via `FileProcessingTracker` (one upload at a time per user)
-  - Media groups (albums) rejected by `MediaGroupMiddleware`
+  - Documents rate limited via `RateLimitMiddleware` (1 per 10s per user)
   - Files uploaded to agent-specific folders (`uploads-{agent_id}`) and indexed for RAG
   - Auto-attaches `file_handling` memory block to agent on first file upload (teaches agent how to respond to files)
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
@@ -604,14 +622,14 @@ letta_bot/
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
   auth.py              # All authorization: user requests (/access, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
-  agent.py             # Agent operations: /switch, /current, /context, and message routing to Letta agents
+  agent.py             # Agent operations: /switch, /current, /context, /clear, and content-type message handlers (document, photo, audio, video, sticker, text)
   client.py            # Shared Letta client instance and Letta API operations (agent, folder, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
   tools.py             # Tool management: attach/detach/configure agent tools (/notify for proactive mode)
   broadcast.py         # Bot-level messaging: admin notifications, user broadcasts
   response_handler.py  # Agent response stream processing and message formatting
   letta_sdk_extensions.py  # Extensions for missing Letta SDK methods (e.g., list_templates)
-  images.py            # Image processing: download Telegram photos, convert to base64 for Letta multimodal API
+  images.py            # Image processing: download Telegram photos/stickers, convert to base64 for Letta multimodal API
   documents.py         # Document processing: download Telegram files, upload to Letta folders for RAG
   transcription.py     # Audio transcription: OpenAI Whisper and ElevenLabs Scribe engines for voice/audio messages
   utils.py             # Utility functions (async cache decorator with TTL, UUID validation)
