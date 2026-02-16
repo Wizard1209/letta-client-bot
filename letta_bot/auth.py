@@ -398,9 +398,7 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
             )
             if not identity_result:
                 # Should not happen - identity request is approved before agent request
-                raise RuntimeError(
-                    'Cannot create agent from template without identity'
-                )
+                raise RuntimeError('Cannot create agent from template without identity')
             await create_agent_from_template(
                 template_id=resource_id,
                 telegram_id=result.user.telegram_id,
@@ -533,7 +531,9 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
             else:
                 # For new agent, use the newest one
                 if agents:
-                    user_message = f'✅ Your new assistant "{agents[0].name}" is ready!{hint}'
+                    user_message = (
+                        f'✅ Your new assistant "{agents[0].name}" is ready!{hint}'
+                    )
                 else:
                     user_message = '✅ Your new assistant is ready!'
         await bot.send_message(

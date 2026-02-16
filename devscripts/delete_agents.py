@@ -8,7 +8,7 @@ import argparse
 
 from letta_client import APIError
 
-from devscripts.bootstrap import letta
+from devscripts.bootstrap import letta, print_config
 
 
 def delete_agent(agent_id: str) -> tuple[str, bool, str | None]:
@@ -22,6 +22,7 @@ def delete_agent(agent_id: str) -> tuple[str, bool, str | None]:
 
 def main(agent_ids: list[str]) -> None:
     """Delete specified agents."""
+    print_config()
     if not agent_ids:
         print('\nNo agent IDs provided.')
         return
