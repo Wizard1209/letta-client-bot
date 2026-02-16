@@ -37,75 +37,58 @@ upsert_user_cached = async_cache(ttl=43200)(upsert_user)
 
 
 # =============================================================================
-# Media Group Buffering
+# Photo Buffering
 # =============================================================================
 
 
 @dataclass
-class PendingMediaGroup:
-    """Buffered media group waiting for timeout before processing."""
+class PendingPhotoBatch:
+    """Buffered photo batch waiting for timeout before processing."""
 
-    media_group_id: str
     messages: list[Message] = field(default_factory=list)
-    caption: str | None = None
     status_message: Message | None = None
     timer_handle: asyncio.TimerHandle | None = None
-    created_at: float = field(default_factory=time.time)
 
 
-class MediaGroupBuffer:
-    """Buffer for collecting media group items before processing.
+class PhotoBuffer:
+    """Buffer photos by user_id, fire after timeout with no new photos.
 
-    Telegram sends album items as separate messages with the same media_group_id.
-    This buffer collects them and triggers processing after a timeout.
+    Every photo message is buffered for `process_timeout` seconds.
+    After timeout, the collected batch is passed to the callback as list[Message].
     """
 
     def __init__(self, process_timeout: float = 1.0) -> None:
-        self._pending: dict[str, PendingMediaGroup] = {}
+        self._pending: dict[int, PendingPhotoBatch] = {}
         self.process_timeout = process_timeout
-        self._stale_threshold = 60.0  # Clean up groups older than 60s
 
-    def add_item(
+    def add_photo(
         self,
-        media_group_id: str,
+        user_id: int,
         message: Message,
-        callback: Callable[[PendingMediaGroup], Awaitable[None]],
-    ) -> PendingMediaGroup:
-        """Add message to media group buffer.
-
-        Args:
-            media_group_id: Telegram media group ID
-            message: Telegram message to buffer
-            callback: Async function to call when timeout expires
+        callback: Callable[[list[Message]], Awaitable[None]],
+    ) -> PendingPhotoBatch:
+        """Add photo message to user's buffer.
 
         Returns:
-            The PendingMediaGroup (for status message updates)
+            The PendingPhotoBatch (for status message updates)
         """
         # No lock needed: all operations are sync (no await), atomic in asyncio
-        if media_group_id in self._pending:
-            pending = self._pending[media_group_id]
+        if user_id in self._pending:
+            pending = self._pending[user_id]
             pending.messages.append(message)
 
-            # Update caption if this message has one and we don't have one yet
-            if pending.caption is None and message.caption:
-                pending.caption = message.caption
-
-            # Reset timer
+            # Reset timer on each new photo
             if pending.timer_handle:
                 pending.timer_handle.cancel()
         else:
-            pending = PendingMediaGroup(
-                media_group_id=media_group_id,
-                messages=[message],
-                caption=message.caption,
-            )
-            self._pending[media_group_id] = pending
+            pending = PendingPhotoBatch(messages=[message])
+            self._pending[user_id] = pending
 
         # Schedule processing
         loop = asyncio.get_running_loop()
 
-        def create_callback_task(gid: str = media_group_id) -> None:
-            asyncio.create_task(self._trigger_callback(gid, callback))
+        def create_callback_task(uid: int = user_id) -> None:
+            asyncio.create_task(self._trigger_callback(uid, callback))
 
         pending.timer_handle = loop.call_later(
             self.process_timeout,
@@ -116,30 +99,18 @@ class MediaGroupBuffer:
 
     async def _trigger_callback(
         self,
-        media_group_id: str,
-        callback: Callable[[PendingMediaGroup], Awaitable[None]],
+        user_id: int,
+        callback: Callable[[list[Message]], Awaitable[None]],
     ) -> None:
-        """Trigger callback for media group processing."""
-        pending = self.get_and_remove(media_group_id)
+        """Trigger callback for photo batch processing."""
+        pending = self._pending.pop(user_id, None)
         if pending:
+            if pending.timer_handle:
+                pending.timer_handle.cancel()
             try:
-                await callback(pending)
+                await callback(pending.messages)
             except Exception as e:
-                LOGGER.exception('Media group callback error: %s', e)
-
-    def get_and_remove(self, media_group_id: str) -> PendingMediaGroup | None:
-        """Retrieve and remove a pending media group.
-
-        Args:
-            media_group_id: Telegram media group ID
-
-        Returns:
-            PendingMediaGroup if found, None otherwise
-        """
-        pending = self._pending.pop(media_group_id, None)
-        if pending and pending.timer_handle:
-            pending.timer_handle.cancel()
-        return pending
+                LOGGER.exception('Photo batch callback error: %s', e)
 
 
 # =============================================================================
@@ -184,132 +155,25 @@ async def _set_secrets(agent: AgentState) -> None:
 
 
 
-class PhotoRateLimiter:
-    """Rate limiter for photo uploads with separate limits for albums and single photos."""
+class PhotoBufferMiddleware(BaseMiddleware):
+    """Buffers all photo messages by user_id before processing.
 
-    def __init__(
-        self,
-        single_max: int = 5,
-        single_window: float = 60.0,
-        album_max: int = 1,
-        album_window: float = 60.0,
-    ) -> None:
-        self.single_max = single_max
-        self.single_window = single_window
-        self.album_max = album_max
-        self.album_window = album_window
-        self._single_requests: dict[int, list[float]] = {}
-        self._album_requests: dict[int, list[float]] = {}
-        self._last_cleanup = time.time()
-        self._cleanup_interval = 300.0  # Clean up every 5 minutes
+    Every photo is buffered for 1s. After timeout, the collected batch
+    (1 or more photos) is passed to the handler as `photos: list[Message]`.
 
-    def check_and_record_single(self, user_id: int) -> int | None:
-        """Check and record single photo. Returns wait time or None."""
-        self._maybe_cleanup()
-        wait = self._check(
-            user_id, self._single_requests, self.single_max, self.single_window
-        )
-        if wait is None:
-            self._record(user_id, self._single_requests)
-        return wait
-
-    def check_and_record_album(self, user_id: int) -> int | None:
-        """Check and record album. Returns wait time or None."""
-        self._maybe_cleanup()
-        wait = self._check(
-            user_id, self._album_requests, self.album_max, self.album_window
-        )
-        if wait is None:
-            self._record(user_id, self._album_requests)
-        return wait
-
-    def _check(
-        self,
-        user_id: int,
-        storage: dict[int, list[float]],
-        max_requests: int,
-        window: float,
-    ) -> int | None:
-        """Check rate limit. Returns wait time in seconds or None if allowed."""
-        now = time.time()
-        timestamps = storage.get(user_id, [])
-
-        # Remove expired timestamps
-        timestamps = [t for t in timestamps if now - t < window]
-
-        if timestamps:
-            storage[user_id] = timestamps
-        elif user_id in storage:
-            # Remove empty entries to prevent memory growth
-            del storage[user_id]
-
-        if len(timestamps) >= max_requests:
-            return int(window - (now - timestamps[0]))
-        return None
-
-    def _record(self, user_id: int, storage: dict[int, list[float]]) -> None:
-        """Record a request timestamp."""
-        now = time.time()
-        if user_id not in storage:
-            storage[user_id] = []
-        storage[user_id].append(now)
-
-    def _maybe_cleanup(self) -> None:
-        """Periodically clean up stale user entries."""
-        now = time.time()
-        if now - self._last_cleanup < self._cleanup_interval:
-            return
-
-        self._last_cleanup = now
-        max_window = max(self.single_window, self.album_window)
-
-        for storage in (self._single_requests, self._album_requests):
-            # Collect stale user IDs first, then remove (safe iteration)
-            stale_users = [
-                uid
-                for uid, timestamps in storage.items()
-                if not timestamps or now - timestamps[-1] > max_window
-            ]
-            for uid in stale_users:
-                del storage[uid]
-
-
-class MediaGroupBufferMiddleware(BaseMiddleware):
-    """Buffers photo albums and processes them as a single request.
-
-    For photo albums:
-    - Collects all photos with same media_group_id
-    - After timeout, injects aggregated data and calls handler with first message
-    - Handler receives `media_group: PendingMediaGroup` with all photos
-    - Rate limited: 1 album per minute per user
-
-    For single photos:
-    - Passes through to handler (no buffering)
-    - Rate limited: 5 photos per minute per user
-
-    For document/mixed albums:
-    - Rejects with error message (sequential processing too slow)
+    Rate limiting should be handled by a separate RateLimitMiddleware
+    registered before this middleware in the chain.
 
     Args:
-        buffer: MediaGroupBuffer instance for collecting items
-        rate_limiter: PhotoRateLimiter for rate limiting (optional)
-        reject_message: Message for non-photo albums
+        buffer: PhotoBuffer instance for collecting photos
 
     Example:
-        buffer = MediaGroupBuffer(process_timeout=1.0)
-        dp.message.middleware(MediaGroupBufferMiddleware(buffer))
+        buffer = PhotoBuffer(process_timeout=1.0)
+        dp.message.middleware(PhotoBufferMiddleware(buffer))
     """
 
-    def __init__(
-        self,
-        buffer: MediaGroupBuffer,
-        rate_limiter: PhotoRateLimiter | None = None,
-        reject_message: str = '📄 Please send files one at a time.',
-    ) -> None:
+    def __init__(self, buffer: PhotoBuffer) -> None:
         self._buffer = buffer
-        self._rate_limiter = rate_limiter
-        self._reject_message = reject_message
-        self._responded_groups: set[str] = set()
 
     async def __call__(
         self,
@@ -317,115 +181,80 @@ class MediaGroupBufferMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, object],
     ) -> object | None:
-        # Only handle Message events
-        if not isinstance(event, Message):
+        # Only intercept Message events with photos
+        if not isinstance(event, Message) or not event.photo:
             return await handler(event, data)
 
-        # Check for media group (album) FIRST — before content type check
-        media_group_id = event.media_group_id
-        if not media_group_id:
-            # Single message — only handle photos with rate limiting
-            if not event.photo:
-                return await handler(event, data)
-
-            user_id = event.from_user.id if event.from_user else None
-            if user_id and self._rate_limiter:
-                wait_time = self._rate_limiter.check_and_record_single(user_id)
-                if wait_time is not None:
-                    await event.answer(f'📷 Too many photos. Wait {wait_time}s.')
-                    return None
-
+        user = event.from_user
+        if not user:
             return await handler(event, data)
 
-        # Album handling — check content type
-        has_photo = bool(event.photo)
-        has_document = bool(event.document)
+        user_id = user.id
 
-        # Reject document albums (including mixed photo+document)
-        if has_document or not has_photo:
-            # No lock needed: no await between check/clear/add — atomic in asyncio
-            if media_group_id in self._responded_groups:
-                return None
-
-            if len(self._responded_groups) > 100:
-                self._responded_groups.clear()
-
-            self._responded_groups.add(media_group_id)
-            await event.answer(self._reject_message)
-            return None
-
-        # Photo album - buffer and process together
         # Capture handler and data for delayed callback
         captured_handler = handler
-        # Shallow copy is safe: aiogram's data contains immutable refs (gel_client, bot)
-        # and primitives. We only mutate our own 'media_group' key.
+        # Shallow copy is safe: aiogram's data contains immutable refs
         captured_data = data.copy()
-        rate_limiter = self._rate_limiter
 
-        async def process_group(pending: PendingMediaGroup) -> None:
-            """Process buffered photo album."""
-            if not pending.messages:
+        async def process_batch(messages: list[Message]) -> None:
+            """Process buffered photo batch."""
+            if not messages:
                 return
 
-            # Use first message as the trigger
-            first_message = pending.messages[0]
+            first_message = messages[0]
             first_user = first_message.from_user
-            delete_status = True  # Whether to delete status message at the end
 
-            async def notify_user(text: str) -> None:
-                """Send feedback via status message or fallback to reply."""
-                if pending.status_message:
-                    with contextlib.suppress(TelegramAPIError):
-                        await pending.status_message.edit_text(text)
-                        return
-                # Fallback: reply to first message
+            # Find status message from the pending batch (already deleted from buffer)
+            # We stored it on the batch object, but it's gone now.
+            # Use the status_message we captured via closure.
+            status_msg = batch_status_message
+
+            # Update status to show processing
+            if status_msg:
                 with contextlib.suppress(TelegramAPIError):
-                    await first_message.answer(text)
-
-            # Check album rate limit (atomic check-and-record)
-            if first_user and rate_limiter:
-                wait_time = rate_limiter.check_and_record_album(first_user.id)
-                if wait_time is not None:
-                    await notify_user(f'📷 Too many albums. Wait {wait_time}s.')
-                    return  # Don't delete - user needs to see rate limit message
-
-            # Update status message to show processing
-            if pending.status_message:
-                with contextlib.suppress(TelegramAPIError):
-                    await pending.status_message.edit_text(
-                        f'⏳ Processing {len(pending.messages)} photo(s)...'
+                    await status_msg.edit_text(
+                        f'⏳ Processing {len(messages)} photo(s)...'
                     )
 
-            # Inject media_group into handler data
-            captured_data['media_group'] = pending
+            # Inject photos list into handler data
+            captured_data['photos'] = messages
 
+            delete_status = True
             try:
                 await captured_handler(first_message, captured_data)
             except Exception as e:
                 LOGGER.exception(
-                    'Album handler error: %s, telegram_id=%s',
+                    'Photo batch handler error: %s, telegram_id=%s',
                     e,
                     first_user.id if first_user else 'unknown',
                 )
-                await notify_user('❌ Failed to process photos')
-                delete_status = False  # Keep error message visible
+                if status_msg:
+                    with contextlib.suppress(TelegramAPIError):
+                        await status_msg.edit_text('❌ Failed to process photos')
+                delete_status = False
 
-            # Clean up status message (only on success)
-            if delete_status and pending.status_message:
+            # Clean up status message on success
+            if delete_status and status_msg:
                 with contextlib.suppress(TelegramAPIError):
-                    await pending.status_message.delete()
+                    await status_msg.delete()
 
         # Add to buffer
-        pending = self._buffer.add_item(media_group_id, event, process_group)
+        pending = self._buffer.add_photo(user_id, event, process_batch)
 
-        # Send status message for first item only
+        # Send status message for first photo only
+        batch_status_message: Message | None = None
         if len(pending.messages) == 1:
             try:
-                pending.status_message = await event.answer('📷 Receiving photos...')
+                status = await event.answer('📷 Receiving photos...')
+                pending.status_message = status
+                batch_status_message = status
             except Exception as e:
                 LOGGER.warning('Failed to send status message: %s', e)
+        else:
+            # Subsequent photos: use existing status message
+            batch_status_message = pending.status_message
 
-        # Block handler - will be called via callback
+        # Block handler — will be called via callback after timeout
         return None
 
 
@@ -508,8 +337,8 @@ class RateLimitMiddleware(BaseMiddleware):
         # Check limit
         if len(timestamps) >= self.max_requests:
             wait_time = int(self.window - (now - timestamps[0]))
-            if hasattr(event, 'answer'):
-                await event.answer(self.message.format(wait=wait_time))
+            if isinstance(event, Message):
+                await event.reply(self.message.format(wait=wait_time))
             return None
 
         # Record request
@@ -714,24 +543,30 @@ def setup_middlewares(dp: Dispatcher) -> None:
     dp.message.outer_middleware.register(UserMiddleware())
     dp.callback_query.outer_middleware.register(UserMiddleware())
 
-    # Media group handling:
-    # - Photo albums: buffer and process together (1 album per minute)
-    # - Single photos: pass through with rate limit (5 per minute)
-    # - Document albums: reject (sequential processing too slow)
-    media_group_buffer = MediaGroupBuffer(process_timeout=1.0)
-    photo_rate_limiter = PhotoRateLimiter(
-        single_max=5,
-        single_window=10.0,
-        album_max=1,
-        album_window=10.0,
-    )
+    # Document rate limiting (1 per 10s per user)
     dp.message.middleware(
-        MediaGroupBufferMiddleware(
-            buffer=media_group_buffer,
-            rate_limiter=photo_rate_limiter,
-            reject_message='📄 Please send files one at a time.',
+        RateLimitMiddleware(
+            max_requests=1,
+            window_seconds=10.0,
+            predicate=lambda e: isinstance(e, Message) and bool(e.document),
+            message="📄 Your document accepted, we can't process more documents"
+            ' for {wait}s.',
         )
     )
+
+    # Photo rate limiting (10 photos per 10s per user)
+    dp.message.middleware(
+        RateLimitMiddleware(
+            max_requests=10,
+            window_seconds=10.0,
+            predicate=lambda e: isinstance(e, Message) and bool(e.photo),
+            message='📷 Your previous photos are being processed. Resend this in {wait}s.',
+        )
+    )
+
+    # Photo buffering (all photos buffered 1s by user_id)
+    photo_buffer = PhotoBuffer(process_timeout=1.0)
+    dp.message.middleware(PhotoBufferMiddleware(buffer=photo_buffer))
 
     # Inner middleware - identity and agent checks
     dp.message.middleware(IdentityMiddleware())

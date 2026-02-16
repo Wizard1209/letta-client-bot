@@ -82,21 +82,19 @@ The bot uses **Aiogram's middleware system** for dependency injection and access
   - User not authorized → `❌ No access — use /new or /access to request`
 - Injects `identity: GetIdentityResult` into handler data
 
-**MediaGroupBufferMiddleware** (`middlewares.py`):
-
-- Buffers photo albums and processes them as a single request to the agent
-- For photo albums: collects all photos with same `media_group_id`, waits 1 second, then triggers handler with aggregated data
-- For single photos: passes through with rate limiting (5 photos per minute per user)
-- For document albums: rejects with error message (sequential processing too slow)
-- Album rate limit: 1 album per minute per user
-- Injects `media_group: PendingMediaGroup` into handler data for albums
-- Status message flow: "📷 Receiving photos..." → "⏳ Processing N photo(s)..." → deleted on success
-
 **RateLimitMiddleware** (`middlewares.py`):
 
 - Generic rate limiter with configurable key function and predicate
 - Supports per-user, per-chat, or custom rate limiting strategies
-- Available for use but not currently applied to any handlers
+- Used for document rate limiting (1 per 10s per user)
+
+**PhotoBufferMiddleware** (`middlewares.py`):
+
+- Buffers ALL photo messages by `user_id` for 1 second before processing
+- After timeout, collected batch (1 or more photos) passed to handler as `photos: list[Message]`
+- Max 10 photos per batch; extras silently dropped
+- Rate limited: 1 batch per 10s per user (checked BEFORE buffering)
+- Status message flow: "📷 Receiving photos..." → "⏳ Processing N photo(s)..." → deleted on success
 
 **AgentMiddleware** (`middlewares.py`):
 
@@ -214,14 +212,17 @@ class CustomMiddleware(BaseMiddleware):
 dp.message.outer_middleware.register(UserMiddleware())
 dp.callback_query.outer_middleware.register(UserMiddleware())
 
-# 2. MediaGroupBufferMiddleware (inner) - buffers photo albums, rejects document albums
-dp.message.middleware(MediaGroupBufferMiddleware(...))
+# 2. RateLimitMiddleware (inner) - document rate limiting (1 per 10s)
+dp.message.middleware(RateLimitMiddleware(...))
 
-# 3. IdentityMiddleware (inner) - checks identity authorization
+# 3. PhotoBufferMiddleware (inner) - buffers photos by user_id, max 10 per batch
+dp.message.middleware(PhotoBufferMiddleware(...))
+
+# 4. IdentityMiddleware (inner) - checks identity authorization
 dp.message.middleware(IdentityMiddleware())
 dp.callback_query.middleware(IdentityMiddleware())
 
-# 4. AgentMiddleware (inner) - validates/selects agent
+# 5. AgentMiddleware (inner) - validates/selects agent
 dp.message.middleware(AgentMiddleware())
 dp.callback_query.middleware(AgentMiddleware())
 ```
@@ -409,7 +410,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Accepts any file type (no MIME type restrictions)
   - Size limit: ~10MB (Letta API constraint)
   - Per-user concurrency control via `FileProcessingTracker` (one upload at a time per user)
-  - Document albums rejected by `MediaGroupBufferMiddleware` (photo albums supported separately)
+  - Documents rate limited via `RateLimitMiddleware` (1 per 10s per user)
   - Files uploaded to agent-specific folders (`uploads-{agent_id}`) and indexed for RAG
   - Auto-attaches `file_handling` memory block to agent on first file upload (teaches agent how to respond to files)
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
