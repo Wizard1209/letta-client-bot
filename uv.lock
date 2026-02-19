@@ -555,7 +555,7 @@ wheels = [
 
 [[package]]
 name = "letta-client"
-version = "1.7.0"
+version = "1.7.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -565,9 +565,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/b8/8e527339cac25c7f5d51c70ce969440b9e0a11efd7db14bbbaefeaa0ec91/letta_client-1.7.0.tar.gz", hash = "sha256:6baf5c025e1f2859cd5ea278048eb1c892dd56d2071742d413bab386c4e90e23", size = 270079, upload-time = "2026-01-15T18:25:50.647Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/90/566b0e3fa914065c04d8984646ed872c01a9490cfbb43a5833511d0a33e3/letta_client-1.7.8.tar.gz", hash = "sha256:51b30cb3ff57afac54a33796105aaaf0c9d7c97258682a89a5b38c1608696e1b", size = 259066, upload-time = "2026-02-05T05:45:38.698Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/06/393b7e7fa4af35e4e9dc49b7fbf381b224749b501fe79e953900e9980902/letta_client-1.7.0-py3-none-any.whl", hash = "sha256:025cfdfed8f545a6f91551c798f53139600914fdca001576618e6ca62a347e7a", size = 415599, upload-time = "2026-01-15T18:25:48.836Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/b3/2078258921022b97cbdcb4c333bc272dfb0744612ff0f47ea441a153496a/letta_client-1.7.8-py3-none-any.whl", hash = "sha256:00fbca1be82b0962ea3ea54c3c1317c04eaac50c1f033fc95c7b1d04c9007193", size = 378591, upload-time = "2026-02-05T05:45:37.188Z" },
 ]
 
 [[package]]
@@ -593,12 +593,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiogram", specifier = ">=3.22.0" },
+    { name = "aiogram", specifier = "==3.25.0" },
     { name = "elevenlabs", specifier = ">=2.31.0" },
-    { name = "gel", specifier = ">=3.1.0" },
-    { name = "letta-client", specifier = "==1.7.0" },
+    { name = "gel", specifier = "==3.1.0" },
+    { name = "letta-client", specifier = "==1.7.8" },
     { name = "mistune", specifier = ">=3.1.4" },
-    { name = "openai", specifier = ">=2.8.1" },
+    { name = "openai", specifier = "==2.21.0" },
     { name = "pydantic-settings", specifier = ">=2.11.0" },
 ]
 

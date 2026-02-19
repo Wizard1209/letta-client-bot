@@ -1,19 +1,28 @@
 import asyncio
 from dataclasses import dataclass, field
 import logging
+from typing import Any
 
 from aiogram import Bot, F, Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.chat_action import ChatActionSender
-from aiogram.utils.formatting import Bold, Code, Text, as_list, as_marked_list
+from aiogram.utils.formatting import Bold, Code, Spoiler, Text, as_list, as_marked_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor
 from httpx import ReadTimeout
 from letta_client import APIError
+from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
 
 from letta_bot.client import LettaProcessingError, client, list_agents_by_user
+from letta_bot.custom_tools.client_tool_registry import (
+    CLIENT_TOOLS,
+    TelegramPhoto,
+    TelegramText,
+    _build_approval,
+    execute_client_tool,
+)
 from letta_bot.documents import (
     DocumentProcessingError,
     FileTooLargeError,
@@ -183,6 +192,70 @@ def init_message_context(message: Message) -> MessageContext:
 # =============================================================================
 
 
+def _patch_pending_file_id(
+    messages: list[dict[str, Any]], file_id: str
+) -> None:
+    """Replace %PENDING% placeholder with actual Telegram file_id in-place."""
+    for msg in messages:
+        for part in msg.get('content', []):
+            if part.get('type') == 'text' and '%PENDING%' in part.get('text', ''):
+                part['text'] = part['text'].replace('%PENDING%', file_id)
+
+
+async def _resolve_approval(
+    message: Message,
+    bot: Bot,
+    approval_event: LettaStreamingResponse,
+) -> list[dict[str, Any]]:
+    """Execute client-side tool and send output to Telegram user.
+
+    Returns:
+        Letta resume messages (approval + optional image with file_id patched).
+        On failure, returns an error approval so the agent doesn't get stuck.
+    """
+    # tool_call (singular) is deprecated and may return a stale tool_call_id.
+    # Use tool_calls (plural) which has the actual pending tool call list.
+    tool_calls = approval_event.tool_calls  # type: ignore[union-attr]
+    tool_call = tool_calls[0]  # type: ignore[index]
+    tool_call_id = str(tool_call.tool_call_id)
+
+    try:
+        result = await execute_client_tool(
+            bot=bot,
+            tool_call_id=tool_call_id,
+            tool_name=str(tool_call.name),
+            arguments=str(tool_call.arguments),
+        )
+    except Exception:
+        LOGGER.exception(
+            'Client tool %s failed, sending error approval', tool_call.name
+        )
+        await message.answer(
+            **Text(f'❌ Tool "{tool_call.name}" failed').as_kwargs()
+        )
+        return [_build_approval(tool_call_id, 'Tool execution failed', 'error')]
+
+    # Send to Telegram, patch file_id if photo
+    if isinstance(result.telegram_output, TelegramPhoto):
+        sent = await message.answer_photo(
+            photo=result.telegram_output.photo,
+        )
+        if sent.photo:
+            file_id = sent.photo[-1].file_id
+            _patch_pending_file_id(result.letta_messages, file_id)
+            # Add spoiler caption with file_id so replies carry it back to agent
+            caption = as_list(
+                Spoiler(f'attached photo: file_id={file_id}'),
+            )
+            await sent.edit_caption(**caption.as_kwargs())
+    elif isinstance(result.telegram_output, TelegramText):
+        await message.answer(
+            **Text(result.telegram_output.text).as_kwargs()
+        )
+
+    return result.letta_messages
+
+
 async def send_to_agent(
     message: Message,
     bot: Bot,
@@ -191,38 +264,49 @@ async def send_to_agent(
 ) -> None:
     """Send message to agent and stream response.
 
-    Args:
-        message: Original Telegram message (for replies)
-        bot: Aiogram Bot instance
-        agent_id: Letta agent ID
-        content_parts: Content parts for Letta API
-
-    Raises:
-        Re-raises exceptions after logging and notifying user
+    When the agent calls a client-side tool, the stream ends with an
+    approval request. The tool is executed, result sent to Telegram,
+    and a new stream is opened with the same listening code.
     """
     assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
+    messages: list[dict[str, Any]] = [
+        {'role': 'user', 'content': content_parts}
+    ]
+
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-            response_stream = await client.agents.messages.stream(
-                agent_id=agent_id,
-                messages=[{'role': 'user', 'content': content_parts}],  # type: ignore[typeddict-item]
-                include_pings=True,
-            )
-
             handler = AgentStreamHandler(message)
 
-            async for event in response_stream:
-                try:
-                    await handler.handle_event(event)
-                except Exception as e:
-                    LOGGER.error(
-                        'Stream event error: %s, tg_id=%s, agent=%s',
-                        e,
-                        message.from_user.id,
-                        agent_id,
-                    )
-                    continue
+            while True:
+                approval_request = None
+                stream = await client.agents.messages.stream(
+                    agent_id=agent_id,
+                    messages=messages,  # type: ignore[arg-type]
+                    client_tools=CLIENT_TOOLS,  # type: ignore[arg-type]
+                    include_pings=True,
+                )
+
+                async for event in stream:
+                    try:
+                        msg_type = getattr(event, 'message_type', None)
+                        if msg_type == 'approval_request_message':
+                            approval_request = event
+                            await handler.handle_approval_request(event)
+                            continue
+                        await handler.handle_event(event)
+                    except Exception as e:
+                        LOGGER.error(
+                            'Stream event error: %s, tg_id=%s, agent=%s',
+                            e,
+                            message.from_user.id,
+                            agent_id,
+                        )
+
+                if approval_request is None:
+                    break
+
+                messages = await _resolve_approval(message, bot, approval_request)
 
     except ReadTimeout:
         LOGGER.error(
@@ -695,6 +779,12 @@ async def handle_album(
         ctx.prepend_text(
             '<image_processing_error>Failed to process all images</image_processing_error>'
         )
+
+    # Annotate with Telegram file_ids so agent can reference them in tool calls
+    file_ids = [m.photo[-1].file_id for m in photos if m.photo]
+    if file_ids:
+        ids_str = ', '.join(file_ids)
+        ctx.add_text(f'<telegram_images file_ids="{ids_str}" />')
 
     # Send to agent
     content_parts = ctx.build_content_parts()

@@ -185,6 +185,10 @@ def _format_tool_by_name(
         case 'notify_via_telegram':
             return _format_notify_via_telegram(args_obj)
 
+        # Image generation
+        case 'generate_image':
+            return _format_generate_image(args_obj)
+
         # Generic tool
         case _:
             LOGGER.warning('No formatting supported for tool %s', tool_name)
@@ -610,6 +614,22 @@ def _format_run_code(args_obj: dict[str, Any]) -> str:
     return ''.join(parts)
 
 
+def _format_generate_image(args_obj: dict[str, Any]) -> dict[str, Any]:
+    """Format generate_image tool call."""
+    prompt = args_obj.get('prompt', '')
+    reference_images = args_obj.get('reference_images', [])
+
+    elements: list[Any] = [
+        Italic('🎨 Generating image...'),
+        as_key_value('Prompt', f'"{prompt}"'),
+    ]
+
+    if reference_images:
+        elements.append(Text(f'Using {len(reference_images)} reference image(s)'))
+
+    return as_line(*elements, sep='\n').as_kwargs()
+
+
 def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
     """Format generic tool call with JSON arguments."""
     formatted_args = json.dumps(args_obj, indent=2)
@@ -758,6 +778,26 @@ class AgentStreamHandler:
             if raw_content:
                 await send_markdown_message(self.telegram_message, raw_content)
                 self._clear_ping_state()
+
+    async def handle_approval_request(self, event: LettaStreamingResponse) -> None:
+        """Display an approval request (client-side tool call) to the user.
+
+        Reuses tool_call formatting to show what the agent wants to do.
+
+        Args:
+            event: Stream event with message_type='approval_request_message'
+        """
+        formatted_content = _format_tool_call_message(event)
+        if formatted_content:
+            try:
+                if isinstance(formatted_content, str):
+                    await send_markdown_message(self.telegram_message, formatted_content)
+                else:
+                    await self.telegram_message.answer(**formatted_content)
+            except Exception as e:
+                await _send_error_message(
+                    self.telegram_message, e, str(formatted_content)
+                )
 
     async def _handle_ping(self) -> None:
         """Handle ping events with state management."""
