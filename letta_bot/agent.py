@@ -137,7 +137,7 @@ def build_reply_context(message: Message) -> str | None:
 
     # Full reply without specific quote
     if message.reply_to_message:
-        reply_text = message.reply_to_message.text
+        reply_text = message.reply_to_message.text or message.reply_to_message.caption
         if reply_text:
             preview = reply_text[:100] + ('...' if len(reply_text) > 100 else '')
             return f'<reply_to>{preview}</reply_to>'
