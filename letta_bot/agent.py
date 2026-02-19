@@ -243,11 +243,14 @@ async def _resolve_approval(
         if sent.photo:
             file_id = sent.photo[-1].file_id
             _patch_pending_file_id(result.letta_messages, file_id)
-            # Add spoiler caption with file_id so replies carry it back to agent
-            caption = as_list(
+            # Add spoiler caption with file_id so replies carry it back
+            kwargs = as_list(
                 Spoiler(f'attached photo: file_id={file_id}'),
+            ).as_kwargs()
+            await sent.edit_caption(
+                caption=kwargs['text'],
+                caption_entities=kwargs['entities'],
             )
-            await sent.edit_caption(**caption.as_kwargs())
     elif isinstance(result.telegram_output, TelegramText):
         await message.answer(
             **Text(result.telegram_output.text).as_kwargs()
