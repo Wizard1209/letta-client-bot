@@ -16,10 +16,12 @@ from openai import AsyncOpenAI
 
 from letta_bot.config import CONFIG
 
+from letta_client.types.agents.message_stream_params import ClientTool
+
 LOGGER = logging.getLogger(__name__)
 
 # Tool schema (matches SDK ClientTool TypedDict)
-GENERATE_IMAGE_TOOL: dict[str, Any] = {
+GENERATE_IMAGE_TOOL: ClientTool = {
     'name': 'generate_image',
     'description': (
         'Generate an image based on a text description. '

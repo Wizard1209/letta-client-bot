@@ -192,9 +192,7 @@ def init_message_context(message: Message) -> MessageContext:
 # =============================================================================
 
 
-def _patch_pending_file_id(
-    messages: list[dict[str, Any]], file_id: str
-) -> None:
+def _patch_pending_file_id(messages: list[dict[str, Any]], file_id: str) -> None:
     """Replace %PENDING% placeholder with actual Telegram file_id in-place."""
     for msg in messages:
         for part in msg.get('content', []):
@@ -227,12 +225,8 @@ async def _resolve_approval(
             arguments=str(tool_call.arguments),
         )
     except Exception:
-        LOGGER.exception(
-            'Client tool %s failed, sending error approval', tool_call.name
-        )
-        await message.answer(
-            **Text(f'❌ Tool "{tool_call.name}" failed').as_kwargs()
-        )
+        LOGGER.exception('Client tool %s failed, sending error approval', tool_call.name)
+        await message.answer(**Text(f'❌ Tool "{tool_call.name}" failed').as_kwargs())
         return [_build_approval(tool_call_id, 'Tool execution failed', 'error')]
 
     # Send to Telegram, patch file_id if photo
@@ -252,9 +246,7 @@ async def _resolve_approval(
                 caption_entities=kwargs['entities'],
             )
     elif isinstance(result.telegram_output, TelegramText):
-        await message.answer(
-            **Text(result.telegram_output.text).as_kwargs()
-        )
+        await message.answer(**Text(result.telegram_output.text).as_kwargs())
 
     return result.letta_messages
 
@@ -273,9 +265,7 @@ async def send_to_agent(
     """
     assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
-    messages: list[dict[str, Any]] = [
-        {'role': 'user', 'content': content_parts}
-    ]
+    messages: list[dict[str, Any]] = [{'role': 'user', 'content': content_parts}]
 
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
@@ -286,7 +276,7 @@ async def send_to_agent(
                 stream = await client.agents.messages.stream(
                     agent_id=agent_id,
                     messages=messages,  # type: ignore[arg-type]
-                    client_tools=CLIENT_TOOLS,  # type: ignore[arg-type]
+                    client_tools=CLIENT_TOOLS,
                     include_pings=True,
                 )
 
@@ -857,9 +847,7 @@ async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> N
     try:
         image_part = await process_telegram_image(bot, message.sticker)
         ctx.add_image(image_part)
-        ctx.add_text(
-            f'<telegram_sticker file_id="{message.sticker.file_id}" />'
-        )
+        ctx.add_text(f'<telegram_sticker file_id="{message.sticker.file_id}" />')
     except ImageProcessingError as e:
         LOGGER.warning(
             'Sticker processing failed: %s, telegram_id=%s',

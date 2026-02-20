@@ -795,9 +795,7 @@ class AgentStreamHandler:
                 else:
                     await self.telegram_message.answer(**formatted_content)
             except Exception as e:
-                await _send_error_message(
-                    self.telegram_message, e, str(formatted_content)
-                )
+                await _send_error_message(self.telegram_message, e, str(formatted_content))
 
     async def _handle_ping(self) -> None:
         """Handle ping events with state management."""

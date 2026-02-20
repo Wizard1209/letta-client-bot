@@ -16,6 +16,7 @@ from letta_bot.custom_tools.generate_image import (
     GENERATE_IMAGE_TOOL,
     execute_generate_image,
 )
+from letta_client.types.agents.message_stream_params import ClientTool
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class ClientToolResult:
     telegram_output: TelegramOutput | None = None
 
 
-CLIENT_TOOLS: list[dict[str, Any]] = [
+CLIENT_TOOLS: list[ClientTool] = [
     GENERATE_IMAGE_TOOL,
 ]
 

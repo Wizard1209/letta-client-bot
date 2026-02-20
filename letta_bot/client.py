@@ -11,7 +11,7 @@ Isolating the client here prevents circular import issues.
 from collections.abc import AsyncIterator
 from contextlib import suppress
 import logging
-from typing import BinaryIO
+from typing import Any, BinaryIO, Literal
 
 from letta_client import AsyncLetta as LettaClient, ConflictError, NotFoundError
 from letta_client.types.agent_state import AgentState
@@ -71,7 +71,7 @@ async def create_agent_from_template(
 async def list_agents_by_user(
     telegram_id: int,
     limit: int | None = None,
-    order: str | None = None,
+    order: Literal['asc', 'desc'] | None = None,
 ) -> AsyncIterator[AgentState]:
     """List all agents accessible to a telegram user.
 
@@ -84,7 +84,12 @@ async def list_agents_by_user(
         AgentState objects for each agent with identity-tg-{telegram_id} tag
     """
     identity_tag = f'identity-tg-{telegram_id}'
-    async for agent in client.agents.list(tags=[identity_tag], limit=limit, order=order):
+    kwargs: dict[str, Any] = {'tags': [identity_tag]}
+    if limit is not None:
+        kwargs['limit'] = limit
+    if order is not None:
+        kwargs['order'] = order
+    async for agent in client.agents.list(**kwargs):
         yield agent
 
 
