@@ -622,7 +622,7 @@ letta_bot/
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
   auth.py              # All authorization: user requests (/access, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
-  agent.py             # Agent operations: /switch, /current, /context, /clear, and content-type message handlers (document, photo, audio, video, sticker, text)
+  agent.py             # Agent operations: /switch, /current, /context, /clear, /export, and content-type message handlers (document, photo, audio, video, sticker, text)
   client.py            # Shared Letta client instance and Letta API operations (agent, folder, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
   tools.py             # Tool management: attach/detach/configure agent tools (/notify for proactive mode)
