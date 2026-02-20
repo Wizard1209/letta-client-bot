@@ -5,7 +5,7 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.formatting import Bold, Code, Text, as_list, as_marked_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -567,6 +567,47 @@ async def handle_clear_messages(
     except APIError as e:
         LOGGER.error(f'Error clearing messages for agent {agent_id}: {e}')
         await callback.answer('❌ Error clearing messages')
+
+
+@agent_commands_router.message(
+    Command('export'), flags={'require_identity': True, 'require_agent': True}
+)
+async def export_agent(message: Message, agent_id: str) -> None:
+    """Export current assistant as a portable .af file."""
+    if not message.from_user:
+        return
+
+    status_msg = await message.answer(
+        **Text('⏳ Exporting assistant...').as_kwargs()
+    )
+
+    try:
+        agent = await client.agents.retrieve(agent_id)
+        agent_file_content = await client.agents.export_file(agent_id=agent_id)
+
+        # Sanitize agent name for filename
+        safe_name = agent.name.replace('/', '_').replace('\\', '_').replace(' ', '_')
+        filename = f'{safe_name}.af'
+
+        data = agent_file_content.encode('utf-8')
+        document = BufferedInputFile(file=data, filename=filename)
+
+        await status_msg.delete()
+        await message.answer_document(
+            document=document,
+            caption=f'📦 Agent export: {agent.name}',
+        )
+
+    except Exception as e:
+        LOGGER.error(
+            'Error exporting agent %s for user %s: %s',
+            agent_id,
+            message.from_user.id,
+            e,
+        )
+        await status_msg.edit_text(
+            **Text('❌ Error exporting assistant').as_kwargs()
+        )
 
 
 # =============================================================================
