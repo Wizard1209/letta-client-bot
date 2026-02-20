@@ -853,10 +853,13 @@ async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> N
 
     ctx = init_message_context(message)
 
-    # Process sticker as image
+    # Process sticker as image with file_id annotation
     try:
         image_part = await process_telegram_image(bot, message.sticker)
         ctx.add_image(image_part)
+        ctx.add_text(
+            f'<telegram_sticker file_id="{message.sticker.file_id}" />'
+        )
     except ImageProcessingError as e:
         LOGGER.warning(
             'Sticker processing failed: %s, telegram_id=%s',
