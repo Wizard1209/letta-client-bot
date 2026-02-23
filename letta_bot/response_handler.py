@@ -25,6 +25,7 @@ from aiogram.utils.formatting import (
     as_line,
     as_marked_list,
 )
+from letta_client.types.agents.approval_request_message import ApprovalRequestMessage
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
 
 from letta_bot.utils import merge_with_entity
@@ -184,6 +185,10 @@ def _format_tool_by_name(
 
         case 'notify_via_telegram':
             return _format_notify_via_telegram(args_obj)
+
+        # Image generation
+        case 'generate_image':
+            return _format_generate_image(args_obj)
 
         # Generic tool
         case _:
@@ -370,6 +375,28 @@ def _format_notify_via_telegram(args_obj: dict[str, Any]) -> dict[str, Any]:
     if owner_only:
         return Italic('📲 Sending message to owner...').as_kwargs()
     return Italic('📲 Sending message to Telegram...').as_kwargs()
+
+
+def _format_generate_image(args_obj: dict[str, Any]) -> dict[str, Any]:
+    """Format generate_image tool call."""
+    prompt = args_obj.get('prompt', '')
+    reference_images = args_obj.get('reference_images', [])
+    model = args_obj.get('model', '')
+
+    elements: list[Any] = [
+        Italic('🎨 Generating image...'),
+        as_key_value('Prompt', f'"{prompt}"'),
+    ]
+
+    parts = []
+    if reference_images:
+        parts.append(f'{len(reference_images)} reference image(s)')
+    if model:
+        parts.append(f'model: {model}')
+    if parts:
+        elements.append(as_marked_list(*parts, marker='• '))
+
+    return as_line(*elements, sep='\n').as_kwargs()
 
 
 def _format_web_search(args_obj: dict[str, Any]) -> dict[str, Any]:
@@ -692,6 +719,7 @@ class AgentStreamHandler:
         self.telegram_message = telegram_message
         self.ping_count = 0
         self.ping_message: Message | None = None
+        self.approval_request: ApprovalRequestMessage | None = None
 
     async def handle_event(self, event: LettaStreamingResponse) -> None:
         """Process event
@@ -742,6 +770,27 @@ class AgentStreamHandler:
                     await _send_error_message(
                         self.telegram_message, e, str(formatted_content)
                     )
+            return
+
+        if message_type == 'approval_request_message':
+            self.approval_request = event  # type: ignore[assignment]
+            # Display tool call to user (same format as tool_call_message)
+            formatted_content = _format_tool_call_message(event)
+            if formatted_content:
+                try:
+                    if isinstance(formatted_content, str):
+                        await send_markdown_message(
+                            self.telegram_message, formatted_content
+                        )
+                    else:
+                        await self.telegram_message.answer(**formatted_content)
+                except Exception as e:
+                    await _send_error_message(
+                        self.telegram_message, e, str(formatted_content)
+                    )
+            return
+
+        if message_type in ('stop_reason', 'usage_statistics'):
             return
 
         # System alerts (informational messages from Letta)

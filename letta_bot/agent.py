@@ -1,19 +1,32 @@
 import asyncio
 from dataclasses import dataclass, field
+import json
 import logging
+from typing import Any
 
 from aiogram import Bot, F, Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.formatting import Bold, Code, Text, as_list, as_marked_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor
 from httpx import ReadTimeout
 from letta_client import APIError
+from letta_client.types.agents.approval_request_message import (
+    ApprovalRequestMessage,
+)
+from letta_client.types.agents.tool_call import ToolCall
 
 from letta_bot.client import LettaProcessingError, client, list_agents_by_user
+import letta_bot.client_tools.generate_image  # noqa: F401
+from letta_bot.client_tools.registry import (
+    CLIENT_TOOL_SCHEMAS,
+    PENDING_PLACEHOLDER,
+    TelegramPhoto,
+    execute_client_tool,
+)
 from letta_bot.documents import (
     DocumentProcessingError,
     FileTooLargeError,
@@ -128,11 +141,22 @@ def build_reply_context(message: Message) -> str | None:
 
     # Full reply without specific quote
     if message.reply_to_message:
-        reply_text = message.reply_to_message.text
+        reply_text = (
+            message.reply_to_message.text
+            or message.reply_to_message.caption
+            or message.text  # need for photo and sticker
+        )
         if reply_text:
             preview = reply_text[:100] + ('...' if len(reply_text) > 100 else '')
-            return f'<reply_to>{preview}</reply_to>'
-
+            if message.reply_to_message.photo:
+                file_id = message.reply_to_message.photo[-1].file_id
+                file_tag = f'<photo>file_id={file_id}</photo>'
+            elif message.reply_to_message.sticker:
+                file_id = message.reply_to_message.sticker.file_id
+                file_tag = f'<sticker>file_id={file_id}</sticker>'
+            else:
+                file_tag = ''
+            return f'<reply>{file_tag}{preview}</reply>'
     return None
 
 
@@ -183,13 +207,86 @@ def init_message_context(message: Message) -> MessageContext:
 # =============================================================================
 
 
+async def _resolve_approval(
+    message: Message,
+    bot: Bot,
+    approval: ApprovalRequestMessage,
+) -> list[dict[str, Any]]:
+    """Execute client-side tools and return ready messages for Letta.
+
+    Handles: tool call extraction, execution, Telegram send, file_id patch.
+    On failure returns error approval so the agent doesn't get stuck.
+    """
+    tool_calls = (
+        approval.tool_calls
+        if isinstance(approval.tool_calls, list)
+        else [approval.tool_call]
+        if isinstance(approval.tool_call, ToolCall)
+        else []
+    )
+
+    approvals: list[dict[str, Any]] = []
+    for tc in tool_calls:
+        try:
+            args = json.loads(tc.arguments)
+            result = await execute_client_tool(tc.name, args, bot, message)
+
+            tool_return = result.tool_return
+
+            # Send photo to user, patch file_id placeholder
+            if isinstance(result.telegram_result, TelegramPhoto):
+                photo = result.telegram_result
+                photo_input: str | BufferedInputFile
+                if isinstance(photo.data, bytes):
+                    photo_input = BufferedInputFile(photo.data, filename='photo.jpg')
+                else:
+                    photo_input = photo.data
+                sent = await message.answer_photo(photo=photo_input, caption=photo.caption)
+                if sent.photo and PENDING_PLACEHOLDER in tool_return:
+                    tool_return = tool_return.replace(
+                        PENDING_PLACEHOLDER,
+                        sent.photo[-1].file_id,
+                    )
+
+            approvals.append(
+                {
+                    'tool_call_id': tc.tool_call_id,
+                    'tool_return': tool_return,
+                    'status': result.status,
+                    'type': 'tool',
+                }
+            )
+
+        except Exception as e:
+            LOGGER.error('Client tool error: %s', e)
+            approvals.append(
+                {
+                    'tool_call_id': tc.tool_call_id,
+                    'tool_return': f'Client tool execution failed: {e}',
+                    'status': 'error',
+                    'type': 'tool',
+                }
+            )
+
+    return [
+        {
+            'type': 'approval',
+            'approval_request_id': approval.id,
+            'approvals': approvals,
+        }
+    ]
+
+
 async def send_to_agent(
     message: Message,
     bot: Bot,
     agent_id: str,
     content_parts: list[ContentPart],
 ) -> None:
-    """Send message to agent and stream response.
+    """Send message to agent and stream response with client-side tool support.
+
+    Implements an approval loop: if the agent calls a client-side tool,
+    the bot executes it and sends the result back for the agent to continue.
 
     Args:
         message: Original Telegram message (for replies)
@@ -202,27 +299,36 @@ async def send_to_agent(
     """
     assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
+    messages: list[Any] = [{'role': 'user', 'content': content_parts}]
+    client_tools = CLIENT_TOOL_SCHEMAS or None
+
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-            response_stream = await client.agents.messages.stream(
-                agent_id=agent_id,
-                messages=[{'role': 'user', 'content': content_parts}],  # type: ignore[typeddict-item]
-                include_pings=True,
-            )
+            while True:
+                handler = AgentStreamHandler(message)
+                stream = await client.agents.messages.stream(
+                    agent_id=agent_id,
+                    messages=messages,
+                    include_pings=True,
+                    client_tools=client_tools,
+                )
 
-            handler = AgentStreamHandler(message)
+                async for event in stream:
+                    try:
+                        await handler.handle_event(event)
+                    except Exception as e:
+                        LOGGER.error(
+                            'Stream event error: %s, tg_id=%s, agent=%s',
+                            e,
+                            message.from_user.id,
+                            agent_id,
+                        )
+                        continue
 
-            async for event in response_stream:
-                try:
-                    await handler.handle_event(event)
-                except Exception as e:
-                    LOGGER.error(
-                        'Stream event error: %s, tg_id=%s, agent=%s',
-                        e,
-                        message.from_user.id,
-                        agent_id,
-                    )
-                    continue
+                if not handler.approval_request:
+                    break
+
+                messages = await _resolve_approval(message, bot, handler.approval_request)
 
     except ReadTimeout:
         LOGGER.error(
@@ -690,6 +796,12 @@ async def handle_album(
             ctx.add_image(result)
             successful_count += 1
 
+    # Add file_id annotations for agent to reference via client tools
+    file_ids = [m.photo[-1].file_id for m in photos if m.photo]
+    if file_ids:
+        photos_tags = ''.join(f'<photo>file_id={fid}</photo>' for fid in file_ids)
+        ctx.add_text(f'<photos>{photos_tags}</photos>')
+
     # If all images failed, add error context
     if successful_count == 0 and results:
         ctx.prepend_text(
@@ -764,6 +876,7 @@ async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> N
     try:
         image_part = await process_telegram_image(bot, message.sticker)
         ctx.add_image(image_part)
+        ctx.add_text(f'<sticker>file_id={message.sticker.file_id}</sticker>')
     except ImageProcessingError as e:
         LOGGER.warning(
             'Sticker processing failed: %s, telegram_id=%s',
