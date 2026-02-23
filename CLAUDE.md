@@ -18,6 +18,7 @@ Multi-user Telegram bot that manages per-user Letta agents through a tag-based a
 
 - Templates fetched from Letta API (no local storage)
 - One pending request per user (prevents spam)
+- Client-side tools enable agent-driven Telegram actions (image generation, photo sending)
 
 ## Core Architecture
 
@@ -346,6 +347,53 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 - **Use Middleware when**: Logic applies to many handlers (e.g., database injection, identity checks)
 - **Combine both**: Middleware for common setup, filters for specific conditions
 
+### Client-Side Tools
+
+Client-side tools are tools that the agent can call, but are executed by the bot (client) rather than the Letta server. This enables agent-driven Telegram actions like sending generated images.
+
+**Architecture:**
+
+- `letta_bot/client_tools/registry.py` — central registry with result types and dispatch
+- Tool modules (e.g., `generate_image.py`) self-register at import time via `register_tool()`
+- Schemas collected in `CLIENT_TOOL_SCHEMAS` and passed to Letta API via `client_tools` parameter
+- Agent calls tool → `ApprovalRequestMessage` in stream → bot executes → result sent back to Letta
+
+**Approval Loop** (`agent.py: send_to_agent()`):
+
+```python
+# Simplified flow:
+while True:
+    stream = await client.agents.messages.stream(
+        agent_id=agent_id,
+        messages=messages,
+        client_tools=CLIENT_TOOL_SCHEMAS,
+    )
+    # Process stream events...
+    if not handler.approval_request:
+        break
+    # Execute client tool, send result back as next messages
+    messages = await _resolve_approval(message, bot, handler.approval_request)
+```
+
+**Result Types:**
+
+- `ClientToolResult` — text for Letta (`tool_return`) + optional Telegram action (`telegram_result`)
+- `TelegramPhoto` — photo data (bytes or file_id) with optional caption
+- `PENDING_PLACEHOLDER` (`%PENDING%`) — marker replaced with actual Telegram `file_id` after sending
+
+**Available Tools:**
+
+- `generate_image` — image generation via OpenAI Images API (`gpt-image-1-mini`/`gpt-image-1`/`gpt-image-1.5`), supports reference images from Telegram `file_id`
+
+**Adding New Client-Side Tools:**
+
+1. Create `letta_bot/client_tools/<tool_name>.py`
+2. Define `async def execute_<tool_name>(arguments, bot, message, **kwargs) -> ClientToolResult`
+3. Define `_SCHEMA: ClientTool` with JSON Schema parameters
+4. Call `register_tool('<tool_name>', execute_<tool_name>, _SCHEMA)` at module level
+5. Import module in `letta_bot/agent.py` (e.g., `import letta_bot.client_tools.<tool_name>  # noqa: F401`)
+6. Add formatting in `response_handler.py: _format_tool_by_name()`
+
 ### Authorization Flow
 
 **Phase 1: User Registration**
@@ -397,14 +445,14 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 - **Handler registration order matters**: Specific filters must come before catch-all (first match wins)
 - **Message context building** (shared across handlers via `MessageContext` dataclass):
   - Metadata: `<metadata>` tag with user name, day of week, date, time (UTC)
-  - Reply context: `<quote>` (quoted text) or `<reply_to>` (first 100 chars of reply)
+  - Reply context: `<quote>` (quoted text), `<reply_to>` (first 100 chars), `<reply_to_telegram_photo file_id=...>`, or `<reply_to_telegram_sticker file_id=...>` (with file_id for client-side tool reference)
   - Caption: `<caption>` tag for media messages
 - **Content-type-specific processing**:
   - Text: plain text content
   - Voice/audio: transcribed via external service, wrapped in XML tags (`<voice_transcript>`, `<audio_transcript>`)
-  - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected); photo albums processed together as single request with all images
+  - **Images**: downloaded from Telegram, encoded to base64, sent as Letta image content parts (highest resolution selected); photo albums processed together as single request with all images; `file_id` annotations added via `<telegram_images file_ids="..." />` for client-side tool reference
   - **Documents**: validated by type/size, uploaded to per-agent Letta folder, processed asynchronously with status polling
-  - **Stickers**: regular (static) stickers processed as images; animated/video stickers unsupported
+  - **Stickers**: regular (static) stickers processed as images with `<telegram_sticker file_id="..." />` annotation; animated/video stickers unsupported
   - Unsupported: video and animated/video stickers notify user, don't process further
 - **Document processing** (`documents.py`):
   - Accepts any file type (no MIME type restrictions)
@@ -414,13 +462,15 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Files uploaded to agent-specific folders (`uploads-{agent_id}`) and indexed for RAG
   - Auto-attaches `file_handling` memory block to agent on first file upload (teaches agent how to respond to files)
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
-- Bot streams agent responses via `client.agents.messages.stream()`
+- Bot streams agent responses via `client.agents.messages.stream()` with approval loop for client-side tools
 - **Response handler** (`response_handler.py`) processes stream events:
   - **assistant_message**: Main agent response converted to Telegram entities via `md_tg` module
   - **reasoning_message**: Internal agent reasoning (italic header, expandable blockquote formatting)
   - **tool_call_message**: Tool execution details (parsed from JSON arguments)
+  - **approval_request_message**: Client-side tool call — displayed like `tool_call_message`, stored for approval loop execution
   - **ping**: Progressive heartbeat indicator (displays "⏳", "⏳⏳", "⏳⏳⏳", etc., updating same message)
   - **system_alert**: Informational messages from Letta (displayed as info text)
+  - **stop_reason**, **usage_statistics**: Silently ignored
 - **Specialized tool formatting** (consistent style with emoji, italic headers, bullet lists):
   - `archival_memory_insert`: "💾 Storing in archival memory..." with tags and markdown content
   - `archival_memory_search`: "🔍 Searching archival memory..." with query, date range, tags, and top_k limit
@@ -443,6 +493,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - `list_scheduled_messages`: "📋 Checking scheduled messages..."
   - `delete_scheduled_message`: "🗑️ Canceling scheduled message..." with schedule ID
   - `notify_via_telegram`: "📲 Sending message..." with owner-only indicator
+  - `generate_image`: "🎨 Generating image..." with prompt, reference image count, and model
   - Generic tools: "🔧 Using tool..." with tool name and JSON arguments
 - **Message formatting pipeline**:
   - Agent responses: Standard Markdown → `markdown_to_telegram()` → Telegram entities
@@ -633,6 +684,10 @@ letta_bot/
   documents.py         # Document processing: download Telegram files, upload to Letta folders for RAG
   transcription.py     # Audio transcription: OpenAI Whisper and ElevenLabs Scribe engines for voice/audio messages
   utils.py             # Utility functions (async cache decorator with TTL, UUID validation)
+  client_tools/        # Client-side tools executed by bot on agent's behalf
+    __init__.py        # Package init
+    registry.py        # Tool registry, result types, dispatch by name
+    generate_image.py  # Image generation via OpenAI Images API (gpt-image-1-mini/1/1.5)
   queries/             # EdgeQL queries and auto-generated Python modules
     upsert_user.edgeql                      # Register/update user (upsert on telegram_id)
     is_registered.edgeql                    # Check if user is registered
