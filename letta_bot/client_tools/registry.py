@@ -40,12 +40,21 @@ TelegramResult = TelegramPhoto | None
 
 
 @dataclass
+class LettaImage:
+    """Base64 image to send back to the agent so it can "see" the result."""
+
+    b64_data: str
+    media_type: str  # e.g. 'image/png'
+
+
+@dataclass
 class ClientToolResult:
     """Result of client tool execution."""
 
     tool_return: str  # string for Letta (JSON or text)
     status: Literal['success', 'error']
     telegram_result: TelegramResult = None
+    letta_image: LettaImage | None = None
 
 
 # =============================================================================

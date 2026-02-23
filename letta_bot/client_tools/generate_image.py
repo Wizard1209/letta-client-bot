@@ -15,6 +15,7 @@ from openai import AsyncOpenAI
 from letta_bot.client_tools.registry import (
     PENDING_PLACEHOLDER,
     ClientToolResult,
+    LettaImage,
     TelegramPhoto,
     register_tool,
 )
@@ -104,6 +105,7 @@ async def execute_generate_image(
             ),
             status='success',
             telegram_result=TelegramPhoto(data=base64.b64decode(b64)),
+            letta_image=LettaImage(b64_data=b64, media_type='image/png'),
         )
 
     except ImageProcessingError as e:

@@ -24,6 +24,7 @@ import letta_bot.client_tools.generate_image  # noqa: F401
 from letta_bot.client_tools.registry import (
     CLIENT_TOOL_SCHEMAS,
     PENDING_PLACEHOLDER,
+    LettaImage,
     TelegramPhoto,
     execute_client_tool,
 )
@@ -207,6 +208,14 @@ def init_message_context(message: Message) -> MessageContext:
 # =============================================================================
 
 
+def _patch_pending_file_id(messages: list[dict[str, Any]], file_id: str) -> None:
+    """Replace %PENDING% placeholder with actual Telegram file_id in-place."""
+    for msg in messages:
+        for part in msg.get('content', []):
+            if part.get('type') == 'text' and PENDING_PLACEHOLDER in part.get('text', ''):
+                part['text'] = part['text'].replace(PENDING_PLACEHOLDER, file_id)
+
+
 async def _resolve_approval(
     message: Message,
     bot: Bot,
@@ -215,6 +224,7 @@ async def _resolve_approval(
     """Execute client-side tools and return ready messages for Letta.
 
     Handles: tool call extraction, execution, Telegram send, file_id patch.
+    Returns approval + optional image user message so the agent can "see" results.
     On failure returns error approval so the agent doesn't get stuck.
     """
     tool_calls = (
@@ -226,6 +236,9 @@ async def _resolve_approval(
     )
 
     approvals: list[dict[str, Any]] = []
+    extra_messages: list[dict[str, Any]] = []
+    last_file_id: str | None = None
+
     for tc in tool_calls:
         try:
             args = json.loads(tc.arguments)
@@ -242,11 +255,40 @@ async def _resolve_approval(
                 else:
                     photo_input = photo.data
                 sent = await message.answer_photo(photo=photo_input, caption=photo.caption)
-                if sent.photo and PENDING_PLACEHOLDER in tool_return:
-                    tool_return = tool_return.replace(
-                        PENDING_PLACEHOLDER,
-                        sent.photo[-1].file_id,
-                    )
+                if sent.photo:
+                    last_file_id = sent.photo[-1].file_id
+                    if PENDING_PLACEHOLDER in tool_return:
+                        tool_return = tool_return.replace(
+                            PENDING_PLACEHOLDER, last_file_id
+                        )
+
+            # Build image user message so the agent can see the result
+            if isinstance(result.letta_image, LettaImage):
+                img = result.letta_image
+                image_msg: dict[str, Any] = {
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'image',
+                            'source': {
+                                'type': 'base64',
+                                'media_type': img.media_type,
+                                'data': img.b64_data,
+                            },
+                        },
+                        {
+                            'type': 'text',
+                            'text': (
+                                f'<additional-tool-result tool="{tc.name}">'
+                                f'<generated_image file_id="{PENDING_PLACEHOLDER}">'
+                                'Image generation result attached'
+                                '</generated_image>'
+                                '</additional-tool-result>'
+                            ),
+                        },
+                    ],
+                }
+                extra_messages.append(image_msg)
 
             approvals.append(
                 {
@@ -268,13 +310,20 @@ async def _resolve_approval(
                 }
             )
 
-    return [
+    result_messages: list[dict[str, Any]] = [
         {
             'type': 'approval',
             'approval_request_id': approval.id,
             'approvals': approvals,
-        }
+        },
+        *extra_messages,
     ]
+
+    # Patch %PENDING% placeholders in image messages with actual file_id
+    if extra_messages and last_file_id:
+        _patch_pending_file_id(result_messages, last_file_id)
+
+    return result_messages
 
 
 async def send_to_agent(
