@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass, field
+import json
 import logging
 
 from aiogram import Bot, F, Router
@@ -29,6 +30,14 @@ from letta_bot.images import (
     process_telegram_image,
 )
 from letta_bot.letta_sdk_extensions import context_window_overview
+from letta_bot.queries.check_pending_request_async_edgeql import (
+    AuthStatus as CheckAuthStatus,
+    ResourceType as CheckResourceType,
+    check_pending_request as check_pending_request_query,
+)
+from letta_bot.queries.get_allowed_identity_async_edgeql import (
+    get_allowed_identity as get_allowed_identity_query,
+)
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
@@ -267,6 +276,12 @@ class SwitchAssistantCallback(CallbackData, prefix='switch'):
 
 class ClearMessagesCallback(CallbackData, prefix='clear'):
     confirm: bool
+
+
+class ExportAgentCallback(CallbackData, prefix='export'):
+    # NOTE: Telegram callback_data limit is 64 bytes.
+    # prefix 'export:' (7) + agent UUID (~44) fits, but may break if ID format grows.
+    agent_id: str
 
 
 @agent_commands_router.message(Command('switch'), flags={'require_identity': True})
@@ -569,24 +584,44 @@ async def handle_clear_messages(
         await callback.answer('❌ Error clearing messages')
 
 
-@agent_commands_router.message(
-    Command('export'), flags={'require_identity': True, 'require_agent': True}
-)
-async def export_agent(message: Message, agent_id: str) -> None:
-    """Export current assistant as a portable .af file."""
-    if not message.from_user:
-        return
+async def _check_export_allowed(gel_client: AsyncIOExecutor, telegram_id: int) -> bool:
+    """Check if user is revoked and has no active access.
 
-    status_msg = await message.answer(
-        **Text('⏳ Exporting assistant...').as_kwargs()
+    Returns True only when user has a revoked identity request
+    and does NOT have an active (allowed) identity request.
+    """
+    is_revoked = await check_pending_request_query(
+        gel_client,
+        telegram_id=telegram_id,
+        resource_type=CheckResourceType.ACCESS_IDENTITY,
+        status=CheckAuthStatus.REVOKED,
     )
+    if not is_revoked:
+        return False
+    has_active = await get_allowed_identity_query(gel_client, telegram_id=telegram_id)
+    return not has_active
+
+
+async def _perform_export(
+    message: Message,
+    agent_id: str,
+    status_msg: Message | None = None,
+) -> None:
+    """Download and send agent .af file to user."""
+    assert message.from_user, 'from_user required'
+
+    if status_msg is None:
+        status_msg = await message.answer(**Text('⏳ Exporting assistant...').as_kwargs())
 
     try:
-        agent = await client.agents.retrieve(agent_id)
         agent_file_content = await client.agents.export_file(agent_id=agent_id)
+        # .af format assumption: {"agents": [{"name": ...}, ...]}
+        # Falls back to agent_id if structure changes.
+        agent_data = json.loads(agent_file_content)
+        agents = agent_data.get('agents', [])
+        agent_name = agents[0].get('name', agent_id) if agents else agent_id
 
-        # Sanitize agent name for filename
-        safe_name = agent.name.replace('/', '_').replace('\\', '_').replace(' ', '_')
+        safe_name = agent_name.replace('/', '_').replace('\\', '_').replace(' ', '_')
         filename = f'{safe_name}.af'
 
         data = agent_file_content.encode('utf-8')
@@ -595,7 +630,7 @@ async def export_agent(message: Message, agent_id: str) -> None:
         await status_msg.delete()
         await message.answer_document(
             document=document,
-            caption=f'📦 Agent export: {agent.name}',
+            caption=f'📦 Agent export: {agent_name}',
         )
 
     except Exception as e:
@@ -605,9 +640,82 @@ async def export_agent(message: Message, agent_id: str) -> None:
             message.from_user.id,
             e,
         )
-        await status_msg.edit_text(
-            **Text('❌ Error exporting assistant').as_kwargs()
+        await status_msg.edit_text(**Text('❌ Error exporting assistant').as_kwargs())
+
+
+@agent_commands_router.message(Command('export'))
+async def export_agent(message: Message, gel_client: AsyncIOExecutor) -> None:
+    """Export assistants as portable .af files. Only available for revoked users."""
+    assert message.from_user, 'from_user required'
+
+    telegram_id = message.from_user.id
+
+    if not await _check_export_allowed(gel_client, telegram_id):
+        await message.answer(
+            **Text(
+                '❌ This command is only available after your access has been revoked.'
+            ).as_kwargs()
         )
+        return
+
+    agents = [agent async for agent in list_agents_by_user(telegram_id)]
+
+    if not agents:
+        await message.answer(**Text('You have no assistants to export.').as_kwargs())
+        return
+
+    if len(agents) == 1:
+        await _perform_export(message, agents[0].id)
+        return
+
+    builder = InlineKeyboardBuilder()
+    for agent in agents:
+        builder.button(
+            text=agent.name,
+            callback_data=ExportAgentCallback(agent_id=agent.id).pack(),
+        )
+    builder.adjust(1)
+
+    await message.answer(
+        **Text('Select an assistant to export:').as_kwargs(),
+        reply_markup=builder.as_markup(),
+    )
+
+
+@agent_commands_router.callback_query(ExportAgentCallback.filter())
+async def handle_export_agent(
+    callback: CallbackQuery,
+    callback_data: ExportAgentCallback,
+    gel_client: AsyncIOExecutor,
+) -> None:
+    """Handle export agent selection callback."""
+    assert callback.from_user, 'from_user required'
+
+    telegram_id = callback.from_user.id
+
+    if not await _check_export_allowed(gel_client, telegram_id):
+        await callback.answer('❌ Export is only available for revoked users')
+        return
+
+    agent_id = callback_data.agent_id
+    identity_tag = f'identity-tg-{telegram_id}'
+    try:
+        agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
+    except APIError:
+        await callback.answer('❌ Assistant not found')
+        return
+
+    if not agent.tags or identity_tag not in agent.tags:
+        await callback.answer('❌ Assistant not available')
+        return
+
+    await callback.answer()
+
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(
+            **Text(f'⏳ Exporting {agent.name}...').as_kwargs()
+        )
+        await _perform_export(callback.message, agent_id, status_msg=callback.message)
 
 
 # =============================================================================

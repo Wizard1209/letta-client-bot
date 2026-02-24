@@ -19,6 +19,7 @@ from letta_bot.client import (
     get_agent_owner_telegram_id,
     list_agents_by_user,
 )
+from letta_bot.commands import clear_user_commands, set_revoked_commands
 from letta_bot.config import CONFIG
 from letta_bot.filters import AdminOnlyFilter
 from letta_bot.letta_sdk_extensions import list_templates
@@ -391,6 +392,8 @@ async def allow_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor)
                     telegram_id=telegram_id,
                     identifier_key=f'tg-{telegram_id}',
                 )
+            # Clear per-user command override (restore default menu)
+            await clear_user_commands(bot, chat_id=result.user.telegram_id)
 
         case ResourceType.CREATE_AGENT_FROM_TEMPLATE:
             identity_result = await get_identity_query(
@@ -632,12 +635,16 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
         ).as_kwargs()
     )
 
+    # Set per-user commands: only /export visible
+    await set_revoked_commands(bot, chat_id=telegram_id)
+
     # Notify user of revocation
     try:
         await bot.send_message(
             chat_id=telegram_id,
             **Text(
                 '🚫 Your access to the bot has been revoked.\n\n'
+                'You can export your assistants using /export.\n\n'
                 'If you believe this was done in error, '
                 'please contact the administrator.\n'
                 'You can submit a new request using /new or '

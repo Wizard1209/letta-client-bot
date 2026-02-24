@@ -6,7 +6,6 @@
     {"command": "current", "description": "View current assistant info and memory usage"},
     {"command": "context", "description": "Show context window breakdown for current assistant"},
     {"command": "clear", "description": "Clear message history of current assistant"},
-    {"command": "export", "description": "Export current assistant as a file"},
     {"command": "access", "description": "Request general bot access (no assistant)"},
     {"command": "help", "description": "How to use the bot"},
     {"command": "about", "description": "About available assistants"},
