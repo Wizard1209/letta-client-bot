@@ -609,7 +609,7 @@ When adding a new bot command, update these locations:
 
 1. **`notes/help.md`** - User-facing help documentation
 2. **`notes/about.md`** - About page (if command changes "How It Works" flow)
-3. **`deploy/botfather_commands.txt`** - BotFather command list for Telegram menu
+3. **`deploy/commands.json`** - Command definitions for automatic Telegram menu registration
 
 ## Project Structure
 
@@ -618,6 +618,7 @@ Current module organization:
 ```
 letta_bot/
   main.py              # Bot entry point with webhook/polling modes, /start handler
+  commands.py          # Bot command menu registration from deploy/commands.json
   config.py            # Configuration management (Pydantic settings)
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
@@ -659,6 +660,7 @@ md_tg/               # Markdown to Telegram entities converter
   renderer.py        # TelegramRenderer - mistune renderer for entities
   utils.py           # UTF-16 length utilities
 deploy/
+  commands.json        # Bot command definitions (user + admin) for Telegram menu
   Dockerfile           # Multi-stage Python 3.13 image with uv
   docker-compose.yaml  # Production deployment with Traefik
 ```
