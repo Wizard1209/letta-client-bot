@@ -375,7 +375,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Shows user details, request UUID, resource type, and resource ID
   - For each request displays quick approve command: `/allow <request_uuid>`
 - Admin approves request: `/allow <request_uuid>`
-  - **Identity requests**: Creates local identity record with `tg-{telegram_id}` identifier_key (no Letta API call); clears per-user command override (restores default menu)
+  - **Identity requests**: Creates local identity record with `tg-{telegram_id}` identifier_key (no Letta API call)
   - **Agent requests**: Creates agent from template with `identity-tg-{telegram_id}`, `owner-tg-{telegram_id}`, and `creator-tg-{telegram_id}` tags
   - User receives approval notification
 - Admin denies request: `/deny <request_uuid> [reason]`
@@ -468,15 +468,13 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Displays user information (full name, username, telegram ID)
 - **Revoke access**: `/revoke <telegram_id>`
   - Revokes only identity access (sets identity request status to denied)
-  - Sets per-user command menu with `/export` visible (via `set_revoked_commands`)
-  - User receives revocation notification with `/export` instructions
+  - User receives revocation notification
   - User can re-request access after revocation
-- **Export agents**: `/export` (available only to revoked users)
-  - Checks user has revoked status and no active identity
+- **Export agents**: `/export`
+  - Available to any user who has agents (authorized or revoked)
   - Lists user's agents (by `identity-tg-{telegram_id}` tag) for selection
   - If single agent — exports immediately; multiple — shows inline keyboard
   - Downloads `.af` file via Letta API and sends as Telegram document
-  - Not in default command menu; added to per-user menu on revocation
 
 ## Development Commands
 
@@ -625,7 +623,7 @@ Current module organization:
 ```
 letta_bot/
   main.py              # Bot entry point with webhook/polling modes, /start handler
-  commands.py          # Bot command menu registration from deploy/commands.json; per-user command overrides for revoked users
+  commands.py          # Bot command menu registration from deploy/commands.json
   config.py            # Configuration management (Pydantic settings)
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control

@@ -14,7 +14,7 @@
 /current - View current assistant info and memory status
 /context - View assistant context window breakdown
 /clear - Clear message history of current assistant
-/export - Export your assistants (available after access revocation)
+/export - Export your assistants as portable .af files
 /access - Request general bot access (identity only, no assistant)
 
 ──────────────────────────────

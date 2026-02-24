@@ -30,14 +30,6 @@ from letta_bot.images import (
     process_telegram_image,
 )
 from letta_bot.letta_sdk_extensions import context_window_overview
-from letta_bot.queries.check_pending_request_async_edgeql import (
-    AuthStatus as CheckAuthStatus,
-    ResourceType as CheckResourceType,
-    check_pending_request as check_pending_request_query,
-)
-from letta_bot.queries.get_allowed_identity_async_edgeql import (
-    get_allowed_identity as get_allowed_identity_query,
-)
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
@@ -584,24 +576,6 @@ async def handle_clear_messages(
         await callback.answer('❌ Error clearing messages')
 
 
-async def _check_export_allowed(gel_client: AsyncIOExecutor, telegram_id: int) -> bool:
-    """Check if user is revoked and has no active access.
-
-    Returns True only when user has a revoked identity request
-    and does NOT have an active (allowed) identity request.
-    """
-    is_revoked = await check_pending_request_query(
-        gel_client,
-        telegram_id=telegram_id,
-        resource_type=CheckResourceType.ACCESS_IDENTITY,
-        status=CheckAuthStatus.REVOKED,
-    )
-    if not is_revoked:
-        return False
-    has_active = await get_allowed_identity_query(gel_client, telegram_id=telegram_id)
-    return not has_active
-
-
 async def _perform_export(
     message: Message,
     agent_id: str,
@@ -644,20 +618,11 @@ async def _perform_export(
 
 
 @agent_commands_router.message(Command('export'))
-async def export_agent(message: Message, gel_client: AsyncIOExecutor) -> None:
-    """Export assistants as portable .af files. Only available for revoked users."""
+async def export_agent(message: Message) -> None:
+    """Export assistants as portable .af files."""
     assert message.from_user, 'from_user required'
 
     telegram_id = message.from_user.id
-
-    if not await _check_export_allowed(gel_client, telegram_id):
-        await message.answer(
-            **Text(
-                '❌ This command is only available after your access has been revoked.'
-            ).as_kwargs()
-        )
-        return
-
     agents = [agent async for agent in list_agents_by_user(telegram_id)]
 
     if not agents:
@@ -686,17 +651,11 @@ async def export_agent(message: Message, gel_client: AsyncIOExecutor) -> None:
 async def handle_export_agent(
     callback: CallbackQuery,
     callback_data: ExportAgentCallback,
-    gel_client: AsyncIOExecutor,
 ) -> None:
     """Handle export agent selection callback."""
     assert callback.from_user, 'from_user required'
 
     telegram_id = callback.from_user.id
-
-    if not await _check_export_allowed(gel_client, telegram_id):
-        await callback.answer('❌ Export is only available for revoked users')
-        return
-
     agent_id = callback_data.agent_id
     identity_tag = f'identity-tg-{telegram_id}'
     try:
