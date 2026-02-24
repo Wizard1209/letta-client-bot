@@ -15,6 +15,7 @@ from gel import create_async_client
 
 from letta_bot.agent import agent_commands_router, agent_router
 from letta_bot.auth import auth_router
+from letta_bot.commands import register_commands
 from letta_bot.config import CONFIG
 from letta_bot.errors import setup_error_handler
 from letta_bot.info import info_router, load_info_command_content
@@ -56,6 +57,7 @@ def setup_bot_handlers(dp: Dispatcher) -> None:
 async def on_startup(bot: Bot) -> None:
     LOGGER.info(f'Registering webhook: {CONFIG.webhook_url}')
     await bot.set_webhook(f'{CONFIG.webhook_url}')
+    await register_commands(bot)
 
 
 def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
@@ -88,7 +90,8 @@ async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
     # Register all common bot handlers
     setup_bot_handlers(dp)
 
-    # Polling-specific setup - start polling loop
+    # Register command menu and start polling loop
+    await register_commands(bot)
     await dp.start_polling(bot)
 
 

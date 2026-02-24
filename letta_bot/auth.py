@@ -638,6 +638,7 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
             chat_id=telegram_id,
             **Text(
                 '🚫 Your access to the bot has been revoked.\n\n'
+                'You can export your assistants using /export.\n\n'
                 'If you believe this was done in error, '
                 'please contact the administrator.\n'
                 'You can submit a new request using /new or '

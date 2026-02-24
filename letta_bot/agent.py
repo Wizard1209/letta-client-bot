@@ -1,11 +1,12 @@
 import asyncio
 from dataclasses import dataclass, field
+import json
 import logging
 
 from aiogram import Bot, F, Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.formatting import Bold, Code, Text, as_list, as_marked_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -267,6 +268,12 @@ class SwitchAssistantCallback(CallbackData, prefix='switch'):
 
 class ClearMessagesCallback(CallbackData, prefix='clear'):
     confirm: bool
+
+
+class ExportAgentCallback(CallbackData, prefix='export'):
+    # NOTE: Telegram callback_data limit is 64 bytes.
+    # prefix 'export:' (7) + agent UUID (~44) fits, but may break if ID format grows.
+    agent_id: str
 
 
 @agent_commands_router.message(Command('switch'), flags={'require_identity': True})
@@ -567,6 +574,107 @@ async def handle_clear_messages(
     except APIError as e:
         LOGGER.error(f'Error clearing messages for agent {agent_id}: {e}')
         await callback.answer('❌ Error clearing messages')
+
+
+async def _perform_export(
+    message: Message,
+    agent_id: str,
+    status_msg: Message | None = None,
+) -> None:
+    """Download and send agent .af file to user."""
+    assert message.from_user, 'from_user required'
+
+    if status_msg is None:
+        status_msg = await message.answer(**Text('⏳ Exporting assistant...').as_kwargs())
+
+    try:
+        agent_file_content = await client.agents.export_file(agent_id=agent_id)
+        # .af format assumption: {"agents": [{"name": ...}, ...]}
+        # Falls back to agent_id if structure changes.
+        agent_data = json.loads(agent_file_content)
+        agents = agent_data.get('agents', [])
+        agent_name = agents[0].get('name', agent_id) if agents else agent_id
+
+        safe_name = agent_name.replace('/', '_').replace('\\', '_').replace(' ', '_')
+        filename = f'{safe_name}.af'
+
+        data = agent_file_content.encode('utf-8')
+        document = BufferedInputFile(file=data, filename=filename)
+
+        await status_msg.delete()
+        await message.answer_document(
+            document=document,
+            caption=f'📦 Agent export: {agent_name}',
+        )
+
+    except Exception as e:
+        LOGGER.error(
+            'Error exporting agent %s for user %s: %s',
+            agent_id,
+            message.from_user.id,
+            e,
+        )
+        await status_msg.edit_text(**Text('❌ Error exporting assistant').as_kwargs())
+
+
+@agent_commands_router.message(Command('export'))
+async def export_agent(message: Message) -> None:
+    """Export assistants as portable .af files."""
+    assert message.from_user, 'from_user required'
+
+    telegram_id = message.from_user.id
+    agents = [agent async for agent in list_agents_by_user(telegram_id)]
+
+    if not agents:
+        await message.answer(**Text('You have no assistants to export.').as_kwargs())
+        return
+
+    if len(agents) == 1:
+        await _perform_export(message, agents[0].id)
+        return
+
+    builder = InlineKeyboardBuilder()
+    for agent in agents:
+        builder.button(
+            text=agent.name,
+            callback_data=ExportAgentCallback(agent_id=agent.id).pack(),
+        )
+    builder.adjust(1)
+
+    await message.answer(
+        **Text('Select an assistant to export:').as_kwargs(),
+        reply_markup=builder.as_markup(),
+    )
+
+
+@agent_commands_router.callback_query(ExportAgentCallback.filter())
+async def handle_export_agent(
+    callback: CallbackQuery,
+    callback_data: ExportAgentCallback,
+) -> None:
+    """Handle export agent selection callback."""
+    assert callback.from_user, 'from_user required'
+
+    telegram_id = callback.from_user.id
+    agent_id = callback_data.agent_id
+    identity_tag = f'identity-tg-{telegram_id}'
+    try:
+        agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
+    except APIError:
+        await callback.answer('❌ Assistant not found')
+        return
+
+    if not agent.tags or identity_tag not in agent.tags:
+        await callback.answer('❌ Assistant not available')
+        return
+
+    await callback.answer()
+
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(
+            **Text(f'⏳ Exporting {agent.name}...').as_kwargs()
+        )
+        await _perform_export(callback.message, agent_id, status_msg=callback.message)
 
 
 # =============================================================================
