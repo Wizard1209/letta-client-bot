@@ -80,5 +80,20 @@ async def set_revoked_commands(bot: Bot, chat_id: int) -> None:
 
 
 async def clear_user_commands(bot: Bot, chat_id: int) -> None:
-    """Clear per-user command override, falling back to default menu."""
+    """Clear per-user command override, falling back to default menu.
+
+    If the user is an admin, re-registers admin commands for their scope
+    (since delete_my_commands removes the per-chat scope entirely).
+    """
     await bot.delete_my_commands(scope=BotCommandScopeChat(chat_id=chat_id))
+
+    if CONFIG.admin_ids and chat_id in CONFIG.admin_ids:
+        data = json.loads(COMMANDS_FILE.read_text(encoding='utf-8'))
+        commands = [
+            BotCommand(command=cmd['command'], description=cmd['description'])
+            for cmd in data['user_commands'] + data['admin_commands']
+        ]
+        await bot.set_my_commands(
+            commands=commands,
+            scope=BotCommandScopeChat(chat_id=chat_id),
+        )
