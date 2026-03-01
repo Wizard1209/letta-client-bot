@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 **[Latest additions]**
 
 **Added:**
+• `/export` command to download your assistants as portable .af agent files (available to all users with agents)
 • Photo album support: send multiple photos at once and they're processed together as a single request to your assistant
 • Sticker support: regular (static) stickers are now processed as images and sent to your assistant (animated and video stickers remain unsupported)
 • Image support: send photos to your assistant and it can see and analyze them (uses Letta's multimodal API with base64 encoding)

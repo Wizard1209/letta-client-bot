@@ -1,0 +1,24 @@
+{
+  "user_commands": [
+    {"command": "new", "description": "Request a new AI assistant"},
+    {"command": "attach", "description": "Request access to an existing assistant"},
+    {"command": "switch", "description": "Switch between your assistants"},
+    {"command": "current", "description": "View current assistant info and memory usage"},
+    {"command": "context", "description": "Show context window breakdown for current assistant"},
+    {"command": "clear", "description": "Clear message history of current assistant"},
+    {"command": "export", "description": "Export your assistants"},
+    {"command": "access", "description": "Request general bot access (no assistant)"},
+    {"command": "help", "description": "How to use the bot"},
+    {"command": "about", "description": "About available assistants"},
+    {"command": "privacy", "description": "Privacy policy"},
+    {"command": "contact", "description": "Contact information"},
+    {"command": "changelog", "description": "View recent updates"}
+  ],
+  "admin_commands": [
+    {"command": "pending", "description": "View pending authorization requests"},
+    {"command": "allow", "description": "Approve authorization request"},
+    {"command": "deny", "description": "Deny authorization request"},
+    {"command": "revoke", "description": "Revoke user access"},
+    {"command": "users", "description": "List all users"}
+  ]
+}

@@ -56,7 +56,7 @@ Multi-user Telegram bot that manages per-user Letta agents through a tag-based a
 
 - Auto-generated from `.edgeql` files in `letta_bot/queries/`
 - Each `.edgeql` file generates a corresponding Python module with type-safe async functions
-- Examples: `upsert_user`, `create_auth_request`, `get_identity`, `set_selected_agent`
+- Examples: `upsert_user`, `create_auth_request`, `get_identity`, `set_selected_agent`, `check_pending_request`
 
 ### Middleware System
 
@@ -470,6 +470,11 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Revokes only identity access (sets identity request status to denied)
   - User receives revocation notification
   - User can re-request access after revocation
+- **Export agents**: `/export`
+  - Available to any user who has agents (authorized or revoked)
+  - Lists user's agents (by `identity-tg-{telegram_id}` tag) for selection
+  - If single agent — exports immediately; multiple — shows inline keyboard
+  - Downloads `.af` file via Letta API and sends as Telegram document
 
 ## Development Commands
 
@@ -609,7 +614,7 @@ When adding a new bot command, update these locations:
 
 1. **`notes/help.md`** - User-facing help documentation
 2. **`notes/about.md`** - About page (if command changes "How It Works" flow)
-3. **`deploy/botfather_commands.txt`** - BotFather command list for Telegram menu
+3. **`deploy/commands.json`** - Command definitions for automatic Telegram menu registration
 
 ## Project Structure
 
@@ -618,11 +623,12 @@ Current module organization:
 ```
 letta_bot/
   main.py              # Bot entry point with webhook/polling modes, /start handler
+  commands.py          # Bot command menu registration from deploy/commands.json
   config.py            # Configuration management (Pydantic settings)
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
   auth.py              # All authorization: user requests (/access, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
-  agent.py             # Agent operations: /switch, /current, /context, /clear, and content-type message handlers (document, photo, audio, video, sticker, text)
+  agent.py             # Agent operations: /switch, /current, /context, /clear, /export, and content-type message handlers (document, photo, audio, video, sticker, text)
   client.py            # Shared Letta client instance and Letta API operations (agent, folder, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
   tools.py             # Tool management: attach/detach/configure agent tools (/notify for proactive mode)
@@ -644,6 +650,7 @@ letta_bot/
     get_identity.edgeql                     # Get user's identity
     get_allowed_identity.edgeql             # Check if user has allowed identity
     set_selected_agent.edgeql               # Set user's selected agent
+    check_pending_request.edgeql            # Check if user has a pending/revoked request by type
     revoke_user_access.edgeql               # Revoke user access
     *_async_edgeql.py                       # Auto-generated query modules
 notes/                 # Markdown files for info commands (optional, at project root)
@@ -659,6 +666,7 @@ md_tg/               # Markdown to Telegram entities converter
   renderer.py        # TelegramRenderer - mistune renderer for entities
   utils.py           # UTF-16 length utilities
 deploy/
+  commands.json        # Bot command definitions (user + admin) for Telegram menu
   Dockerfile           # Multi-stage Python 3.13 image with uv
   docker-compose.yaml  # Production deployment with Traefik
 ```
