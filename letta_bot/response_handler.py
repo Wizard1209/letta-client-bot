@@ -506,21 +506,22 @@ def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> dic
     ).as_kwargs()
 
 
-def _format_memory_replace(args_obj: dict[str, Any]) -> str:
+def _format_memory_replace(args_obj: dict[str, Any]) -> dict[str, Any]:
     """Format memory_replace tool call."""
     path = args_obj.get('path', '')
     old_string = args_obj.get('old_string', '')
     new_string = args_obj.get('new_string', '')
 
     diff = _get_diff_text(old_string, new_string)
-    parts = ['*🔧 Modifying memory block...*\n']
+
+    parts: list[Any] = [Italic('🔧 Modifying memory block...')]
 
     if path:
-        parts.append(f'**Path:** {path}\n')
+        parts.append(as_key_value('Path', path))
 
-    parts.append(f'```diff\n{diff}```')
+    parts.append(Pre(diff, language='diff'))
 
-    return ''.join(parts)
+    return as_line(*parts, sep='\n').as_kwargs()
 
 
 def _format_memory_rename(args_obj: dict[str, Any]) -> dict[str, Any]:
@@ -599,15 +600,17 @@ def _format_memory(args_obj: dict[str, Any]) -> dict[str, Any] | str | None:
             return None
 
 
-def _format_run_code(args_obj: dict[str, Any]) -> str:
+def _format_run_code(args_obj: dict[str, Any]) -> dict[str, Any]:
     """Format run_code tool call."""
     code = args_obj.get('code', '')
     language = args_obj.get('language', 'python')
 
-    parts = ['*⚙️ Executing code...*\n', f'**Language:** {language}\n']
-    parts.append(f'```{language}\n{code}\n```')
-
-    return ''.join(parts)
+    return as_line(
+        Italic('⚙️ Executing code...'),
+        as_key_value('Language', language),
+        Pre(code, language=language),
+        sep='\n',
+    ).as_kwargs()
 
 
 def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
