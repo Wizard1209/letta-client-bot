@@ -25,8 +25,10 @@ from aiogram.utils.formatting import (
     as_line,
     as_marked_list,
 )
+from letta_client.types.agents import ApprovalRequestMessage
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
 
+from letta_bot.client_tools import extract_tool_calls
 from letta_bot.utils import merge_with_entity
 from md_tg import markdown_to_telegram
 
@@ -88,24 +90,17 @@ def _format_datetime(dt_string: str) -> str:
         return dt_string
 
 
-def _format_tool_call_message(event: LettaStreamingResponse) -> dict[str, Any] | str | None:
-    """Format tool call message response.
+def _format_tool_call(tool_name: str, arguments: str) -> dict[str, Any] | str | None:
+    """Format a tool call by name and raw arguments string.
 
     Args:
-        event: Stream event containing tool call
+        tool_name: Name of the tool being called.
+        arguments: Raw JSON string of tool arguments.
 
     Returns:
         Formatted dict with text and entities, markdown string,
-        or None if tool call should be skipped
+        or None if tool call should be skipped.
     """
-    tool_call = event.tool_call  # type: ignore
-    tool_name = tool_call.name
-    arguments = tool_call.arguments
-
-    # Ensure tool_name is a string
-    if not isinstance(tool_name, str):
-        return None
-
     if not arguments or not arguments.strip():
         return None
 
@@ -116,6 +111,20 @@ def _format_tool_call_message(event: LettaStreamingResponse) -> dict[str, Any] |
     except json.JSONDecodeError as e:
         LOGGER.warning(f'Error parsing tool arguments: {e}')
         return Text(as_key_value('Agent using tool', tool_name), Pre(arguments)).as_kwargs()
+
+
+def _format_tool_call_message(
+    event: LettaStreamingResponse,
+) -> dict[str, Any] | str | None:
+    """Format tool call message from a stream event.
+
+    Thin wrapper around ``_format_tool_call`` that extracts fields from
+    the streaming event.
+    """
+    tool_call = event.tool_call  # type: ignore[union-attr]
+    name: str = tool_call.name  # type: ignore[assignment]
+    arguments: str = tool_call.arguments  # type: ignore[assignment]
+    return _format_tool_call(name, arguments)
 
 
 def _format_tool_by_name(
@@ -184,6 +193,10 @@ def _format_tool_by_name(
 
         case 'notify_via_telegram':
             return _format_notify_via_telegram(args_obj)
+
+        # Image generation
+        case 'generate_image':
+            return _format_generate_image(args_obj)
 
         # Generic tool
         case _:
@@ -610,6 +623,22 @@ def _format_run_code(args_obj: dict[str, Any]) -> str:
     return ''.join(parts)
 
 
+def _format_generate_image(args_obj: dict[str, Any]) -> dict[str, Any]:
+    """Format generate_image tool call."""
+    prompt = args_obj.get('prompt', '')
+    reference_images = args_obj.get('reference_images', [])
+
+    elements: list[Any] = [
+        Italic('🎨 Generating image...'),
+        as_key_value('Prompt', f'"{prompt}"'),
+    ]
+
+    if reference_images:
+        elements.append(as_key_value('References', f'{len(reference_images)} image(s)'))
+
+    return as_line(*elements, sep='\n').as_kwargs()
+
+
 def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
     """Format generic tool call with JSON arguments."""
     formatted_args = json.dumps(args_obj, indent=2)
@@ -692,6 +721,7 @@ class AgentStreamHandler:
         self.telegram_message = telegram_message
         self.ping_count = 0
         self.ping_message: Message | None = None
+        self.approval_request: ApprovalRequestMessage | None = None
 
     async def handle_event(self, event: LettaStreamingResponse) -> None:
         """Process event
@@ -750,6 +780,26 @@ class AgentStreamHandler:
             if alert_message and alert_message.strip():
                 alert_content = Italic(f'info: {alert_message}').as_kwargs()
                 await self.telegram_message.answer(**alert_content)
+            return
+
+        # Approval request: store and format tool calls for user
+        if message_type == 'approval_request_message':
+            self.approval_request = event  # type: ignore[assignment]
+            tool_calls = extract_tool_calls(event)  # type: ignore[arg-type]
+            for tc in tool_calls:
+                formatted = _format_tool_call(tc.name, tc.arguments)
+                if formatted:
+                    try:
+                        if isinstance(formatted, str):
+                            await send_markdown_message(self.telegram_message, formatted)
+                        else:
+                            await self.telegram_message.answer(**formatted)
+                    except Exception as e:
+                        await _send_error_message(self.telegram_message, e, str(formatted))
+            return
+
+        # Silent events — no user-facing output
+        if message_type in ('stop_reason', 'usage_statistics'):
             return
 
         # Phase 3: Final response (clears ping state)

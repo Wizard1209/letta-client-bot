@@ -37,6 +37,29 @@ Multi-user Telegram bot that manages per-user Letta agents through a tag-based a
 - Agent created from template upon admin approval
 - Template selection via inline keyboard with callback data containing template name and version
 
+### Client-Side Tools
+
+The bot supports **client-side tools** — tools that the agent can request the bot to execute locally (outside the Letta server). This enables capabilities that require direct Telegram interaction, such as sending images to the chat.
+
+**Architecture** (`client_tools/` package):
+
+- **Registry pattern**: `ClientToolRegistry` holds tool executors and schemas; tools self-register at import time
+- **Approval loop**: When agent calls a client tool, Letta sends an `approval_request_message`; the bot executes the tool, sends results back, and continues streaming (up to 10 iterations)
+- **Schemas**: Each tool defines a `ClientToolSchema` (name, description, JSON Schema parameters) converted to SDK `ClientTool` for the Letta API `client_tools` param
+- **File ID flow**: Tools that produce Telegram media use `FILE_ID_PLACEHOLDER` in `tool_return`; after sending to Telegram, the placeholder is replaced with the actual `file_id` so the agent can reference the media later
+
+**Adding a new client tool:**
+
+1. Create `letta_bot/client_tools/my_tool.py`
+2. Define an async executor function returning `ClientToolResult`
+3. Define a `ClientToolSchema` with JSON Schema parameters
+4. Call `registry.register('my_tool', executor, schema)` at module level
+5. Add import to `letta_bot/client_tools/__init__.py` to activate the tool
+
+**Available client tools:**
+
+- `generate_image` — text-to-image generation and image editing via OpenAI Images API (gpt-image-1-mini/1/1.5); supports reference images from user photos
+
 ### Storage Strategy
 
 **Gel/EdgeDB Database** (graph-relational database):
@@ -413,14 +436,23 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - Documents rate limited via `RateLimitMiddleware` (1 per 10s per user)
   - Files uploaded to agent-specific folders (`uploads-{agent_id}`) and indexed for RAG
   - Auto-attaches `file_handling` memory block to agent on first file upload (teaches agent how to respond to files)
+- **File ID context**: Photo and sticker handlers inject `<photo>file_id=...</photo>` / `<sticker>file_id=...</sticker>` tags into message context so the agent can reference media via client tools (e.g., pass file_ids to `generate_image` as reference images)
+- **Reply context**: Replies to photos/stickers include the media's `file_id` in `<reply>` tag alongside text preview
 - System routes messages to user's selected agent (auto-selects oldest agent if none set)
-- Bot streams agent responses via `client.agents.messages.stream()`
+- Bot streams agent responses via `client.agents.messages.stream()` with registered `client_tools` schemas
+- **Approval loop** (`send_to_agent` in `agent.py`):
+  - If agent requests a client-side tool, the stream yields an `approval_request_message`
+  - Bot executes the tool via `resolve_approval()`, sends results back, and continues streaming
+  - Loop runs up to 10 iterations (prevents infinite tool chains)
+  - Server-side tools in the same approval request are auto-approved
 - **Response handler** (`response_handler.py`) processes stream events:
   - **assistant_message**: Main agent response converted to Telegram entities via `md_tg` module
   - **reasoning_message**: Internal agent reasoning (italic header, expandable blockquote formatting)
   - **tool_call_message**: Tool execution details (parsed from JSON arguments)
+  - **approval_request_message**: Client-side tool requests — stores request for approval loop, formats tool calls for user display
   - **ping**: Progressive heartbeat indicator (displays "⏳", "⏳⏳", "⏳⏳⏳", etc., updating same message)
   - **system_alert**: Informational messages from Letta (displayed as info text)
+  - **stop_reason**, **usage_statistics**: Silent events (no user-facing output)
 - **Specialized tool formatting** (consistent style with emoji, italic headers, bullet lists):
   - `archival_memory_insert`: "💾 Storing in archival memory..." with tags and markdown content
   - `archival_memory_search`: "🔍 Searching archival memory..." with query, date range, tags, and top_k limit
@@ -443,6 +475,7 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
   - `list_scheduled_messages`: "📋 Checking scheduled messages..."
   - `delete_scheduled_message`: "🗑️ Canceling scheduled message..." with schedule ID
   - `notify_via_telegram`: "📲 Sending message..." with owner-only indicator
+  - `generate_image`: "🎨 Generating image..." with prompt and reference count
   - Generic tools: "🔧 Using tool..." with tool name and JSON arguments
 - **Message formatting pipeline**:
   - Agent responses: Standard Markdown → `markdown_to_telegram()` → Telegram entities
@@ -639,6 +672,10 @@ letta_bot/
   documents.py         # Document processing: download Telegram files, upload to Letta folders for RAG
   transcription.py     # Audio transcription: OpenAI Whisper and ElevenLabs Scribe engines for voice/audio messages
   utils.py             # Utility functions (async cache decorator with TTL, UUID validation)
+  client_tools/        # Client-side tool infrastructure and tool implementations
+    __init__.py          # Public API re-exports, tool registration imports
+    registry.py          # ClientToolRegistry, approval loop helpers, result types
+    generate_image.py    # Image generation via OpenAI Images API (text-to-image, editing with references)
   queries/             # EdgeQL queries and auto-generated Python modules
     upsert_user.edgeql                      # Register/update user (upsert on telegram_id)
     is_registered.edgeql                    # Check if user is registered
@@ -700,7 +737,7 @@ Environment variables via `.env` (provide `.env.example`):
 - `ADMIN_IDS` - Comma-separated list of Telegram user IDs with admin access (if not set, no admin commands available)
 - `INFO_DIR` - Absolute path to directory containing info markdown files (default: `<project_root>/notes`)
 - `LOGGING_LEVEL` - Logging verbosity level (default: `INFO`, options: DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- `OPENAI_API_KEY` - OpenAI API key for Whisper transcription (voice/audio messages)
+- `OPENAI_API_KEY` - OpenAI API key for Whisper transcription and image generation (client tool)
 - `WHISPER_MODEL` - OpenAI Whisper model (default: `gpt-4o-mini-transcribe`)
 - `ELEVENLABS_API_KEY` - ElevenLabs API key for Scribe transcription (prioritized over OpenAI if set)
 - `ELEVENLABS_STT_MODEL` - ElevenLabs Scribe model (default: `scribe_v2`)
