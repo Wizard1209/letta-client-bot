@@ -199,7 +199,7 @@ async def resolve_approval(
 
     For each tool call:
     - If registered in the client-tool registry: execute and collect results.
-    - If not registered (server-side tool): auto-approve.
+    - If not registered (server-side tool): deny with reason.
 
     All tool approvals are grouped into a single approval message with
     ``approval_request_id`` so Letta can match the response to the request.
@@ -217,7 +217,8 @@ async def resolve_approval(
                 {
                     'type': 'approval',
                     'tool_call_id': tc.tool_call_id,
-                    'approve': True,
+                    'approve': False,
+                    'reason': 'Server-side tool approval is not supported',
                 }
             )
             continue
