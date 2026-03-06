@@ -15,6 +15,7 @@ from httpx import ReadTimeout
 from letta_client import APIError
 
 from letta_bot.client import LettaProcessingError, client, list_agents_by_user
+from letta_bot.client_tools import LettaMessage, registry, resolve_approval
 from letta_bot.documents import (
     DocumentProcessingError,
     FileTooLargeError,
@@ -129,10 +130,22 @@ def build_reply_context(message: Message) -> str | None:
 
     # Full reply without specific quote
     if message.reply_to_message:
-        reply_text = message.reply_to_message.text
+        reply_text = (
+            message.reply_to_message.text
+            or message.reply_to_message.caption
+            or message.text  # need for photo and sticker
+        )
         if reply_text:
             preview = reply_text[:100] + ('...' if len(reply_text) > 100 else '')
-            return f'<reply_to>{preview}</reply_to>'
+            if message.reply_to_message.photo:
+                file_id = message.reply_to_message.photo[-1].file_id
+                file_tag = f'<photo>file_id={file_id}</photo>'
+            elif message.reply_to_message.sticker:
+                file_id = message.reply_to_message.sticker.file_id
+                file_tag = f'<sticker>file_id={file_id}</sticker>'
+            else:
+                file_tag = ''
+            return f'<reply>{file_tag}{preview}</reply>'
 
     return None
 
@@ -192,6 +205,11 @@ async def send_to_agent(
 ) -> None:
     """Send message to agent and stream response.
 
+    Supports an approval loop: if the agent requests client-side tool
+    execution, the bot processes the tool, sends the result back, and
+    continues streaming until the agent produces a final response or
+    the iteration limit is reached.
+
     Args:
         message: Original Telegram message (for replies)
         bot: Aiogram Bot instance
@@ -201,29 +219,55 @@ async def send_to_agent(
     Raises:
         Re-raises exceptions after logging and notifying user
     """
+    max_approval_iterations = 10
+
     assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
+
+    schemas = registry.get_schemas()
+    client_tools = schemas or None
+
+    messages_to_send: list[LettaMessage] = [
+        {'role': 'user', 'content': content_parts},
+    ]
 
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
-            response_stream = await client.agents.messages.stream(
-                agent_id=agent_id,
-                messages=[{'role': 'user', 'content': content_parts}],  # type: ignore[typeddict-item]
-                include_pings=True,
+            for _iteration in range(max_approval_iterations):
+                handler = AgentStreamHandler(message)
+
+                response_stream = await client.agents.messages.stream(
+                    agent_id=agent_id,
+                    messages=messages_to_send,  # type: ignore[arg-type]
+                    include_pings=True,
+                    client_tools=client_tools,
+                )
+
+                async for event in response_stream:
+                    try:
+                        await handler.handle_event(event)
+                    except Exception as e:
+                        LOGGER.error(
+                            'Stream event error: %s, tg_id=%s, agent=%s',
+                            e,
+                            message.from_user.id,
+                            agent_id,
+                        )
+                        continue
+
+                # No approval request — agent finished
+                if handler.approval_request is None:
+                    return
+
+                # Process approval request and continue loop
+                messages_to_send = await resolve_approval(handler.approval_request, message)
+
+            # Max iterations exceeded
+            LOGGER.warning(
+                'Max approval iterations (%d) exceeded, tg_id=%s, agent_id=%s',
+                max_approval_iterations,
+                message.from_user.id,
+                agent_id,
             )
-
-            handler = AgentStreamHandler(message)
-
-            async for event in response_stream:
-                try:
-                    await handler.handle_event(event)
-                except Exception as e:
-                    LOGGER.error(
-                        'Stream event error: %s, tg_id=%s, agent=%s',
-                        e,
-                        message.from_user.id,
-                        agent_id,
-                    )
-                    continue
 
     except ReadTimeout:
         LOGGER.error(
@@ -804,6 +848,12 @@ async def handle_album(
             '<image_processing_error>Failed to process all images</image_processing_error>'
         )
 
+    # Add file_id annotations for agent to reference via client tools
+    file_ids = [m.photo[-1].file_id for m in photos if m.photo]
+    if file_ids:
+        photos_tags = ''.join(f'<photo>file_id={fid}</photo>' for fid in file_ids)
+        ctx.add_text(f'<photos>{photos_tags}</photos>')
+
     # Send to agent
     content_parts = ctx.build_content_parts()
     if content_parts:
@@ -872,6 +922,7 @@ async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> N
     try:
         image_part = await process_telegram_image(bot, message.sticker)
         ctx.add_image(image_part)
+        ctx.add_text(f'<sticker>file_id={message.sticker.file_id}</sticker>')
     except ImageProcessingError as e:
         LOGGER.warning(
             'Sticker processing failed: %s, telegram_id=%s',
