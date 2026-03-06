@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 **[Latest additions]**
 
 **Added:**
+• Image generation: your assistant can now create images from text descriptions and edit photos you send (powered by OpenAI Images API with model selection)
 • `/export` command to download your assistants as portable .af agent files (available to all users with agents)
 • Photo album support: send multiple photos at once and they're processed together as a single request to your assistant
 • Sticker support: regular (static) stickers are now processed as images and sent to your assistant (animated and video stickers remain unsupported)

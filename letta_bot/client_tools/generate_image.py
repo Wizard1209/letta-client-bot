@@ -193,5 +193,8 @@ SCHEMA = ClientToolSchema(
     },
 )
 
-# Self-register at import time
-registry.register('generate_image', generate_image, SCHEMA)
+# Self-register at import time (requires OpenAI API key)
+if CONFIG.openai_api_key:
+    registry.register('generate_image', generate_image, SCHEMA)
+else:
+    LOGGER.info('generate_image tool disabled: OPENAI_API_KEY not set')
