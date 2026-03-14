@@ -11,7 +11,7 @@ from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.formatting import Bold, Code, Text, as_list, as_marked_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor
-from httpx import ReadTimeout
+from httpx import ReadTimeout, RemoteProtocolError
 from letta_client import APIError
 
 from letta_bot.client import LettaProcessingError, client, list_agents_by_user
@@ -230,6 +230,8 @@ async def send_to_agent(
         {'role': 'user', 'content': content_parts},
     ]
 
+    handler: AgentStreamHandler | None = None
+
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
             for _iteration in range(max_approval_iterations):
@@ -269,20 +271,28 @@ async def send_to_agent(
                 agent_id,
             )
 
-    except ReadTimeout:
+    except (ReadTimeout, RemoteProtocolError) as e:
         LOGGER.error(
-            'Letta API stopped responding for user %s (agent_id: %s) - '
-            'no data received for 120s (expected pings every ~30s)',
+            'Letta API connection lost: %s, telegram_id=%s, agent_id=%s',
+            e,
             message.from_user.id,
             agent_id,
         )
-        await message.answer(
-            **Text(
-                '❌ The assistant service stopped responding. '
-                'This may be a temporary issue with Letta API. '
-                'Please try again in a moment.'
-            ).as_kwargs()
-        )
+
+        if handler is not None:
+            await handler.cleanup_ping()
+
+        if handler is not None and handler.has_assistant_message:
+            await message.answer(
+                **Text('⚠️ Connection interrupted — response may be incomplete.').as_kwargs()
+            )
+        else:
+            await message.answer(
+                **Text(
+                    '❌ The assistant service stopped responding. '
+                    'Please try again in a moment.'
+                ).as_kwargs()
+            )
 
     except APIError as e:
         LOGGER.error(

@@ -725,6 +725,7 @@ class AgentStreamHandler:
         self.ping_count = 0
         self.ping_message: Message | None = None
         self.approval_request: ApprovalRequestMessage | None = None
+        self.has_assistant_message = False
 
     async def handle_event(self, event: LettaStreamingResponse) -> None:
         """Process event
@@ -810,6 +811,7 @@ class AgentStreamHandler:
             raw_content = getattr(event, 'content', '').strip()
             if raw_content:
                 await send_markdown_message(self.telegram_message, raw_content)
+                self.has_assistant_message = True
                 self._clear_ping_state()
 
     async def _handle_ping(self) -> None:
@@ -826,6 +828,15 @@ class AgentStreamHandler:
                 await self.ping_message.edit_text(ping_text)
             except Exception as e:
                 LOGGER.warning(f'Failed to edit ping message: {e}')
+
+    async def cleanup_ping(self) -> None:
+        """Delete hanging ping message (e.g. after connection interruption)."""
+        if self.ping_message is not None:
+            try:
+                await self.ping_message.delete()
+            except Exception as e:
+                LOGGER.warning('Failed to delete ping message: %s', e)
+            self._clear_ping_state()
 
     def _clear_ping_state(self) -> None:
         """Reset ping tracking state."""

@@ -1,9 +1,9 @@
 ---
-name: code-review
-description: Reviews code changes with concrete feedback. Use when user says "review code", "review changes", "what changed", "review pull request", "review PR", "review the pr", "review this pr", "review [name]'s pr", "review new pr", "review latest pr", "let's review", "code review", "code review?", "review https://github.com/.../pull/123", or runs /code-review. ALSO trigger when user has just been exploring a PR/diff and asks for review, feedback, or opinions — even without the exact word "review". Also trigger when user mentions a PR by number or URL with intent to understand it — e.g. "walk me through PR <n>", "explain PR <n>", "show me PR <n>", "what's in PR <n>", "go over PR <n>", "break down PR <n>".
+name: manual-review
+description: Reviews code changes with concrete feedback. Use when user says "review code", "review changes", "what changed", "review pull request", "review PR", "review the pr", "review this pr", "review [name]'s pr", "review new pr", "review latest pr", "let's review", "code review", "code review?", "review https://github.com/.../pull/123", or runs /manual-review. ALSO trigger when user has just been exploring a PR/diff and asks for review, feedback, or opinions — even without the exact word "review". Also trigger when user mentions a PR by number or URL with intent to understand it — e.g. "walk me through PR <n>", "explain PR <n>", "show me PR <n>", "what's in PR <n>", "go over PR <n>", "break down PR <n>".
 ---
 
-# Code Review
+# Manual Review
 
 Interactive guided tour through code changes. You are walking a human through the code to help them understand it.
 

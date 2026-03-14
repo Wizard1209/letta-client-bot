@@ -215,8 +215,6 @@ Local TODOs are still in code
 
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>
 - Wrap auth logic with multiple db queries into transactions <https://docs.geldata.com/reference/using/python#transactions>
-- Implement global error handling for agent message sending using aiogram middlewares <https://docs.aiogram.dev/en/v3.22.0/dispatcher/middlewares.html>
-- Replace manual MarkdownV2 escaping with automatic conversion
 
 ## GEL
 
