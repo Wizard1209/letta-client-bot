@@ -14,7 +14,14 @@ from gel import AsyncIOExecutor
 from httpx import ReadTimeout, RemoteProtocolError
 from letta_client import APIError
 
-from letta_bot.client import LettaProcessingError, client, list_agents_by_user
+from letta_bot.client import (
+    DetachResult,
+    LettaProcessingError,
+    client,
+    detach_user_from_agent,
+    list_agents_by_user,
+    validate_agent_access,
+)
 from letta_bot.client_tools import LettaMessage, registry, resolve_approval
 from letta_bot.documents import (
     DocumentProcessingError,
@@ -32,6 +39,9 @@ from letta_bot.images import (
 )
 from letta_bot.letta_sdk_extensions import context_window_overview
 from letta_bot.queries.get_identity_async_edgeql import GetIdentityResult
+from letta_bot.queries.reset_selected_agent_async_edgeql import (
+    reset_selected_agent as reset_selected_agent_query,
+)
 from letta_bot.queries.set_selected_agent_async_edgeql import (
     set_selected_agent as set_selected_agent_query,
 )
@@ -328,6 +338,15 @@ class ExportAgentCallback(CallbackData, prefix='export'):
     # NOTE: Telegram callback_data limit is 64 bytes.
     # prefix 'export:' (7) + agent UUID (~44) fits, but may break if ID format grows.
     agent_id: str
+
+
+class DetachSelectCallback(CallbackData, prefix='detach_s'):
+    agent_id: str
+
+
+class DetachConfirmCallback(CallbackData, prefix='detach_c'):
+    agent_id: str
+    confirm: bool
 
 
 @agent_commands_router.message(Command('switch'), flags={'require_identity': True})
@@ -729,6 +748,149 @@ async def handle_export_agent(
             **Text(f'⏳ Exporting {agent.name}...').as_kwargs()
         )
         await _perform_export(callback.message, agent_id, status_msg=callback.message)
+
+
+@agent_commands_router.message(Command('detach'), flags={'require_identity': True})
+async def detach(message: Message) -> None:
+    """List user's assistants for detach selection."""
+    assert message.from_user, 'from_user required'
+
+    agents = [agent async for agent in list_agents_by_user(message.from_user.id)]
+
+    if not agents:
+        await message.answer(
+            **Text("You don't have any assistants.").as_kwargs()
+        )
+        return
+
+    builder = InlineKeyboardBuilder()
+    for agent in agents:
+        builder.button(
+            text=agent.name,
+            callback_data=DetachSelectCallback(agent_id=agent.id).pack(),
+        )
+    builder.adjust(1)
+
+    await message.answer(
+        **Text('Select an assistant to detach from:').as_kwargs(),
+        reply_markup=builder.as_markup(),
+    )
+
+
+@agent_commands_router.callback_query(
+    DetachSelectCallback.filter(), flags={'require_identity': True}
+)
+async def handle_detach_select(
+    callback: CallbackQuery,
+    callback_data: DetachSelectCallback,
+) -> None:
+    """Validate detach and show confirmation prompt."""
+    assert callback.from_user, 'from_user required'
+
+    telegram_id = callback.from_user.id
+    agent_id = callback_data.agent_id
+
+    agent = await validate_agent_access(agent_id, telegram_id)
+    if agent is None:
+        await callback.answer('❌ Assistant not available')
+        return
+
+    # Check if last user (using tags already fetched by validate_agent_access)
+    identity_count = sum(
+        1 for t in (agent.tags or []) if t.startswith('identity-tg-')
+    )
+    if identity_count <= 1:
+        await callback.answer(
+            '❌ Cannot detach: you are the last user on this assistant', show_alert=True
+        )
+        return
+
+    # Check ownership for warning
+    owner_tag = f'owner-tg-{telegram_id}'
+    is_owner = agent.tags is not None and owner_tag in agent.tags
+
+    warning = (
+        '\n\n⚠️ You are the owner. Ownership will be transferred to another user.'
+        if is_owner
+        else ''
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text='❌ Cancel',
+        callback_data=DetachConfirmCallback(agent_id=agent_id, confirm=False).pack(),
+    )
+    builder.button(
+        text='🔓 Detach',
+        callback_data=DetachConfirmCallback(agent_id=agent_id, confirm=True).pack(),
+    )
+    builder.adjust(2)
+
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(
+            **Text(
+                'Detach from ',
+                Bold(agent.name),
+                '?',
+                warning,
+            ).as_kwargs(),
+            reply_markup=builder.as_markup(),
+        )
+
+    await callback.answer()
+
+
+@agent_commands_router.callback_query(
+    DetachConfirmCallback.filter(), flags={'require_identity': True}
+)
+async def handle_detach_confirm(
+    callback: CallbackQuery,
+    callback_data: DetachConfirmCallback,
+    identity: GetIdentityResult,
+    gel_client: AsyncIOExecutor,
+    bot: Bot,
+) -> None:
+    """Handle detach confirmation."""
+    assert callback.from_user, 'from_user required'
+
+    if not callback_data.confirm:
+        if isinstance(callback.message, Message):
+            await callback.message.edit_text(**Text('Cancelled.').as_kwargs())
+        await callback.answer()
+        return
+
+    try:
+        result: DetachResult = await detach_user_from_agent(
+            callback_data.agent_id, callback.from_user.id
+        )
+    except ValueError as e:
+        await callback.answer(f'❌ {e}', show_alert=True)
+        return
+
+    # Reset selected_agent if detached agent was selected
+    if identity.selected_agent == callback_data.agent_id:
+        await reset_selected_agent_query(
+            gel_client, telegram_id=callback.from_user.id
+        )
+
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(
+            **Text('✅ Detached from ', Bold(result.agent_name)).as_kwargs()
+        )
+
+    await callback.answer('✅ Detached')
+
+    # Notify new owner if ownership was transferred
+    if result.was_owner and result.new_owner_telegram_id is not None:
+        await bot.send_message(
+            result.new_owner_telegram_id,
+            **Text(
+                '👑 You are now the owner of ',
+                Bold(result.agent_name),
+                '\n\n',
+                'Use /switch to select this assistant.',
+            ).as_kwargs(),
+        )
 
 
 # =============================================================================

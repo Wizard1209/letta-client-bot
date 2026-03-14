@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 **[Latest additions]**
 
 **Added:**
+• `/detach` command to remove your access from a shared assistant (with ownership transfer if you're the owner)
 • Image generation: your assistant can now create images from text descriptions and edit photos you send (powered by OpenAI Images API with model selection)
 • `/export` command to download your assistants as portable .af agent files (available to all users with agents)
 • Photo album support: send multiple photos at once and they're processed together as a single request to your assistant

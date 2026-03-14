@@ -492,6 +492,11 @@ async def handle_mention(message: Message, mentioned_user: str) -> None:
 - User selects agent from inline keyboard
 - System updates `selected_agent` in database
 - All subsequent messages route to newly selected agent
+- **Detach from agent**: `/detach` command to remove your access from an agent
+  - Lists user's agents → select → confirmation prompt
+  - Blocks if user is the last identity on the agent
+  - If user was owner, ownership transfers to a random remaining user (new owner notified)
+  - If detached agent was `selected_agent`, resets selection (middleware auto-selects on next message)
 
 **Phase 6: Access Management**
 
@@ -661,7 +666,7 @@ letta_bot/
   middlewares.py       # Middleware for database client injection, user registration, and identity checks
   filters.py           # Filters for admin access control
   auth.py              # All authorization: user requests (/access, /new, /attach) and admin commands (/pending, /allow, /deny, /users, /revoke)
-  agent.py             # Agent operations: /switch, /current, /context, /clear, /export, and content-type message handlers (document, photo, audio, video, sticker, text)
+  agent.py             # Agent operations: /switch, /current, /context, /clear, /export, /detach, and content-type message handlers (document, photo, audio, video, sticker, text)
   client.py            # Shared Letta client instance and Letta API operations (agent, folder, tool management)
   info.py              # Info command handlers (/privacy, /help, /about, /contact)
   tools.py             # Tool management: attach/detach/configure agent tools (/notify for proactive mode)

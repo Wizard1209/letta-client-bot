@@ -15,6 +15,7 @@
 /context - View assistant context window breakdown
 /clear - Clear message history of current assistant
 /export - Export your assistants as portable .af files
+/detach - Detach from an assistant (remove your access)
 /access - Request general bot access (identity only, no assistant)
 
 ──────────────────────────────
