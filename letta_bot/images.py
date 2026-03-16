@@ -93,6 +93,61 @@ async def download_telegram_file(bot: Bot, file_obj: HasFileId) -> tuple[bytes, 
         raise ImageProcessingError(f'Failed to download image: {e}') from e
 
 
+_MAX_URL_IMAGE_BYTES = 20 * 1024 * 1024  # 20 MB
+
+
+async def download_image_from_url(
+    url: str,
+    *,
+    max_bytes: int = _MAX_URL_IMAGE_BYTES,
+    timeout: float = 30.0,
+) -> tuple[bytes, str]:
+    """Download image from HTTP/HTTPS URL.
+
+    Returns:
+        Tuple of (image_bytes, mime_type).
+
+    Raises:
+        ImageProcessingError: If download fails or exceeds size limit.
+    """
+    from urllib.parse import urlparse
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True
+        ) as http_client:
+            response = await http_client.get(url)
+            response.raise_for_status()
+
+            content_length = response.headers.get('content-length')
+            if content_length and int(content_length) > max_bytes:
+                raise ImageProcessingError(
+                    f'Image too large: {int(content_length)} bytes (max {max_bytes})'
+                )
+
+            image_data = response.content
+            if len(image_data) > max_bytes:
+                raise ImageProcessingError(
+                    f'Image too large: {len(image_data)} bytes (max {max_bytes})'
+                )
+
+            # MIME: Content-Type header → URL path guess → default
+            content_type = response.headers.get('content-type', '')
+            mime = content_type.split(';')[0].strip() if content_type else ''
+            if not mime or not mime.startswith('image/'):
+                path = urlparse(url).path
+                mime = get_mime_type(path) or DEFAULT_MEDIA_TYPE
+
+            return image_data, mime
+
+    except ImageProcessingError:
+        raise
+    except Exception as e:
+        raise ImageProcessingError(f'Failed to download image from URL: {e}') from e
+
+
 def encode_image_to_base64(image_data: bytes) -> str:
     """Encode raw image bytes to base64 string.
 

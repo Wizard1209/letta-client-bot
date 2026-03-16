@@ -22,6 +22,10 @@ from letta_client.types.agents.message_stream_params import ClientTool
 LOGGER = logging.getLogger(__name__)
 
 
+class ClientToolError(Exception):
+    """Error safe to surface to the agent (no internal details)."""
+
+
 @dataclass(frozen=True)
 class TelegramPhoto:
     """Photo output to send to Telegram."""
@@ -247,13 +251,20 @@ async def resolve_approval(
             )
             extra_messages.extend(result.extra_messages)
 
-        except Exception:
+        except Exception as e:
             LOGGER.exception('Client tool %s failed, sending error approval', tc.name)
+            # Surface known errors to agent; hide internals
+            error_detail = str(e) if isinstance(e, ClientToolError) else None
+            tool_return = (
+                f'Tool execution failed: {error_detail}'
+                if error_detail
+                else 'Tool execution failed'
+            )
             approvals.append(
                 {
                     'type': 'tool',
                     'tool_call_id': tc.tool_call_id,
-                    'tool_return': 'Tool execution failed',
+                    'tool_return': tool_return,
                     'status': 'error',
                 }
             )

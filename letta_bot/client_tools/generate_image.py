@@ -7,6 +7,7 @@ Self-registers in the client tool registry at import time.
 import base64
 from dataclasses import dataclass
 import logging
+from typing import NamedTuple
 
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, Message
@@ -14,6 +15,7 @@ from openai import AsyncOpenAI
 
 from letta_bot.client_tools.registry import (
     FILE_ID_PLACEHOLDER,
+    ClientToolError,
     ClientToolResult,
     ClientToolSchema,
     LettaMessage,
@@ -22,7 +24,9 @@ from letta_bot.client_tools.registry import (
 )
 from letta_bot.config import CONFIG
 from letta_bot.images import (
+    ImageProcessingError,
     build_image_content_part,
+    download_image_from_url,
     download_telegram_file,
 )
 from letta_bot.utils import get_mime_type
@@ -30,6 +34,15 @@ from letta_bot.utils import get_mime_type
 LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = 'gpt-image-1-mini'
+
+
+# Based on OpenAI SDK FileTypes type
+class ImageRef(NamedTuple):
+    """Downloaded reference image for OpenAI SDK file upload."""
+
+    source: str  # file_path or URL
+    data: bytes
+    mime_type: str
 
 
 @dataclass(frozen=True)
@@ -40,18 +53,21 @@ class _FileIdRef:
 
 
 async def _download_reference_images(
-    bot: Bot, file_ids: list[str]
-) -> list[tuple[str, bytes, str]]:
-    """Download reference images from Telegram.
+    bot: Bot, references: list[str]
+) -> list[ImageRef]:
+    """Download reference images from Telegram file_ids or HTTP/HTTPS URLs.
 
-    Returns list of (file_path, image_bytes, mime_type) tuples
-    compatible with OpenAI SDK file upload format.
+    Returns list of ImageRef named tuples compatible with OpenAI SDK file upload.
     """
-    results: list[tuple[str, bytes, str]] = []
-    for fid in file_ids:
-        image_data, file_path = await download_telegram_file(bot, _FileIdRef(fid))
-        mime = get_mime_type(file_path) or 'image/jpeg'
-        results.append((file_path, image_data, mime))
+    results: list[ImageRef] = []
+    for ref in references:
+        if ref.startswith(('http://', 'https://')):
+            image_data, mime = await download_image_from_url(ref)
+            results.append(ImageRef(ref, image_data, mime))
+        else:
+            image_data, file_path = await download_telegram_file(bot, _FileIdRef(ref))
+            mime = get_mime_type(file_path) or 'image/jpeg'
+            results.append(ImageRef(file_path, image_data, mime))
     return results
 
 
@@ -67,7 +83,7 @@ async def generate_image(
     Args:
         message: Telegram message (provides bot for downloading references).
         prompt: Text description of the desired image.
-        reference_images: Optional Telegram file_ids of reference images.
+        reference_images: Optional Telegram file_ids or HTTP/HTTPS URLs of reference images.
         model: OpenAI image model name.
 
     Returns:
@@ -78,7 +94,10 @@ async def generate_image(
 
     if reference_images:
         assert message.bot, 'Bot instance required'
-        refs = await _download_reference_images(message.bot, reference_images)
+        try:
+            refs = await _download_reference_images(message.bot, reference_images)
+        except ImageProcessingError as e:
+            raise ClientToolError(str(e)) from e
 
         LOGGER.info(
             'Calling images.edit model=%s with %d reference(s), prompt=%s',
@@ -153,8 +172,8 @@ SCHEMA = ClientToolSchema(
     description=(
         'Generate an image based on a text description. '
         'Use this tool when the user asks you to draw, create, or generate an image. '
-        'You can optionally pass Telegram file_ids of user-sent photos or stickers as '
-        'reference_images for style or content guidance.'
+        'You can optionally pass Telegram file_ids of user-sent photos/stickers '
+        'or HTTP/HTTPS image URLs as reference_images for style or content guidance.'
     ),
     parameters={
         'type': 'object',
@@ -167,8 +186,9 @@ SCHEMA = ClientToolSchema(
                 'type': 'array',
                 'items': {'type': 'string'},
                 'description': (
-                    'Optional Telegram file_id strings of user-sent photos or stickers '
-                    'to use as style/content references'
+                    'Optional list of reference image sources. '
+                    'Each item can be a Telegram file_id (from user-sent photos/stickers) '
+                    'or an HTTP/HTTPS URL pointing to an image'
                 ),
             },
             'model': {

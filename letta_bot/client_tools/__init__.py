@@ -13,6 +13,7 @@ Adding a new client tool:
 
 from letta_bot.client_tools.registry import (
     FILE_ID_PLACEHOLDER,
+    ClientToolError,
     ClientToolResult,
     ClientToolSchema,
     LettaMessage,
@@ -26,6 +27,7 @@ from letta_bot.client_tools.registry import (
 
 __all__ = [
     'FILE_ID_PLACEHOLDER',
+    'ClientToolError',
     'ClientToolResult',
     'ClientToolSchema',
     'LettaMessage',
