@@ -11,7 +11,7 @@ from aiogram.utils.chat_action import ChatActionSender
 from aiogram.utils.formatting import Bold, Code, Text, as_list, as_marked_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor
-from httpx import ReadTimeout, RemoteProtocolError
+from httpx import ReadError, ReadTimeout, RemoteProtocolError
 from letta_client import APIError
 
 from letta_bot.client import LettaProcessingError, client, list_agents_by_user
@@ -271,7 +271,7 @@ async def send_to_agent(
                 agent_id,
             )
 
-    except (ReadTimeout, RemoteProtocolError) as e:
+    except (ReadError, ReadTimeout, RemoteProtocolError) as e:
         LOGGER.error(
             'Letta API connection lost: %s, telegram_id=%s, agent_id=%s',
             e,
