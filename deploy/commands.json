@@ -7,6 +7,7 @@
     {"command": "context", "description": "Show context window breakdown for current assistant"},
     {"command": "clear", "description": "Clear message history of current assistant"},
     {"command": "export", "description": "Export your assistants"},
+    {"command": "detach", "description": "Detach from an assistant"},
     {"command": "access", "description": "Request general bot access (no assistant)"},
     {"command": "help", "description": "How to use the bot"},
     {"command": "about", "description": "About available assistants"},

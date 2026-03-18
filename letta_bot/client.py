@@ -10,7 +10,9 @@ Isolating the client here prevents circular import issues.
 
 from collections.abc import AsyncIterator
 from contextlib import suppress
+from dataclasses import dataclass
 import logging
+import random
 from typing import BinaryIO
 
 from letta_client import AsyncLetta as LettaClient, ConflictError, NotFoundError
@@ -184,6 +186,58 @@ async def get_agent_owner_telegram_id(agent_id: str) -> int | None:
                     continue
 
     return None
+
+
+@dataclass
+class DetachResult:
+    """Result of detaching a user from an agent."""
+
+    agent_name: str
+    was_owner: bool
+    new_owner_telegram_id: int | None
+
+
+async def detach_user_from_agent(agent_id: str, telegram_id: int) -> DetachResult:
+    """Remove user's identity tag from agent, handle owner transfer.
+
+    Args:
+        agent_id: The ID of the agent
+        telegram_id: Telegram user ID to detach
+
+    Returns:
+        DetachResult with operation details
+
+    Raises:
+        ValueError: If user has no access or is the last user on the agent
+    """
+    agent = await client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
+    tags = list(agent.tags) if agent.tags else []
+
+    identity_tag = f'identity-tg-{telegram_id}'
+    if identity_tag not in tags:
+        raise ValueError('User does not have access to this agent')
+
+    other_identity_tags = [
+        t for t in tags if t.startswith('identity-tg-') and t != identity_tag
+    ]
+    if not other_identity_tags:
+        raise ValueError('Cannot detach: you are the last user on this agent')
+
+    tags.remove(identity_tag)
+
+    owner_tag = f'owner-tg-{telegram_id}'
+    was_owner = owner_tag in tags
+    new_owner_id: int | None = None
+    if was_owner:
+        tags.remove(owner_tag)
+        random_tag = random.choice(other_identity_tags)
+        new_owner_id = int(random_tag.removeprefix('identity-tg-'))
+        tags.append(f'owner-tg-{new_owner_id}')
+
+    await client.agents.update(agent_id=agent_id, tags=tags)
+    return DetachResult(
+        agent_name=agent.name, was_owner=was_owner, new_owner_telegram_id=new_owner_id
+    )
 
 
 # =============================================================================
