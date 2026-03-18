@@ -8,6 +8,7 @@ dependencies = [
   "aiogram>=3.22.0",
   "elevenlabs>=2.31.0",
   "gel>=3.1.0",
+  "google-genai>=1.0.0",
   "letta-client==1.7.0",
   "mistune>=3.1.4",
   "openai>=2.8.1",
@@ -93,6 +94,10 @@ disable_error_code = ["operator", "arg-type", "var-annotated"]
 
 [[tool.mypy.overrides]]
 module = ["letta_client.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["google.genai.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

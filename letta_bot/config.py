@@ -40,6 +40,9 @@ class Config(BaseSettings):
     # Error notifications to admins (can be spammy, off by default)
     notify_admins_on_error: bool = False
 
+    # Gemini API key for image generation (optional)
+    gemini_api_key: str | None = None
+
     # OpenAI config for audio transcription (optional, voice disabled if not set)
     openai_api_key: str | None = None
     whisper_model: str = 'gpt-4o-mini-transcribe'
