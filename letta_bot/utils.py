@@ -152,7 +152,10 @@ def chunk_texts(
                     length=entity.length,
                     url=entity.url,
                     language=entity.language,
+                    user=entity.user,
+                    custom_emoji_id=entity.custom_emoji_id,
                 )
+            )
             )
         chunk_len += part_len
 
