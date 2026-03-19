@@ -6,7 +6,7 @@ from aiogram import Bot, Router
 from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import CallbackQuery, Message
-from aiogram.utils.formatting import Code, Text, as_list
+from aiogram.utils.formatting import Code, Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor
 from letta_client import APIError
@@ -69,7 +69,7 @@ from letta_bot.queries.revoke_user_access_async_edgeql import (
 from letta_bot.queries.update_auth_request_status_async_edgeql import (
     update_auth_request_status as update_auth_request_status_query,
 )
-from letta_bot.utils import validate_uuid
+from letta_bot.utils import chunk_texts, validate_uuid
 
 LOGGER = logging.getLogger(__name__)
 
@@ -332,7 +332,8 @@ async def pending_command(message: Message, gel_client: AsyncIOExecutor) -> None
             )
         )
 
-    await message.answer(**as_list(*response_lines).as_kwargs())
+    for text, entities in chunk_texts(response_lines):
+        await message.answer(text, entities=entities)
 
 
 @auth_router.message(Command('allow'), AdminOnlyFilter)
@@ -681,7 +682,8 @@ async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
                 Text(f'  └─ {req.resource_type.value}: ', req.resource_id)
             )
 
-    await message.answer(**as_list(*response_parts).as_kwargs())
+    for text, entities in chunk_texts(response_parts):
+        await message.answer(text, entities=entities)
 
 
 @auth_router.message(Command('attach'), flags={'require_identity': True})
