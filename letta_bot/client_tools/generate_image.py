@@ -1,10 +1,11 @@
-"""Client-side tool for image generation via OpenAI and Google Gemini APIs.
+"""Client-side tool for image generation via OpenAI, Google Gemini, and BFL FLUX APIs.
 
 Supports text-to-image generation and image editing with reference images.
 Self-registers in the client tool registry at import time.
-Provider is selected by model name: gpt-* → OpenAI, gemini-* → Gemini.
+Provider is selected by model name: gpt-* → OpenAI, gemini-* → Gemini, flux-* → BFL.
 """
 
+import asyncio
 import base64
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from typing import Literal, NamedTuple, cast, get_args
 
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, Message
+import httpx
 from openai import AsyncOpenAI
 
 from letta_bot.client_tools.registry import (
@@ -44,10 +46,15 @@ GeminiModel = Literal[
     'gemini-3.1-flash-image-preview',
     'gemini-3-pro-image-preview',
 ]
-ImageModel = OpenAIModel | GeminiModel
+FluxModel = Literal['flux-2-pro', 'flux-2-max', 'flux-2-flex', 'flux-2-klein-9b']
+ImageModel = OpenAIModel | GeminiModel | FluxModel
 
 OPENAI_MODELS: list[OpenAIModel] = list(get_args(OpenAIModel))
 GEMINI_MODELS: list[GeminiModel] = list(get_args(GeminiModel))
+FLUX_MODELS: list[FluxModel] = list(get_args(FluxModel))
+
+_BFL_BASE_URL = 'https://api.bfl.ai/v1'
+_BFL_MAX_POLL_ITERATIONS = 120  # ~2 min timeout with 1s sleep
 
 
 # --- Image output ---
@@ -181,6 +188,68 @@ async def _generate_via_gemini(
     raise RuntimeError(msg)
 
 
+async def _generate_via_flux(
+    prompt: str, refs: list[ImageRef] | None, *, model: FluxModel
+) -> GeneratedImage:
+    """Generate image via BFL FLUX API (async polling)."""
+    headers = {'x-key': CONFIG.bfl_api_key or '', 'Content-Type': 'application/json'}
+
+    body: dict[str, object] = {
+        'prompt': prompt,
+        'output_format': 'png',
+    }
+
+    # Attach reference images as input_image, input_image_2, etc.
+    if refs:
+        LOGGER.info(
+            'FLUX generate model=%s with %d ref(s), prompt=%s',
+            model,
+            len(refs),
+            prompt[:80],
+        )
+        for i, ref in enumerate(refs[:8]):
+            key = 'input_image' if i == 0 else f'input_image_{i + 1}'
+            body[key] = base64.b64encode(ref.data).decode('ascii')
+    else:
+        LOGGER.info('FLUX generate model=%s, prompt=%s', model, prompt[:80])
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Submit generation request
+        submit_resp = await client.post(
+            f'{_BFL_BASE_URL}/{model}', headers=headers, json=body
+        )
+        submit_resp.raise_for_status()
+        task = submit_resp.json()
+        polling_url: str = task['polling_url']
+
+        # Poll until ready
+        for _ in range(_BFL_MAX_POLL_ITERATIONS):
+            await asyncio.sleep(1)
+            poll_resp = await client.get(polling_url, headers=headers)
+            poll_resp.raise_for_status()
+            result = poll_resp.json()
+            status = result.get('status')
+
+            if status == 'Ready':
+                sample_url: str = result['result']['sample']
+                image_resp = await client.get(sample_url)
+                image_resp.raise_for_status()
+                return GeneratedImage(image_resp.content, 'image/png')
+
+            if status in (
+                'Error',
+                'Failed',
+                'Request Moderated',
+                'Content Moderated',
+                'Task not found',
+            ):
+                raise ClientToolError(f'FLUX generation failed: {status}')
+
+            # status == 'Pending' — keep polling
+
+        raise ClientToolError('FLUX generation timed out (polling limit reached)')
+
+
 # --- Dispatch ---
 
 # Provider callable: (prompt, refs) -> GeneratedImage
@@ -220,6 +289,15 @@ def _resolve_model(
         gemini_model = cast(GeminiModel, model)
         gen = partial(_generate_via_gemini, model=gemini_model)
         return gemini_model, gen
+
+    if model in get_args(FluxModel):
+        if not CONFIG.bfl_api_key:
+            raise ClientToolError(
+                f'Model {model} requires BFL_API_KEY, but it is not set'
+            )
+        flux_model = cast(FluxModel, model)
+        gen = partial(_generate_via_flux, model=flux_model)
+        return flux_model, gen
 
     raise ClientToolError(f'Unknown image model: {model}')
 
@@ -323,6 +401,15 @@ def _build_schema() -> ClientToolSchema:
             'gemini-3-pro-image-preview — highest quality Gemini model.'
         )
 
+    if CONFIG.bfl_api_key:
+        available_models.extend(FLUX_MODELS)
+        description_parts.append(
+            'flux-2-pro — FLUX production model, fast (<10s). '
+            'flux-2-max — FLUX highest quality model (<15s). '
+            'flux-2-flex — precision model, best for typography and small details. '
+            'flux-2-klein-9b — fast and efficient, optimized for rapid iteration.'
+        )
+
     model_description = (
         'Image model to use. ' + ' '.join(description_parts)
     )
@@ -366,10 +453,10 @@ def _build_schema() -> ClientToolSchema:
 
 
 # Self-register at import time (requires at least one image API key)
-if CONFIG.openai_api_key or CONFIG.gemini_api_key:
+if CONFIG.openai_api_key or CONFIG.gemini_api_key or CONFIG.bfl_api_key:
     registry.register('generate_image', generate_image, _build_schema())
 else:
     LOGGER.info(
         'generate_image tool disabled: '
-        'neither OPENAI_API_KEY nor GEMINI_API_KEY is set'
+        'no image API key is set (OPENAI_API_KEY, GEMINI_API_KEY, or BFL_API_KEY)'
     )
