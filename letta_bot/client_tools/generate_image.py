@@ -207,7 +207,8 @@ async def _generate_via_flux(
             len(refs),
             prompt[:80],
         )
-        for i, ref in enumerate(refs[:8]):
+        max_refs = 4 if model == 'flux-2-klein-9b' else 8
+        for i, ref in enumerate(refs[:max_refs]):
             key = 'input_image' if i == 0 else f'input_image_{i + 1}'
             body[key] = base64.b64encode(ref.data).decode('ascii')
     else:
