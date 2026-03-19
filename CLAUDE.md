@@ -604,48 +604,6 @@ Writing conventions and bootstrap API documented in `.claude/rules/devscripts.md
 - Module for Letta client imports: Mark as `ignore_missing_imports = true` in mypy config
 - Test files: Type annotations optional
 
-## Changelog Maintenance
-
-The project maintains a changelog at `notes/changelog.md` in **standard Markdown format**. The file is automatically converted to Telegram MarkdownV2 when displayed to users. When updating the changelog:
-
-**What to Include:**
-
-- **User-facing features**: New commands, UI improvements, user-visible functionality
-- **Key technical improvements**: Performance enhancements, architecture changes, integration updates
-- **Feature descriptions**: Clear explanations of what the feature does for users (not just technical names)
-  - Good: "Progressive 'working' indicator that updates in real-time during agent processing (shows increasing hourglass symbols while waiting)"
-  - Bad: "Smart ping indicator system" (unclear what it does)
-
-**What to Exclude:**
-
-- Internal/meta changes: Updates to CONTRIBUTION.md, README.md, internal documentation
-- Code organization details: File renames, module consolidations (unless they represent a major architectural change)
-- Development tooling changes: Unless they affect how contributors work with the project
-
-**Structure:**
-
-- Use `**Added:**` for new features and capabilities
-- Use `**Changed:**` for improvements to existing features
-- Generally avoid `**Removed:**` section - focus on what's new and improved
-- Use standard Markdown syntax (not MarkdownV2 escaping)
-
-**Example:**
-
-```markdown
-**Added:**
-- Progressive "working" indicator that updates in real-time during agent processing
-
-**Changed:**
-- Agent responses now render with proper Telegram-compatible markdown formatting
-```
-
-**Versioning Policy:**
-
-- Keep `**[Latest additions]**` section at the top as a staging area for unreleased changes
-- When releasing a version, move content from `[Latest additions]` to a new versioned section (e.g., `**[1.1.0] - 2025-12-09**`)
-- Leave `[Latest additions]` empty after release to collect future changes
-- Update version in three places: `notes/changelog.md`, `pyproject.toml`, `letta_bot/__init__.py`
-
 ## Adding New Commands
 
 When adding a new bot command, update these locations:
