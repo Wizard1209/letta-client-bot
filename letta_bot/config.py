@@ -43,6 +43,9 @@ class Config(BaseSettings):
     # Gemini API key for image generation (optional)
     gemini_api_key: str | None = None
 
+    # BFL API key for FLUX image generation (optional)
+    bfl_api_key: str | None = None
+
     # OpenAI config for audio transcription (optional, voice disabled if not set)
     openai_api_key: str | None = None
     whisper_model: str = 'gpt-4o-mini-transcribe'

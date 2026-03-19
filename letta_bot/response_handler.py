@@ -631,10 +631,15 @@ def _format_generate_image(args_obj: dict[str, Any]) -> dict[str, Any]:
     prompt = args_obj.get('prompt', '')
     reference_images = args_obj.get('reference_images', [])
 
+    model = args_obj.get('model')
+
     elements: list[Any] = [
         Italic('🎨 Generating image...'),
         as_key_value('Prompt', f'"{prompt}"'),
     ]
+
+    if model:
+        elements.append(as_key_value('Model', model))
 
     if reference_images:
         elements.append(as_key_value('References', f'{len(reference_images)} image(s)'))
