@@ -115,9 +115,7 @@ async def download_image_from_url(
     import httpx
 
     try:
-        async with httpx.AsyncClient(
-            timeout=timeout, follow_redirects=True
-        ) as http_client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as http_client:
             response = await http_client.get(url)
             response.raise_for_status()
 

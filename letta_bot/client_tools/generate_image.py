@@ -59,6 +59,7 @@ _BFL_MAX_POLL_ITERATIONS = 120  # ~2 min timeout with 1s sleep
 
 # --- Image output ---
 
+
 class GeneratedImage(NamedTuple):
     """Raw output from a provider."""
 
@@ -67,6 +68,7 @@ class GeneratedImage(NamedTuple):
 
 
 # --- Reference image helpers ---
+
 
 class ImageRef(NamedTuple):
     """Downloaded reference image for provider SDK file upload."""
@@ -83,9 +85,7 @@ class _FileIdRef:
     file_id: str
 
 
-async def _download_reference_images(
-    bot: Bot, references: list[str]
-) -> list[ImageRef]:
+async def _download_reference_images(bot: Bot, references: list[str]) -> list[ImageRef]:
     """Download reference images from Telegram file_ids or HTTP/HTTPS URLs."""
     results: list[ImageRef] = []
     for ref in references:
@@ -100,6 +100,7 @@ async def _download_reference_images(
 
 
 # --- Provider implementations ---
+
 
 async def _generate_via_openai(
     prompt: str, refs: list[ImageRef] | None, *, model: OpenAIModel
@@ -156,9 +157,7 @@ async def _generate_via_gemini(
             prompt[:80],
         )
         for ref in refs:
-            parts.append(
-                types.Part.from_bytes(data=ref.data, mime_type=ref.mime_type)
-            )
+            parts.append(types.Part.from_bytes(data=ref.data, mime_type=ref.mime_type))
     else:
         LOGGER.info('Gemini generate model=%s, prompt=%s', model, prompt[:80])
 
@@ -293,9 +292,7 @@ def _resolve_model(
 
     if model in get_args(FluxModel):
         if not CONFIG.bfl_api_key:
-            raise ClientToolError(
-                f'Model {model} requires BFL_API_KEY, but it is not set'
-            )
+            raise ClientToolError(f'Model {model} requires BFL_API_KEY, but it is not set')
         flux_model = cast(FluxModel, model)
         gen = partial(_generate_via_flux, model=flux_model)
         return flux_model, gen
@@ -304,6 +301,7 @@ def _resolve_model(
 
 
 # --- Main executor ---
+
 
 async def generate_image(
     *,
@@ -380,6 +378,7 @@ async def generate_image(
 
 # --- Schema builder ---
 
+
 def _build_schema() -> ClientToolSchema:
     """Build tool schema with dynamic model enum based on available API keys."""
     available_models: list[str] = []
@@ -411,9 +410,7 @@ def _build_schema() -> ClientToolSchema:
             'flux-2-klein-9b — fast and efficient, optimized for rapid iteration.'
         )
 
-    model_description = (
-        'Image model to use. ' + ' '.join(description_parts)
-    )
+    model_description = 'Image model to use. ' + ' '.join(description_parts)
 
     return ClientToolSchema(
         name='generate_image',

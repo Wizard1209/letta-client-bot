@@ -758,9 +758,7 @@ async def detach(message: Message) -> None:
     agents = [agent async for agent in list_agents_by_user(message.from_user.id)]
 
     if not agents:
-        await message.answer(
-            **Text("You don't have any assistants.").as_kwargs()
-        )
+        await message.answer(**Text("You don't have any assistants.").as_kwargs())
         return
 
     builder = InlineKeyboardBuilder()
@@ -796,9 +794,7 @@ async def handle_detach_select(
         return
 
     # Check if last user (using tags already fetched by validate_agent_access)
-    identity_count = sum(
-        1 for t in (agent.tags or []) if t.startswith('identity-tg-')
-    )
+    identity_count = sum(1 for t in (agent.tags or []) if t.startswith('identity-tg-'))
     if identity_count <= 1:
         await callback.answer(
             '❌ Cannot detach: you are the last user on this assistant', show_alert=True
@@ -869,9 +865,7 @@ async def handle_detach_confirm(
 
     # Reset selected_agent if detached agent was selected
     if identity.selected_agent == callback_data.agent_id:
-        await reset_selected_agent_query(
-            gel_client, telegram_id=callback.from_user.id
-        )
+        await reset_selected_agent_query(gel_client, telegram_id=callback.from_user.id)
 
     if isinstance(callback.message, Message):
         await callback.message.edit_text(

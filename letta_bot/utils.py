@@ -156,7 +156,6 @@ def chunk_texts(
                     custom_emoji_id=entity.custom_emoji_id,
                 )
             )
-            )
         chunk_len += part_len
 
     # Yield remaining
