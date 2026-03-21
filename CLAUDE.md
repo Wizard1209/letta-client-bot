@@ -710,16 +710,45 @@ md_tg/               # Markdown to Telegram entities converter
 deploy/
   commands.json        # Bot command definitions (user + admin) for Telegram menu
   Dockerfile           # Multi-stage Python 3.13 image with uv
-  docker-compose.yaml  # Production deployment with Traefik
+  docker-compose.yaml  # Production deployment with Traefik (legacy)
+  nix/                 # NixOS infrastructure
+    default.nix          # Flake outputs aggregator
+    services/            # NixOS service modules
+      traefik.nix          # Traefik reverse proxy (HTTPS, Let's Encrypt, dashboard)
+      letta-bot.nix        # Bot + Gel containers (Podman OCI)
+      openssh.nix          # SSH hardening
+    hosts/               # Per-host configurations
+      common.nix           # Shared base config (locale, nix settings)
+      minimal.nix          # Minimal server profile
+      default.nix          # Host builder + deploy-rs nodes
+      dev/                 # Dev server host
+        configuration.nix    # Host entry point (imports, sops, disk)
+        services.nix         # Service config with secrets wiring
+        disk-config.nix      # Disko disk layout
+        facter.json          # Hardware facts
+        secrets.yaml         # sops-encrypted secrets
+    modules/             # Custom NixOS modules
+      tcp-tweaks.nix       # TCP BBR + kernel hardening
+    users/               # User account definitions
+      vizqq.nix            # Admin user
+      wizard.nix           # Admin user
+      github-ci.nix        # CI deploy user (sudo restart only)
+    dev/                 # Development environment
+      devshell.nix         # nix develop shell
+      treefmt.nix          # Code formatting
+      git-hooks.nix        # Pre-commit hooks
+.github/
+  workflows/
+    deploy.yml           # CI/CD: build Docker image → push GHCR → SSH restart
 ```
 
 **Deployment Structure**:
 
 - Docker container runs as non-root user (`app`)
 - Uses `uv` for dependency management in container
-- Exposes port 80 for webhook
-- Traefik labels for HTTPS with Let's Encrypt
-- Connected to external `monitoring` network
+- Exposes port 80 for webhook (requires `NET_BIND_SERVICE` capability in Podman)
+- Traefik reverse proxy for HTTPS with Let's Encrypt
+- Secrets managed via sops-nix
 
 ## Configuration
 
@@ -749,9 +778,87 @@ Environment variables via `.env` (provide `.env.example`):
 
 ## Deployment
 
-**Production: Docker + docker-compose + Traefik**
+### Production: NixOS + Podman + Traefik
 
-The bot is deployed using Docker with Traefik as a reverse proxy for HTTPS webhook endpoints.
+The primary deployment uses NixOS with declarative infrastructure defined in `deploy/nix/`. Containers run via Podman (`virtualisation.oci-containers`), reverse proxy via Traefik NixOS service.
+
+**NixOS Service Modules**:
+
+- `service-traefik` (`deploy/nix/services/traefik.nix`) — Traefik reverse proxy with Let's Encrypt TLS
+- `service-letta-bot` (`deploy/nix/services/letta-bot.nix`) — Bot + Gel database containers
+
+**Container Networking**: Bot and Gel containers communicate via a shared Podman network (`letta`), created by a systemd oneshot service (`podman-network-letta`). Bot connects to Gel by container DNS name (`GEL_HOST=gel`). Bot container requires `capabilities.NET_BIND_SERVICE = true` to bind port 80 as non-root user (Podman drops this capability by default, unlike Docker).
+
+**Secrets Management**: sops-nix with age encryption. Secrets in `deploy/nix/hosts/<host>/secrets.yaml`, decrypted at runtime to `/run/secrets/`. Templates render env files from individual secrets via `sops.templates`. Configuration in `.sops.yaml` at project root. See @CONTRIBUTION.md for sops setup instructions (adding users, hosts, and secrets).
+
+**Gel Authentication**: Two separate env files from sops templates:
+- `gel.env` → `GEL_SERVER_PASSWORD` (for Gel server container)
+- `bot-secrets.env` → `GEL_PASSWORD` (for bot's Gel client connection)
+
+Both use the same secret (`gel-password`), but different variable names: `GEL_SERVER_PASSWORD` is the server-side setting, `GEL_PASSWORD` is what the Gel Python client reads. Gel admin UI login: user `edgedb`, password from `gel-password` secret.
+
+**Traefik Dashboard & Gel UI**: Always publicly exposed with HTTPS via Traefik routers:
+- Dashboard: `https://tr.<domain>/dashboard/`
+- Gel admin UI: `https://db.<domain>`
+
+Dashboard requires basicAuth — `dashboard.basicAuthUsersFile` option (mandatory, typically wired from `traefik-htpasswd` sops secret). Gel UI relies on its own built-in authentication.
+
+**Deploy with deploy-rs**:
+
+```bash
+# From dev shell
+nix develop
+deploy .#dev
+
+# Or directly
+nix run nixpkgs#deploy-rs -- .#dev
+```
+
+**Monitor Services**:
+
+```bash
+# Bot container logs
+ssh user@server "journalctl -u podman-letta-bot -n 30 --no-pager"
+
+# Gel container logs
+ssh user@server "journalctl -u podman-gel -n 30 --no-pager"
+
+# Traefik logs
+ssh user@server "journalctl -u traefik -n 30 --no-pager"
+
+# Live follow
+ssh user@server "journalctl -u podman-letta-bot -f"
+```
+
+### CI/CD: GitHub Actions
+
+Workflow at `.github/workflows/deploy.yml`. Triggered on `v*` tag push.
+
+**Jobs**: `build` (Docker image → GHCR) → `deploy` (deploy-rs full NixOS configuration via `github-ci` SSH user)
+
+**Required GitHub Repository Secrets**:
+
+| Secret | Value |
+|--------|-------|
+| `DEPLOY_HOST` | Server IP or hostname |
+| `DEPLOY_SSH_KEY` | SSH private key (ed25519) for `github-ci` user |
+
+`GITHUB_TOKEN` is auto-provided by GitHub Actions.
+
+**Trigger a deploy**:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+**GHCR image**: Must be public or server must have `podman login` to GHCR. Default image in module: `ghcr.io/wizard1209/letta-client-bot:latest` — override per-host via `services.letta-bot.image`.
+
+**CI/CD does NOT update NixOS config** — use deploy-rs for that. CI only builds the Docker image and triggers a NixOS deployment which picks up the new image.
+
+### Docker + docker-compose + Traefik
+
+The bot can also be deployed using Docker with Traefik as a reverse proxy for HTTPS webhook endpoints.
 
 **Dockerfile** (`deploy/Dockerfile`):
 
@@ -790,7 +897,7 @@ docker-compose -f deploy/docker-compose.yaml logs -f
 docker-compose -f deploy/docker-compose.yaml down
 ```
 
-**Development Mode**:
+### Development Mode
 
 - Run locally with polling: `uv run python letta_bot/main.py -p`
 - With custom info directory: `INFO_DIR=/path/to/notes uv run python letta_bot/main.py -p`

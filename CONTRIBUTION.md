@@ -267,6 +267,156 @@ GEL_INSTANCE, GEL_SECRET_KEY (if using Gel Cloud)
 
 **Prerequisites**: Traefik with `lets-encrypt-ssl` resolver, `monitoring_monitoring` network exists, DNS configured for `WEBHOOK_HOST`.
 
+### NixOS (primary)
+
+Infrastructure is defined declaratively in `deploy/nix/`. Bot and Gel run as Podman containers via NixOS `virtualisation.oci-containers`, Traefik runs as a native NixOS service.
+
+**Deploy config changes with deploy-rs:**
+
+```bash
+nix develop
+deploy .#dev
+```
+
+**Web panels** (always publicly exposed via Traefik with HTTPS):
+- Traefik dashboard: `https://tr.<domain>/dashboard/` (protected by basicAuth via `traefik-htpasswd` sops secret)
+- Gel admin UI: `https://db.<domain>` (user: `edgedb`, password from `gel-password` sops secret)
+
+**Monitor services:**
+
+```bash
+# Bot logs
+journalctl -u podman-letta-bot -n 30 --no-pager
+
+# Gel logs
+journalctl -u podman-gel -n 30 --no-pager
+
+# Traefik logs
+journalctl -u traefik -n 30 --no-pager
+
+# Live follow
+journalctl -u podman-letta-bot -f
+```
+
+**CI/CD:** Push a `v*` tag to trigger GitHub Actions build + deploy (builds Docker image → pushes to GHCR → deploy-rs deploys full NixOS configuration).
+
+**Setting up GitHub repository secrets:**
+
+Required secrets for CI/CD (Settings → Secrets and variables → Actions → New repository secret):
+
+| Secret | Value |
+|--------|-------|
+| `DEPLOY_HOST` | Server IP or hostname |
+| `DEPLOY_SSH_KEY` | SSH private key (ed25519) for `github-ci` user |
+
+`GITHUB_TOKEN` is auto-provided by GitHub Actions (used for GHCR push).
+
+```bash
+# generate deploy key (if not already created)
+ssh-keygen -t ed25519 -C "github-deploy" -f ~/.ssh/github-deploy
+
+# copy the PRIVATE key content for DEPLOY_SSH_KEY secret
+cat ~/.ssh/github-deploy
+
+# add the PUBLIC key to github-ci.nix openssh.authorizedKeys.keys
+cat ~/.ssh/github-deploy.pub
+```
+
+Via `gh` CLI:
+
+```bash
+gh secret set DEPLOY_HOST --body "<your-server-ip>"
+gh secret set DEPLOY_SSH_KEY < ~/.ssh/github-deploy
+```
+
+### Secrets (sops-nix)
+
+Secrets are managed with [sops](https://github.com/getsops/sops) + [sops-nix](https://github.com/Mic92/sops-nix) using age encryption. Configuration lives in `.sops.yaml` at project root.
+
+**Adding a new user:**
+
+Option A — dedicated age key:
+
+```bash
+age-keygen -o key.txt  # save the secret key securely
+# public key: age1...
+```
+
+Option B — reuse existing SSH ed25519 key (via [ssh-to-age](https://github.com/Mic92/ssh-to-age)):
+
+```bash
+# get age public key from SSH public key
+ssh-to-age -i ~/.ssh/id_ed25519.pub
+
+# export private key for local decryption
+ssh-to-age -private-key -i ~/.ssh/id_ed25519 -o ~/.config/sops/age/keys.txt
+```
+
+Then add to `.sops.yaml`:
+
+```yaml
+keys:
+  - &username age1...  # add anchor with public key
+creation_rules:
+  - path_regex: deploy/nix/hosts/dev/secrets.yaml$
+    key_groups:
+      - age:
+          - *username  # add reference here
+```
+
+Re-encrypt so the new user can decrypt:
+
+```bash
+sops updatekeys deploy/nix/hosts/<host>/secrets.yaml
+```
+
+**Adding a new host:**
+
+```bash
+# get host age public key from SSH host key
+ssh-keyscan <host-ip> | ssh-to-age
+```
+
+Add to `.sops.yaml`:
+
+```yaml
+keys:
+  - &hostname age1...  # host public key
+creation_rules:
+  - path_regex: deploy/nix/hosts/<hostname>/secrets.yaml$
+    key_groups:
+      - age:
+          - *username   # users who can encrypt/decrypt
+          - *hostname   # host that decrypts at runtime
+```
+
+On the host side, sops-nix automatically uses the SSH host key for decryption via `sops.age.sshKeyPaths` (defaults to `/etc/ssh/ssh_host_ed25519_key`).
+
+**Adding/editing secrets:**
+
+```bash
+# edit secrets (creates file if doesn't exist, opens $EDITOR with decrypted YAML)
+sops deploy/nix/hosts/<host>/secrets.yaml
+
+# re-encrypt after changing .sops.yaml keys
+sops updatekeys deploy/nix/hosts/<host>/secrets.yaml
+```
+
+Wire the secret in the host's `services.nix`:
+
+```nix
+# simple secret
+sops.secrets.my-secret = { };
+
+# with options
+sops.secrets.my-secret = {
+  owner = "service-user";  # default: root
+  mode = "0400";           # default: 0400
+};
+
+# access: config.sops.secrets.my-secret.path → /run/secrets/my-secret
+```
+
 ## Error Handling Policy
 
 ### Infrastructure Errors

@@ -91,3 +91,4 @@ letta-telegram-reference
 
 # local subprojects
 evals/
+.pre-commit-config.yaml
