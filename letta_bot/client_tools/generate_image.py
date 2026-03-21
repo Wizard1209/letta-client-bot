@@ -23,6 +23,7 @@ from letta_bot.client_tools.registry import (
     ClientToolError,
     ClientToolResult,
     ClientToolSchema,
+    ClientToolSoftError,
     LettaMessage,
     TelegramPhoto,
     registry,
@@ -47,11 +48,13 @@ GeminiModel = Literal[
     'gemini-3-pro-image-preview',
 ]
 FluxModel = Literal['flux-2-pro', 'flux-2-max', 'flux-2-flex', 'flux-2-klein-9b']
-ImageModel = OpenAIModel | GeminiModel | FluxModel
+FluxKontextModel = Literal['flux-kontext-pro', 'flux-kontext-max']
+ImageModel = OpenAIModel | GeminiModel | FluxModel | FluxKontextModel
 
 OPENAI_MODELS: list[OpenAIModel] = list(get_args(OpenAIModel))
 GEMINI_MODELS: list[GeminiModel] = list(get_args(GeminiModel))
 FLUX_MODELS: list[FluxModel] = list(get_args(FluxModel))
+FLUX_KONTEXT_MODELS: list[FluxKontextModel] = list(get_args(FluxKontextModel))
 
 _BFL_BASE_URL = 'https://api.bfl.ai/v1'
 _BFL_MAX_POLL_ITERATIONS = 120  # ~2 min timeout with 1s sleep
@@ -236,18 +239,80 @@ async def _generate_via_flux(
                 image_resp.raise_for_status()
                 return GeneratedImage(image_resp.content, 'image/png')
 
-            if status in (
-                'Error',
-                'Failed',
-                'Request Moderated',
-                'Content Moderated',
-                'Task not found',
-            ):
+            if status in ('Request Moderated', 'Content Moderated'):
+                raise ClientToolSoftError(
+                    f'The image was rejected by the safety filter ({status}). '
+                    'Try rephrasing the prompt to avoid potentially '
+                    'sensitive content.'
+                )
+
+            if status in ('Error', 'Failed', 'Task not found'):
                 raise ClientToolError(f'FLUX generation failed: {status}')
 
             # status == 'Pending' — keep polling
 
         raise ClientToolError('FLUX generation timed out (polling limit reached)')
+
+
+async def _generate_via_flux_kontext(
+    prompt: str, refs: list[ImageRef] | None, *, model: FluxKontextModel
+) -> GeneratedImage:
+    """Generate/edit image via BFL FLUX Kontext API (context-aware editing).
+
+    Kontext models accept exactly one input image and perform context-aware
+    edits — preserving composition, style, and unedited regions. Without an
+    input image they fall back to text-to-image generation.
+    """
+    headers = {'x-key': CONFIG.bfl_api_key or '', 'Content-Type': 'application/json'}
+
+    body: dict[str, object] = {
+        'prompt': prompt,
+        'output_format': 'png',
+    }
+
+    # Kontext accepts exactly one input_image
+    if refs:
+        LOGGER.info(
+            'FLUX Kontext edit model=%s, prompt=%s',
+            model,
+            prompt[:80],
+        )
+        body['input_image'] = base64.b64encode(refs[0].data).decode('ascii')
+    else:
+        LOGGER.info('FLUX Kontext generate model=%s, prompt=%s', model, prompt[:80])
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        submit_resp = await client.post(
+            f'{_BFL_BASE_URL}/{model}', headers=headers, json=body
+        )
+        submit_resp.raise_for_status()
+        task = submit_resp.json()
+        polling_url: str = task['polling_url']
+
+        for _ in range(_BFL_MAX_POLL_ITERATIONS):
+            await asyncio.sleep(1)
+            poll_resp = await client.get(polling_url, headers=headers)
+            poll_resp.raise_for_status()
+            result = poll_resp.json()
+            status = result.get('status')
+
+            if status == 'Ready':
+                sample_url: str = result['result']['sample']
+                image_resp = await client.get(sample_url)
+                image_resp.raise_for_status()
+                return GeneratedImage(image_resp.content, 'image/png')
+
+            if status in ('Request Moderated', 'Content Moderated'):
+                raise ClientToolSoftError(
+                    f'The image was rejected by the safety filter ({status}). '
+                    'Try rephrasing the prompt to avoid potentially '
+                    'sensitive content.'
+                )
+
+            if status in ('Error', 'Failed', 'Task not found'):
+                raise ClientToolError(f'FLUX Kontext generation failed: {status}')
+
+        raise ClientToolError('FLUX Kontext generation timed out (polling limit reached)')
 
 
 # --- Dispatch ---
@@ -296,6 +361,13 @@ def _resolve_model(
         flux_model = cast(FluxModel, model)
         gen = partial(_generate_via_flux, model=flux_model)
         return flux_model, gen
+
+    if model in get_args(FluxKontextModel):
+        if not CONFIG.bfl_api_key:
+            raise ClientToolError(f'Model {model} requires BFL_API_KEY, but it is not set')
+        kontext_model = cast(FluxKontextModel, model)
+        gen = partial(_generate_via_flux_kontext, model=kontext_model)
+        return kontext_model, gen
 
     raise ClientToolError(f'Unknown image model: {model}')
 
@@ -403,11 +475,19 @@ def _build_schema() -> ClientToolSchema:
 
     if CONFIG.bfl_api_key:
         available_models.extend(FLUX_MODELS)
+        available_models.extend(FLUX_KONTEXT_MODELS)
         description_parts.append(
             'flux-2-pro — FLUX production model, fast (<10s). '
             'flux-2-max — FLUX highest quality model (<15s). '
             'flux-2-flex — precision model, best for typography and small details. '
-            'flux-2-klein-9b — fast and efficient, optimized for rapid iteration.'
+            'flux-2-klein-9b — fast and efficient, optimized for rapid iteration. '
+            'flux-kontext-pro — context-aware image editing, takes exactly one '
+            'reference image and applies edits while preserving composition, '
+            'style, and unedited regions. Best for object editing, color changes, '
+            'text overlay, and style transformation. Also works for text-to-image '
+            'without a reference. '
+            'flux-kontext-max — same as kontext-pro but maximum quality, '
+            'superior typography and fine detail preservation.'
         )
 
     model_description = 'Image model to use. ' + ' '.join(description_parts)

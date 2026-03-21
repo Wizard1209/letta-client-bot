@@ -16,6 +16,7 @@ from letta_bot.client_tools.registry import (
     ClientToolError,
     ClientToolResult,
     ClientToolSchema,
+    ClientToolSoftError,
     LettaMessage,
     TelegramOutput,
     TelegramPhoto,
@@ -28,6 +29,7 @@ from letta_bot.client_tools.registry import (
 __all__ = [
     'FILE_ID_PLACEHOLDER',
     'ClientToolError',
+    'ClientToolSoftError',
     'ClientToolResult',
     'ClientToolSchema',
     'LettaMessage',
