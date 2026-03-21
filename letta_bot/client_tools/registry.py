@@ -256,9 +256,7 @@ async def resolve_approval(
             extra_messages.extend(result.extra_messages)
 
         except ClientToolSoftError as e:
-            LOGGER.warning(
-                'Client tool %s soft-failed: %s', tc.name, e
-            )
+            LOGGER.warning('Client tool %s soft-failed: %s', tc.name, e)
             approvals.append(
                 {
                     'type': 'tool',

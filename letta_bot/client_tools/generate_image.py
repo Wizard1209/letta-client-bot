@@ -190,6 +190,46 @@ async def _generate_via_gemini(
     raise RuntimeError(msg)
 
 
+async def _bfl_submit_and_poll(
+    endpoint: str,
+    headers: dict[str, str],
+    body: dict[str, object],
+    label: str,
+) -> GeneratedImage:
+    """Submit a BFL generation request and poll until the image is ready."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        submit_resp = await client.post(endpoint, headers=headers, json=body)
+        submit_resp.raise_for_status()
+        polling_url: str = submit_resp.json()['polling_url']
+
+        for _ in range(_BFL_MAX_POLL_ITERATIONS):
+            await asyncio.sleep(1)
+            poll_resp = await client.get(polling_url, headers=headers)
+            poll_resp.raise_for_status()
+            result = poll_resp.json()
+            status = result.get('status')
+
+            if status == 'Ready':
+                sample_url: str = result['result']['sample']
+                image_resp = await client.get(sample_url)
+                image_resp.raise_for_status()
+                return GeneratedImage(image_resp.content, 'image/png')
+
+            if status in ('Request Moderated', 'Content Moderated'):
+                raise ClientToolSoftError(
+                    f'The image was rejected by the safety filter ({status}). '
+                    'Try rephrasing the prompt to avoid potentially '
+                    'sensitive content.'
+                )
+
+            if status in ('Error', 'Failed', 'Task not found'):
+                raise ClientToolError(f'{label} generation failed: {status}')
+
+            # status == 'Pending' — keep polling
+
+        raise ClientToolError(f'{label} generation timed out (polling limit reached)')
+
+
 async def _generate_via_flux(
     prompt: str, refs: list[ImageRef] | None, *, model: FluxModel
 ) -> GeneratedImage:
@@ -216,42 +256,7 @@ async def _generate_via_flux(
     else:
         LOGGER.info('FLUX generate model=%s, prompt=%s', model, prompt[:80])
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        # Submit generation request
-        submit_resp = await client.post(
-            f'{_BFL_BASE_URL}/{model}', headers=headers, json=body
-        )
-        submit_resp.raise_for_status()
-        task = submit_resp.json()
-        polling_url: str = task['polling_url']
-
-        # Poll until ready
-        for _ in range(_BFL_MAX_POLL_ITERATIONS):
-            await asyncio.sleep(1)
-            poll_resp = await client.get(polling_url, headers=headers)
-            poll_resp.raise_for_status()
-            result = poll_resp.json()
-            status = result.get('status')
-
-            if status == 'Ready':
-                sample_url: str = result['result']['sample']
-                image_resp = await client.get(sample_url)
-                image_resp.raise_for_status()
-                return GeneratedImage(image_resp.content, 'image/png')
-
-            if status in ('Request Moderated', 'Content Moderated'):
-                raise ClientToolSoftError(
-                    f'The image was rejected by the safety filter ({status}). '
-                    'Try rephrasing the prompt to avoid potentially '
-                    'sensitive content.'
-                )
-
-            if status in ('Error', 'Failed', 'Task not found'):
-                raise ClientToolError(f'FLUX generation failed: {status}')
-
-            # status == 'Pending' — keep polling
-
-        raise ClientToolError('FLUX generation timed out (polling limit reached)')
+    return await _bfl_submit_and_poll(f'{_BFL_BASE_URL}/{model}', headers, body, 'FLUX')
 
 
 async def _generate_via_flux_kontext(
@@ -271,6 +276,13 @@ async def _generate_via_flux_kontext(
     }
 
     # Kontext accepts exactly one input_image
+    if refs and len(refs) > 1:
+        raise ClientToolError(
+            'FLUX Kontext models accept exactly one reference image, '
+            f'but {len(refs)} were provided. Use a FLUX.2 model for '
+            'multiple references.'
+        )
+
     if refs:
         LOGGER.info(
             'FLUX Kontext edit model=%s, prompt=%s',
@@ -281,38 +293,9 @@ async def _generate_via_flux_kontext(
     else:
         LOGGER.info('FLUX Kontext generate model=%s, prompt=%s', model, prompt[:80])
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        submit_resp = await client.post(
-            f'{_BFL_BASE_URL}/{model}', headers=headers, json=body
-        )
-        submit_resp.raise_for_status()
-        task = submit_resp.json()
-        polling_url: str = task['polling_url']
-
-        for _ in range(_BFL_MAX_POLL_ITERATIONS):
-            await asyncio.sleep(1)
-            poll_resp = await client.get(polling_url, headers=headers)
-            poll_resp.raise_for_status()
-            result = poll_resp.json()
-            status = result.get('status')
-
-            if status == 'Ready':
-                sample_url: str = result['result']['sample']
-                image_resp = await client.get(sample_url)
-                image_resp.raise_for_status()
-                return GeneratedImage(image_resp.content, 'image/png')
-
-            if status in ('Request Moderated', 'Content Moderated'):
-                raise ClientToolSoftError(
-                    f'The image was rejected by the safety filter ({status}). '
-                    'Try rephrasing the prompt to avoid potentially '
-                    'sensitive content.'
-                )
-
-            if status in ('Error', 'Failed', 'Task not found'):
-                raise ClientToolError(f'FLUX Kontext generation failed: {status}')
-
-        raise ClientToolError('FLUX Kontext generation timed out (polling limit reached)')
+    return await _bfl_submit_and_poll(
+        f'{_BFL_BASE_URL}/{model}', headers, body, 'FLUX Kontext'
+    )
 
 
 # --- Dispatch ---
