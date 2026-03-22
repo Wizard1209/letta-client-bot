@@ -38,6 +38,25 @@ LOGGER = logging.getLogger(__name__)
 TELEGRAM_MAX_LEN = 4096
 
 
+def _make_code_fence(content: str, language: str = '') -> str:
+    """Wrap content in a markdown code fence, escaping inner backticks.
+
+    Finds the longest run of backticks in content and uses a fence
+    one backtick longer, per CommonMark spec.
+    """
+    max_run = 2  # minimum fence is 3 backticks
+    current_run = 0
+    for ch in content:
+        if ch == '`':
+            current_run += 1
+            max_run = max(max_run, current_run)
+        else:
+            current_run = 0
+
+    fence = '`' * (max_run + 1)
+    return f'{fence}{language}\n{content}\n{fence}'
+
+
 # =============================================================================
 # Stream Event Formatting (Helper Functions)
 # =============================================================================
@@ -498,28 +517,19 @@ def _format_archival_memory_search(args_obj: dict[str, Any]) -> dict[str, Any]:
     return as_line(*elements, sep='\n').as_kwargs()
 
 
-def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> dict[str, Any]:
+def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> str:
     """Format memory_insert tool call."""
     insert_text = args_obj.get('new_str' if legacy else 'insert_text', '')
     path = args_obj.get('path', '')
 
-    return as_line(
-        *(
-            Italic('📝 Updating memory block...'),
-            Text(
-                as_key_value(
-                    'Path',
-                    path,
-                ),
-                '\n',
-            ),
-            Text(insert_text),
-        ),
-        sep='\n',
-    ).as_kwargs()
+    parts = ['*📝 Updating memory block...*\n']
+    parts.append(f'**Path:** {path}\n')
+    parts.append(insert_text)
+
+    return ''.join(parts)
 
 
-def _format_memory_replace(args_obj: dict[str, Any]) -> dict[str, Any]:
+def _format_memory_replace(args_obj: dict[str, Any]) -> str:
     """Format memory_replace tool call."""
     path = args_obj.get('path', '')
     old_string = args_obj.get('old_string', '')
@@ -527,14 +537,12 @@ def _format_memory_replace(args_obj: dict[str, Any]) -> dict[str, Any]:
 
     diff = _get_diff_text(old_string, new_string)
 
-    parts: list[Any] = [Italic('🔧 Modifying memory block...')]
-
+    parts = ['*🔧 Modifying memory block...*\n']
     if path:
-        parts.append(as_key_value('Path', path))
+        parts.append(f'**Path:** {path}\n')
+    parts.append(_make_code_fence(diff, 'diff'))
 
-    parts.append(Pre(diff, language='diff'))
-
-    return as_line(*parts, sep='\n').as_kwargs()
+    return ''.join(parts)
 
 
 def _format_memory_rename(args_obj: dict[str, Any]) -> dict[str, Any]:
@@ -613,17 +621,16 @@ def _format_memory(args_obj: dict[str, Any]) -> dict[str, Any] | str | None:
             return None
 
 
-def _format_run_code(args_obj: dict[str, Any]) -> dict[str, Any]:
+def _format_run_code(args_obj: dict[str, Any]) -> str:
     """Format run_code tool call."""
     code = args_obj.get('code', '')
     language = args_obj.get('language', 'python')
 
-    return as_line(
-        Italic('⚙️ Executing code...'),
-        as_key_value('Language', language),
-        Pre(code, language=language),
-        sep='\n',
-    ).as_kwargs()
+    parts = ['*⚙️ Executing code...*\n']
+    parts.append(f'**Language:** {language}\n')
+    parts.append(_make_code_fence(code, language))
+
+    return ''.join(parts)
 
 
 def _format_generate_image(args_obj: dict[str, Any]) -> dict[str, Any]:
@@ -652,7 +659,7 @@ def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
     formatted_args = json.dumps(args_obj, indent=2)
 
     parts = ['*🔧 Using tool...*\n', f'**Tool:** {tool_name}\n']
-    parts.append(f'**Arguments:**\n```json\n{formatted_args}\n```')
+    parts.append(f'**Arguments:**\n{_make_code_fence(formatted_args, "json")}')
 
     return ''.join(parts)
 
@@ -697,16 +704,15 @@ async def send_reasoning_message(message: Message, reasoning_text: str) -> None:
     """Send reasoning message with expandable blockquote.
 
     Header stays visible, content is wrapped in expandable_blockquote.
-    Code blocks (```) are stripped (pre entities break blockquote).
-
     Args:
         message: Telegram message to reply to
         reasoning_text: Raw reasoning content
     """
     chunks = merge_with_entity(
         header=Italic('Agent reasoning:'),
-        content=reasoning_text.replace('```', ''),
+        content=reasoning_text,
         entity_type='expandable_blockquote',
+        parse_markdown=False,
     )
     for text, entities in chunks:
         await message.answer(text, entities=entities)
