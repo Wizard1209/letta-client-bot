@@ -168,6 +168,7 @@ def merge_with_entity(
     content: str,
     entity_type: str,
     separator: str = '\n',
+    parse_markdown: bool = True,
 ) -> list[tuple[str, list[MessageEntity]]]:
     """Merge aiogram header with md_tg content and wrap content with entity.
 
@@ -179,6 +180,9 @@ def merge_with_entity(
         content: Markdown content to convert and wrap
         entity_type: MessageEntity type for wrapping content
         separator: String between header and content (default: newline)
+        parse_markdown: If True, keep inner entities from md_tg. If False,
+            use md_tg only for chunking and discard inner entities (plain
+            text inside the wrapping entity).
 
     Returns:
         List of (text, entities) tuples for message.answer()
@@ -198,8 +202,10 @@ def merge_with_entity(
     if not content or not content.strip():
         return [(header_text, list(header_entities))]
 
-    # Convert content via md_tg
+    # Always use md_tg for chunking; optionally discard inner entities
     content_chunks = markdown_to_telegram(content)
+    if not parse_markdown:
+        content_chunks = [(text, []) for text, _ in content_chunks]
     if not content_chunks:
         return [(header_text, list(header_entities))]
 
