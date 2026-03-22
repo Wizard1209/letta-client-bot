@@ -1,87 +1,95 @@
-"""X/Twitter search tool for Letta agents.
+"""Get recent posts from a specific X/Twitter account.
 
 NOTE: This file is excluded from linting/formatting and designed to be
 loaded as a Letta custom tool via source_code registration.
 
-This tool enables agents to search recent posts on X/Twitter using flexible query
-syntax with operators. Use this to monitor product mentions, track account mentions,
-find trending content by hashtag, or any custom search query.
+This tool enables agents to retrieve recent posts from any public X/Twitter
+account by username. Use this to review account activity, check posting
+frequency, analyze engagement, or monitor specific accounts.
 """
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-API_URL = 'https://api.x.com/2/tweets/search/recent'
-MIN_HOURS, MAX_HOURS = 1, 168
-MIN_RESULTS, MAX_RESULTS = 10, 100
+USERS_API_URL = 'https://api.x.com/2/users/by/username'
+TIMELINE_API_URL = 'https://api.x.com/2/users/{user_id}/tweets'
+MIN_RESULTS, MAX_RESULTS = 5, 100
 MAX_MEDIA_RESULTS = 10
 REQUEST_TIMEOUT = 30
 
 
-def search_x_posts(
-    query: str,
-    hours_ago: int = 24,
-    max_results: int = 20,
+def _resolve_user_id(username, bearer_token):
+    """Resolve X username to user ID."""
+    import requests
+
+    response = requests.get(
+        f'{USERS_API_URL}/{username}',
+        headers={'Authorization': f'Bearer {bearer_token}'},
+        params={'user.fields': 'public_metrics,verified,verified_type'},
+        timeout=REQUEST_TIMEOUT,
+    )
+
+    if response.status_code != 200:
+        return None, f'Error: X API returned status {response.status_code} when looking up @{username}'
+
+    data = response.json()
+
+    # X API returns 200 with errors array when user not found
+    if data.get('errors') and not data.get('data'):
+        return None, f'Error: User @{username} not found'
+
+    user_data = data.get('data')
+    if not user_data:
+        return None, f'Error: User @{username} not found'
+
+    return user_data, None
+
+
+def get_account_timeline(
+    username: str,
+    max_results: int = 10,
+    exclude_replies: bool = False,
+    exclude_retweets: bool = False,
     attach_media: bool = False,
     next_token: str = '',
 ) -> str:
-    """Search recent posts on X/Twitter using flexible query syntax.
+    """Get recent posts from a specific X/Twitter account by username.
 
-    Use this tool to search for posts matching a query with X API operators.
-    Authenticates using OAuth 2.0 App-Only Bearer Token.
+    Retrieves the latest posts from a public account's timeline. Use this to
+    review what an account has been posting, check engagement metrics, or
+    monitor account activity.
 
     Environment variables required:
     - X_API_KEY: X/Twitter Bearer Token for API authentication
 
     Args:
-        query (str): Search query using X API operators. Examples:
-            - "TzKT OR PyTezos" (posts containing either term)
-            - "@BakingBad_Dev" (posts mentioning account)
-            - "#Tezos min_faves:50 -is:retweet" (hashtag with filters)
-            - "(privacy OR \"zero knowledge\") lang:en" (complex query)
-
-            Supported operators:
-            - Keywords: "word1 word2" (contains both)
-            - Exact phrase: "\"exact phrase\""
-            - From user: "from:username"
-            - Mentions: "@username"
-            - Hashtags: "#hashtag"
-            - Exclude: "-term" or "-from:username"
-            - Or: "term1 OR term2"
-            - Grouping: "(term1 OR term2) -term3"
-            - Exclude retweets: "-is:retweet"
-            - Exclude replies: "-is:reply"
-            - Minimum likes: "min_faves:50"
-            - Minimum retweets: "min_retweets:10"
-            - Language: "lang:en"
-
-        hours_ago (int): How many hours back to search (default: 24, max: 168 / 7 days)
-        max_results (int): Maximum number of posts to return (default: 20, range: 10-100)
+        username (str): X/Twitter username without @ symbol (e.g., "BakingBad_Dev")
+        max_results (int): Number of posts to return (default: 10, range: 5-100)
+        exclude_replies (bool): If True, exclude reply posts from results (default: False)
+        exclude_retweets (bool): If True, exclude retweets from results (default: False)
         attach_media (bool): If True, sends post images and video thumbnails
             to the agent as visual context via a separate async message.
-            Photos use the direct image URL; videos/GIFs use their preview
-            thumbnail. When enabled, max_results is capped at 10 posts.
-            To get the next batch of posts (with or without media), use
-            the next_token value returned at the end of results.
-            Defaults to False (text-only results, up to 100 posts).
-        next_token (str): Pagination token from a previous search result.
-            Pass this to retrieve the next batch of posts for the same query.
-            The token is shown at the end of results as "Next page token: <token>".
-            Defaults to empty string (start from the beginning).
+            When enabled, max_results is capped at 10 posts.
+            Defaults to False (text-only results).
+        next_token (str): Pagination token from a previous result to get the
+            next batch. Shown at end of results as "Next page token: <token>".
+            Defaults to empty string (start from beginning).
 
     Returns:
         str: Formatted list of posts with timestamps, engagement metrics, and links
+
+    Examples:
+        get_account_timeline("BakingBad_Dev")
+        get_account_timeline("aztaborern", max_results=20, exclude_retweets=True)
+        get_account_timeline("BakingBad_Dev", attach_media=True)
     """
     import requests
 
     if not (bearer_token := os.environ.get('X_API_KEY')):
         return 'Error: X_API_KEY environment variable is not set'
 
-    if not query or not (query := query.strip()):
-        return 'Error: query is required and cannot be empty'
-
-    if not MIN_HOURS <= hours_ago <= MAX_HOURS:
-        return f'Error: hours_ago must be between {MIN_HOURS} and {MAX_HOURS}, got {hours_ago}'
+    if not username or not (username := username.strip().lstrip('@')):
+        return 'Error: username is required and cannot be empty'
 
     if not MIN_RESULTS <= max_results <= MAX_RESULTS:
         return f'Error: max_results must be between {MIN_RESULTS} and {MAX_RESULTS}, got {max_results}'
@@ -89,31 +97,47 @@ def search_x_posts(
     if attach_media:
         max_results = min(max_results, MAX_MEDIA_RESULTS)
 
-    start_time = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+    # Step 1: Resolve username to user ID
+    user_data, error = _resolve_user_id(username, bearer_token)
+    if error:
+        return error
+
+    user_id = user_data['id']
+    user_followers = user_data.get('public_metrics', {}).get('followers_count', 0)
+    user_verified = user_data.get('verified', False)
+    user_verified_type = user_data.get('verified_type', '')
+
+    # Step 2: Build timeline request
+    exclude = []
+    if exclude_replies:
+        exclude.append('replies')
+    if exclude_retweets:
+        exclude.append('retweets')
 
     expansions = 'author_id,referenced_tweets.id,referenced_tweets.id.author_id'
     if attach_media:
         expansions += ',attachments.media_keys'
 
     params = {
-        'query': query,
-        'start_time': start_time.strftime('%Y-%m-%dT%H:%M:%SZ'),
         'max_results': max_results,
-        'sort_order': 'recency',
-        'tweet.fields': 'created_at,public_metrics,text,conversation_id,referenced_tweets,in_reply_to_user_id,lang,entities',
+        'tweet.fields': 'created_at,public_metrics,text,conversation_id,referenced_tweets,in_reply_to_user_id,entities',
         'expansions': expansions,
         'user.fields': 'username,name,public_metrics,verified,verified_type',
     }
+
+    if exclude:
+        params['exclude'] = ','.join(exclude)
 
     if attach_media:
         params['media.fields'] = 'preview_image_url,url,type'
 
     if next_token:
-        params['next_token'] = next_token
+        params['pagination_token'] = next_token
 
+    # Step 3: Fetch timeline
     try:
         response = requests.get(
-            API_URL,
+            TIMELINE_API_URL.format(user_id=user_id),
             params=params,
             headers={'Authorization': f'Bearer {bearer_token}'},
             timeout=REQUEST_TIMEOUT,
@@ -121,7 +145,7 @@ def search_x_posts(
     except requests.exceptions.Timeout:
         return 'Error: Request to X API timed out'
     except requests.exceptions.RequestException as e:
-        return f'Error fetching posts from X API: {e}'
+        return f'Error fetching timeline from X API: {e}'
 
     match response.status_code:
         case 200:
@@ -141,11 +165,18 @@ def search_x_posts(
         return f'Error parsing X API response: {e}'
 
     if not data.get('data'):
-        return f"No posts found for query '{query}' in the last {hours_ago} hours."
+        filters = []
+        if exclude_replies:
+            filters.append('replies excluded')
+        if exclude_retweets:
+            filters.append('retweets excluded')
+        filter_note = f" ({', '.join(filters)})" if filters else ''
+        return f'No posts found from @{username}{filter_note}.'
 
     posts = data['data']
     result_count = data.get('meta', {}).get('result_count', len(posts))
 
+    # Map included users (for referenced tweet authors)
     users_map = {
         user['id']: {
             'username': user['username'],
@@ -164,7 +195,7 @@ def search_x_posts(
         if tweet.get('id')
     }
 
-    # Build media map: media_key -> image URL
+    # Build media map
     media_map = {}
     if attach_media:
         for media in data.get('includes', {}).get('media', []):
@@ -172,23 +203,20 @@ def search_x_posts(
             media_type = media.get('type', '')
             if not media_key:
                 continue
-            # Photos have 'url', videos/GIFs have 'preview_image_url'
             image_url = media.get('url') if media_type == 'photo' else media.get('preview_image_url')
             if image_url:
                 media_map[media_key] = {'url': image_url, 'type': media_type}
 
-    lines = [f"Found {result_count} post(s) for query '{query}' (last {hours_ago}h):\n"]
-    post_media_items = []  # (post_index, username, media_type, image_url)
+    # Build verified badge for account
+    if user_verified:
+        badge = ' \u2713' if user_verified_type == 'blue' else ' \u2611\ufe0f'
+    else:
+        badge = ''
+
+    lines = [f'Found {result_count} post(s) from @{username}{badge} ({user_followers:,} followers):\n']
+    post_media_items = []
 
     for i, post in enumerate(posts, 1):
-        author_id = post.get('author_id', '')
-        author_info = users_map.get(author_id, {
-            'username': 'unknown', 'followers': 0, 'verified': False, 'verified_type': ''
-        })
-        username = author_info['username']
-        followers = author_info['followers']
-        verified = author_info['verified']
-        verified_type = author_info['verified_type']
         metrics = post.get('public_metrics', {})
 
         if created_at := post.get('created_at'):
@@ -200,13 +228,12 @@ def search_x_posts(
         else:
             timestamp = 'Unknown time'
 
-        # Parse referenced tweets for reply/quote detection
+        # Parse referenced tweets for reply/quote/RT detection
         refs = post.get('referenced_tweets', [])
         reply_to_id = next((r['id'] for r in refs if r.get('type') == 'replied_to'), None)
         quote_of_id = next((r['id'] for r in refs if r.get('type') == 'quoted'), None)
         is_retweet = any(r.get('type') == 'retweeted' for r in refs)
 
-        # Build post type indicator
         post_type = ''
         if is_retweet:
             post_type = '[RT] '
@@ -215,20 +242,11 @@ def search_x_posts(
         elif quote_of_id:
             post_type = '[Quote] '
 
-        # Build verified badge
-        if verified:
-            # verified_type can be: 'blue', 'business', 'government', or empty
-            badge = ' ✓' if verified_type == 'blue' else ' ☑️'
-        else:
-            badge = ''
-
-        # Build header with followers count and verified badge
-        header = f'--- Post {i} {post_type}by @{username}{badge} ({followers:,} followers) ({timestamp}) ---'
-
+        header = f'--- Post {i} {post_type}({timestamp}) ---'
         lines.append(header)
         lines.append(post.get('text', ''))
 
-        # Extract hashtags and mentions from entities
+        # Extract hashtags and mentions
         entities = post.get('entities', {})
         hashtags = [f"#{h['tag']}" for h in entities.get('hashtags', [])]
         mentions = [f"@{m['username']}" for m in entities.get('mentions', [])]
@@ -241,30 +259,30 @@ def search_x_posts(
                 entity_parts.append(f"Mentions: {', '.join(mentions)}")
             lines.append(f"[{' | '.join(entity_parts)}]")
 
-        # Show thread/conversation info
+        # Show thread info
         if conversation_id := post.get('conversation_id'):
             if conversation_id != post.get('id'):
                 lines.append(f'[Thread: {conversation_id}]')
 
-        # Show what this is replying to
+        # Show reply context
         if reply_to_id and (ref_tweet := referenced_tweets_map.get(reply_to_id)):
             ref_author_id = ref_tweet.get('author_id', '')
             ref_author = users_map.get(ref_author_id, {}).get('username', 'unknown')
             ref_text = ref_tweet.get('text', '')[:100]
             if len(ref_tweet.get('text', '')) > 100:
                 ref_text += '...'
-            lines.append(f'↳ Replying to @{ref_author}: "{ref_text}"')
+            lines.append(f'\u21b3 Replying to @{ref_author}: "{ref_text}"')
 
-        # Show what this is quoting
+        # Show quote context
         if quote_of_id and (ref_tweet := referenced_tweets_map.get(quote_of_id)):
             ref_author_id = ref_tweet.get('author_id', '')
             ref_author = users_map.get(ref_author_id, {}).get('username', 'unknown')
             ref_text = ref_tweet.get('text', '')[:100]
             if len(ref_tweet.get('text', '')) > 100:
                 ref_text += '...'
-            lines.append(f'↳ Quoting @{ref_author}: "{ref_text}"')
+            lines.append(f'\u21b3 Quoting @{ref_author}: "{ref_text}"')
 
-        # Collect media from this post
+        # Collect media
         if attach_media and media_map:
             for media_key in post.get('attachments', {}).get('media_keys', []):
                 if media_info := media_map.get(media_key):
@@ -278,11 +296,10 @@ def search_x_posts(
             '',
         ])
 
-    # Send media images to agent via async message
+    # Send media to agent via async message
     if attach_media and post_media_items:
         agent_id = os.environ.get('LETTA_AGENT_ID')
         if agent_id:
-            # Build one text part with all media metadata, then image parts
             media_labels = []
             image_parts = []
             for post_idx, author, media_type, image_url in post_media_items:
@@ -293,8 +310,8 @@ def search_x_posts(
                 })
             reminder_text = (
                 '<system-reminder>'
-                f'\nMedia delivery from your search_x_posts call for "{query}".'
-                '\nYou are in SILENT mode — user cannot see this. Use notify_via_telegram() to share results.'
+                f'\nMedia delivery from your get_account_timeline call for @{username}.'
+                '\nYou are in SILENT mode \u2014 user cannot see this. Use notify_via_telegram() to share results.'
                 f'\n{chr(10).join(media_labels)}'
                 '\n</system-reminder>'
             )
@@ -312,7 +329,7 @@ def search_x_posts(
             except Exception:
                 lines.append(f'[Media: failed to attach {len(post_media_items)} image(s)]')
 
-    # Append pagination token if more results available
+    # Pagination token
     if next_token_value := data.get('meta', {}).get('next_token'):
         lines.append(f'Next page token: {next_token_value}')
 
