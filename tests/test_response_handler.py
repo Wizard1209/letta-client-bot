@@ -177,6 +177,7 @@ def test_tool_diff_with_inner_backticks_single_pre() -> None:
     )
     assert isinstance(result, str)
 
+    chunks = markdown_to_telegram(result)
     pre_count = sum(
         len([e for e in entities if e.type == 'pre'])
         for _, entities in chunks
@@ -184,3 +185,104 @@ def test_tool_diff_with_inner_backticks_single_pre() -> None:
     assert pre_count == 1, (
         f'Expected exactly 1 pre entity across all chunks, got {pre_count}'
     )
+
+
+# ============================================================================
+# memory create: backticks and chunking
+# ============================================================================
+
+
+def test_memory_create_with_inner_backticks_single_pre() -> None:
+    """memory create with ``` in file_text must render as single pre block."""
+    result = _format_tool_call(
+        'memory',
+        json.dumps(
+            {
+                'command': 'create',
+                'path': '/memories/test',
+                'description': 'test block',
+                'file_text': (
+                    'Use the API:\n\n'
+                    '```python\nimport requests\n```\n\n'
+                    'Then configure:\n\n'
+                    '```json\n{"key": "value"}\n```'
+                ),
+            }
+        ),
+    )
+    assert isinstance(result, str)
+
+    chunks = markdown_to_telegram(result)
+    for _, entities in chunks:
+        pre_entities = [e for e in entities if e.type == 'pre']
+        assert len(pre_entities) <= 1, (
+            f'Inner backticks broke fence: {len(pre_entities)} pre entities'
+        )
+
+
+def test_memory_create_large_content_chunks_within_limit() -> None:
+    """Large memory create file_text must split and stay within limit."""
+    file_text = '\n'.join(f'line {i}: content here' for i in range(300))
+
+    result = _format_tool_call(
+        'memory',
+        json.dumps(
+            {
+                'command': 'create',
+                'path': '/memories/large_block',
+                'description': 'large block',
+                'file_text': file_text,
+            }
+        ),
+    )
+    assert isinstance(result, str)
+
+    chunks = markdown_to_telegram(result)
+    assert len(chunks) >= 2, 'Expected large content to split'
+    _assert_all_chunks_within_limit(chunks)
+
+
+# ============================================================================
+# archival_memory_insert: backticks and chunking
+# ============================================================================
+
+
+def test_archival_insert_with_inner_backticks_single_pre() -> None:
+    """archival_memory_insert with ``` in content must render as single pre."""
+    result = _format_tool_call(
+        'archival_memory_insert',
+        json.dumps(
+            {
+                'content': (
+                    'Use the API:\n\n'
+                    '```python\nimport requests\n```\n\n'
+                    'Then configure:\n\n'
+                    '```json\n{"key": "value"}\n```'
+                ),
+                'tags': ['test'],
+            }
+        ),
+    )
+    assert isinstance(result, str)
+
+    chunks = markdown_to_telegram(result)
+    for _, entities in chunks:
+        pre_entities = [e for e in entities if e.type == 'pre']
+        assert len(pre_entities) <= 1, (
+            f'Inner backticks broke fence: {len(pre_entities)} pre entities'
+        )
+
+
+def test_archival_insert_large_content_chunks_within_limit() -> None:
+    """Large archival_memory_insert must split and stay within limit."""
+    content = '\n'.join(f'line {i}: archival content' for i in range(300))
+
+    result = _format_tool_call(
+        'archival_memory_insert',
+        json.dumps({'content': content}),
+    )
+    assert isinstance(result, str)
+
+    chunks = markdown_to_telegram(result)
+    assert len(chunks) >= 2, 'Expected large content to split'
+    _assert_all_chunks_within_limit(chunks)

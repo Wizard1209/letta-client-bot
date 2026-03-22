@@ -473,7 +473,7 @@ def _format_archival_memory_insert(args_obj: dict[str, Any]) -> str:
         formatted_tags = ', '.join(tags)
         parts.append(f'**Tags:** {formatted_tags}\n')
 
-    parts.append(f'**Content:**\n{content_text}')
+    parts.append(f'**Content:**\n{_make_code_fence(content_text)}')
 
     return ''.join(parts)
 
@@ -598,7 +598,7 @@ def _format_memory_create(args_obj: dict[str, Any]) -> str:
         parts.append(f'**Description:** "{description}"\n')
 
     if file_text:
-        parts.append(f'**Initial content:**\n{file_text}')
+        parts.append(f'**Initial content:**\n{_make_code_fence(file_text)}')
 
     return ''.join(parts)
 
