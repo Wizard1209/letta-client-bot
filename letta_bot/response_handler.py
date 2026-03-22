@@ -524,7 +524,7 @@ def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> str
 
     parts = ['*📝 Updating memory block...*\n']
     parts.append(f'**Path:** {path}\n')
-    parts.append(insert_text)
+    parts.append(_make_code_fence(insert_text))
 
     return ''.join(parts)
 
