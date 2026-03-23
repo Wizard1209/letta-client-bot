@@ -242,6 +242,13 @@ async def send_to_agent(
 
     handler: AgentStreamHandler | None = None
 
+    LOGGER.debug(
+        'send_to_agent: agent=%s, tg_id=%d, parts=%d',
+        agent_id,
+        message.from_user.id,
+        len(content_parts),
+    )
+
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
             for _iteration in range(max_approval_iterations):
@@ -268,6 +275,11 @@ async def send_to_agent(
 
                 # No approval request — agent finished
                 if handler.approval_request is None:
+                    LOGGER.debug(
+                        'send_to_agent: done agent=%s, tg_id=%d',
+                        agent_id,
+                        message.from_user.id,
+                    )
                     return
 
                 # Process approval request and continue loop
@@ -1120,6 +1132,11 @@ async def handle_text(message: Message, bot: Bot, agent_id: str) -> None:
 
     This handler must be registered LAST as it has no content type filter.
     """
+    LOGGER.debug(
+        'handle_text: tg_id=%d, agent=%s',
+        message.from_user.id,  # type: ignore[union-attr]
+        agent_id,
+    )
     ctx = init_message_context(message)
 
     # Add text content

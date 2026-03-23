@@ -753,9 +753,11 @@ class AgentStreamHandler:
         """
         # Guard: Do nothing for events without message_type
         if not hasattr(event, 'message_type'):
+            LOGGER.debug('Stream event without message_type: %s', type(event).__name__)
             return
 
         message_type = event.message_type
+        LOGGER.debug('Stream event: %s', message_type)
 
         # Phase 1: Progress indicator (state management)
         if message_type == 'ping':
