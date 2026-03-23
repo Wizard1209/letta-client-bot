@@ -96,7 +96,8 @@ async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=getattr(logging, CONFIG.logging_level), stream=sys.stdout)
+    log_level = getattr(logging, CONFIG.logging_level)
+    logging.basicConfig(level=log_level, stream=sys.stdout, force=True)
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--polling', action='store_true', help='Enable polling mode.')
