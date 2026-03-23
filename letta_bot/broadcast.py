@@ -25,8 +25,7 @@ async def notify_admins(bot: Bot, **kwargs) -> None:  # type: ignore[no-untyped-
                 await bot.send_message(admin_id, **kwargs)
             except TelegramBadRequest:
                 LOGGER.warning(
-                    'Admin %d has not started the bot yet, '
-                    'skipping notification',
+                    'Admin %d has not started the bot yet, skipping notification',
                     admin_id,
                 )
 

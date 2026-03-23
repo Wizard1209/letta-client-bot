@@ -64,8 +64,7 @@ async def register_commands(bot: Bot) -> None:
             registered += 1
         except TelegramBadRequest:
             LOGGER.warning(
-                'Admin %d has not started the bot yet, '
-                'skipping command registration',
+                'Admin %d has not started the bot yet, skipping command registration',
                 admin_id,
             )
     LOGGER.info(
