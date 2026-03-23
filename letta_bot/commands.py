@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import (
     BotCommand,
     BotCommandScopeAllPrivateChats,
@@ -62,9 +62,9 @@ async def register_commands(bot: Bot) -> None:
                 scope=BotCommandScopeChat(chat_id=admin_id),
             )
             registered += 1
-        except TelegramBadRequest:
+        except (TelegramBadRequest, TelegramForbiddenError):
             LOGGER.warning(
-                'Admin %d has not started the bot yet, skipping command registration',
+                'Admin %d unreachable (not started or blocked), skipping',
                 admin_id,
             )
     LOGGER.info(
