@@ -7,6 +7,7 @@ This module handles:
 4. Sending responses to users
 """
 
+import contextlib
 from datetime import datetime, timedelta
 import difflib
 from itertools import islice
@@ -836,7 +837,9 @@ class AgentStreamHandler:
             try:
                 await self.ping_message.edit_text(ping_text)
             except Exception:
-                # Message gone (deleted by user, etc.) — create fresh
+                # Edit failed — delete stale message before creating fresh
+                with contextlib.suppress(Exception):
+                    await self.ping_message.delete()
                 self.ping_message = await self.telegram_message.answer(ping_text)
 
     async def _delete_ping(self) -> None:
