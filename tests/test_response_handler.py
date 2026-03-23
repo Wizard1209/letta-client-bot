@@ -178,10 +178,7 @@ def test_tool_diff_with_inner_backticks_single_pre() -> None:
     assert isinstance(result, str)
 
     chunks = markdown_to_telegram(result)
-    pre_count = sum(
-        len([e for e in entities if e.type == 'pre'])
-        for _, entities in chunks
-    )
+    pre_count = sum(len([e for e in entities if e.type == 'pre']) for _, entities in chunks)
     assert pre_count == 1, (
         f'Expected exactly 1 pre entity across all chunks, got {pre_count}'
     )

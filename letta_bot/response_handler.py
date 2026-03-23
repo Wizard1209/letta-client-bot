@@ -7,6 +7,7 @@ This module handles:
 4. Sending responses to users
 """
 
+import contextlib
 from datetime import datetime, timedelta
 import difflib
 from itertools import islice
@@ -739,14 +740,13 @@ class AgentStreamHandler:
         self.has_assistant_message = False
 
     async def handle_event(self, event: LettaStreamingResponse) -> None:
-        """Process event
+        """Process event via ping state machine.
 
-        Event order during streaming:
-        1. Ping indicators (progress updates)
-        2. Tool calls and reasoning (processing)
-        3. Assistant message (final response)
-
-        Only assistant_message clears ping state.
+        States: IDLE ↔ PINGING
+        - IDLE + ping → create ⏳ → PINGING
+        - PINGING + ping → edit ⏳ → PINGING
+        - PINGING + content → delete ⏳, send content → IDLE
+        - IDLE + content → send content → IDLE
 
         Args:
             event: Stream event from Letta API
@@ -757,12 +757,18 @@ class AgentStreamHandler:
 
         message_type = event.message_type
 
-        # Phase 1: Progress indicator (state management)
+        # Ping: progress indicator (IDLE→PINGING or PINGING→PINGING)
         if message_type == 'ping':
             await self._handle_ping()
             return
 
-        # Phase 2: Processing content (reasoning, tool calls, system alerts)
+        # Silent events — no user-facing output, no state change
+        if message_type in ('stop_reason', 'usage_statistics'):
+            return
+
+        # Any content event: delete ping first (PINGING→IDLE)
+        await self._delete_ping()
+
         if message_type == 'reasoning_message':
             reasoning_text = getattr(event, 'reasoning', '')
             if reasoning_text:
@@ -813,43 +819,40 @@ class AgentStreamHandler:
                         await _send_error_message(self.telegram_message, e, str(formatted))
             return
 
-        # Silent events — no user-facing output
-        if message_type in ('stop_reason', 'usage_statistics'):
-            return
-
-        # Phase 3: Final response (clears ping state)
+        # Final response
         if message_type == 'assistant_message':
             raw_content = getattr(event, 'content', '').strip()
             if raw_content:
                 await send_markdown_message(self.telegram_message, raw_content)
                 self.has_assistant_message = True
-                self._clear_ping_state()
 
     async def _handle_ping(self) -> None:
-        """Handle ping events with state management."""
+        """Handle ping events (IDLE→PINGING or PINGING→PINGING)."""
         self.ping_count += 1
         ping_text = '⏳' * self.ping_count
 
         if self.ping_message is None:
-            # First ping: Send new message
             self.ping_message = await self.telegram_message.answer(ping_text)
         else:
-            # Subsequent pings: Edit to add more hourglasses
             try:
                 await self.ping_message.edit_text(ping_text)
-            except Exception as e:
-                LOGGER.warning(f'Failed to edit ping message: {e}')
+            except Exception:
+                # Edit failed — delete stale message before creating fresh
+                with contextlib.suppress(Exception):
+                    await self.ping_message.delete()
+                self.ping_message = await self.telegram_message.answer(ping_text)
+
+    async def _delete_ping(self) -> None:
+        """Delete ping message and reset state (PINGING→IDLE)."""
+        if self.ping_message is None:
+            return
+        try:
+            await self.ping_message.delete()
+        except Exception as e:
+            LOGGER.warning('Failed to delete ping message: %s', e)
+        self.ping_message = None
+        self.ping_count = 0
 
     async def cleanup_ping(self) -> None:
-        """Delete hanging ping message (e.g. after connection interruption)."""
-        if self.ping_message is not None:
-            try:
-                await self.ping_message.delete()
-            except Exception as e:
-                LOGGER.warning('Failed to delete ping message: %s', e)
-            self._clear_ping_state()
-
-    def _clear_ping_state(self) -> None:
-        """Reset ping tracking state."""
-        self.ping_count = 0
-        self.ping_message = None
+        """Public API for error handlers in agent.py."""
+        await self._delete_ping()
