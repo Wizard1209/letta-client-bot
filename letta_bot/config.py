@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import ValidationError, field_validator
+from pydantic import AliasChoices, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,7 +20,9 @@ class Config(BaseSettings):
 
     # Webhook listener
     backend_host: str = '0.0.0.0'
-    backend_port: int = 80
+    backend_port: int = Field(
+        default=80, validation_alias=AliasChoices('backend_port', 'port')
+    )
 
     admin_ids: list[int] | None = None
 

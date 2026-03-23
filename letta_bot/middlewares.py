@@ -390,8 +390,7 @@ class UserMiddleware(BaseMiddleware):
             user = await upsert_user_cached(gel_client, **user_model)
 
         data['user'] = user
-
-        # LOGGER.info(f'User upserted: {user.id}') #
+        LOGGER.debug('UserMiddleware: upserted tg_id=%d', from_user.id)
 
         return await handler(event, data)
 
@@ -429,6 +428,7 @@ class IdentityMiddleware(BaseMiddleware):
 
         # Authorization - check if user has allowed identity
         if not await get_allowed_identity_query(gel_client, telegram_id=telegram_id):
+            LOGGER.debug('IdentityMiddleware: denied tg_id=%d', telegram_id)
             await event.answer(
                 **Text('❌ No access — use /new or /access to request').as_kwargs()
             )
@@ -441,6 +441,7 @@ class IdentityMiddleware(BaseMiddleware):
 
         # Inject identity into handler data
         data['identity'] = cast(GetIdentityResult, identity_list[0])
+        LOGGER.debug('IdentityMiddleware: allowed tg_id=%d', telegram_id)
 
         return await handler(event, data)
 
@@ -496,6 +497,7 @@ class AgentMiddleware(BaseMiddleware):
             try:
                 agent_id = await get_oldest_agent_by_user(telegram_id)
             except IndexError:
+                LOGGER.debug('AgentMiddleware: no agents for tg_id=%d', telegram_id)
                 await event.answer(
                     **Text('❌ No assistants yet — use /new to request one').as_kwargs()
                 )
@@ -527,6 +529,7 @@ class AgentMiddleware(BaseMiddleware):
 
         # 5. INJECT
         data['agent_id'] = agent.id
+        LOGGER.debug('AgentMiddleware: resolved tg_id=%d, agent=%s', telegram_id, agent.id)
         return await handler(event, data)
 
 
