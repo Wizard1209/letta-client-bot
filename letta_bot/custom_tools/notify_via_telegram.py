@@ -121,11 +121,11 @@ def notify_via_telegram(
     # Escape MarkdownV2 special characters
     escaped = re.sub(r'([_*\[\]()~`>#+=|{}.!-])', r'\\\1', message)
 
-    # Telegram counts UTF-16 code units, not Python len()
     msg_len = len(escaped.encode('utf-16-le')) // 2
     if msg_len > 4096:
+        orig_len = len(message.encode('utf-16-le')) // 2
         return (
-            f'Error: message is {msg_len} characters (UTF-16), '
+            f'Error: escaped message is {msg_len} UTF-16 chars (original: {orig_len}), '
             f'Telegram limit is 4096. Shorten your message and try again.'
         )
 
