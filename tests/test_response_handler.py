@@ -8,6 +8,7 @@ Covers:
 
 import json
 
+from aiogram.types import MessageEntity
 from aiogram.utils.formatting import Italic
 
 from letta_bot.response_handler import (
@@ -23,7 +24,7 @@ MAX_CHUNK_LENGTH = DEFAULT_CONFIG.max_chunk_length
 
 
 def _assert_all_chunks_within_limit(
-    chunks: list[tuple[str, list[object]]],
+    chunks: list[tuple[str, list[MessageEntity]]],
 ) -> None:
     """Verify all chunks respect Telegram's 4096 limit and entity bounds."""
     for i, (text, entities) in enumerate(chunks):
@@ -32,8 +33,8 @@ def _assert_all_chunks_within_limit(
             f'Chunk {i} exceeds limit: {text_len} > {MAX_CHUNK_LENGTH}'
         )
         for entity in entities:
-            assert entity.offset + entity.length <= text_len, (  # type: ignore[union-attr]
-                f'Chunk {i} entity {entity.type} out of bounds'  # type: ignore[union-attr]
+            assert entity.offset + entity.length <= text_len, (
+                f'Chunk {i} entity {entity.type} out of bounds'
             )
 
 

@@ -4,7 +4,7 @@ import contextlib
 from dataclasses import dataclass, field
 import logging
 import time
-from typing import cast
+from typing import Literal, cast
 
 from aiogram import BaseMiddleware, Dispatcher
 from aiogram.dispatcher.flags import get_flag
@@ -117,7 +117,17 @@ class PhotoBuffer:
 # Agent Resolution Helpers
 # =============================================================================
 
-AGENT_INCLUDE = ['agent.tags', 'agent.secrets']
+_AgentInclude = Literal[
+    'agent.blocks',
+    'agent.identities',
+    'agent.managed_group',
+    'agent.pending_approval',
+    'agent.secrets',
+    'agent.sources',
+    'agent.tags',
+    'agent.tools',
+]
+AGENT_INCLUDE: list[_AgentInclude] = ['agent.tags', 'agent.secrets']
 
 
 async def _validate_selected_agent(
@@ -132,7 +142,7 @@ async def _validate_selected_agent(
     try:
         agent = await client.agents.retrieve(
             agent_id,
-            include=AGENT_INCLUDE,  # type: ignore[arg-type]
+            include=AGENT_INCLUDE,
         )
     except NotFoundError:
         return None
@@ -504,7 +514,7 @@ class AgentMiddleware(BaseMiddleware):
                 return None
             agent = await client.agents.retrieve(
                 agent_id,
-                include=AGENT_INCLUDE,  # type: ignore[arg-type]
+                include=AGENT_INCLUDE,
             )
             selection_changed = True
 

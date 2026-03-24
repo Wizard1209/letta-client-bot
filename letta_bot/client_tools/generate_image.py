@@ -410,9 +410,9 @@ async def generate_image(
                 'type': 'text',
                 'text': (
                     '<additional-tool-result tool="generate_image">'
-                    f'<generated_image file_id="{FILE_ID_PLACEHOLDER}">'
+                    f'<generated-image file_id="{FILE_ID_PLACEHOLDER}">'
                     'Image generation result attached'
-                    '</generated_image>'
+                    '</generated-image>'
                     '</additional-tool-result>'
                 ),
             },
