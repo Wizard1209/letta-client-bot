@@ -945,9 +945,7 @@ async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
             # Update status message to show upload complete
             await status_msg.edit_text(**Text(f'✅ Uploaded "{file_name}"').as_kwargs())
 
-            ctx.add_text(
-                f'<system_message>File "{file_name}" ready (id: {file_id})</system_message>'
-            )
+            ctx.add_text(f'<system>File "{file_name}" ready (id: {file_id})</system>')
 
         except FileTooLargeError as e:
             await message.answer(**Text(f'📄 {e}').as_kwargs())
@@ -955,7 +953,7 @@ async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
 
         except (DocumentProcessingError, LettaProcessingError) as e:
             LOGGER.warning('Document processing failed: %s, telegram_id=%s', e, user_id)
-            ctx.add_text(f'<system_message>File error: {e}</system_message>')
+            ctx.add_text(f'<system>File error: {e}</system>')
 
         except APIError as e:
             status = getattr(e, 'status_code', 'unknown')
@@ -966,9 +964,7 @@ async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
                 body,
                 user_id,
             )
-            ctx.add_text(
-                f'<system_message>File error: status={status}, body={body}</system_message>'
-            )
+            ctx.add_text(f'<system>File error: status={status}, body={body}</system>')
 
     # Send to agent if we have content
     content_parts = ctx.build_content_parts()
@@ -1023,7 +1019,7 @@ async def handle_album(
     # If all images failed, add error context
     if successful_count == 0 and results:
         ctx.prepend_text(
-            '<image_processing_error>Failed to process all images</image_processing_error>'
+            '<image-processing-error>Failed to process all images</image-processing-error>'
         )
 
     # Add file_id annotations for agent to reference via client tools
@@ -1059,7 +1055,7 @@ async def handle_audio(message: Message, bot: Bot, agent_id: str) -> None:
         ctx.add_text(caption)
 
     # Determine tag based on content type
-    tag = 'voice_transcript' if message.voice else 'audio_transcript'
+    tag = 'voice-transcript' if message.voice else 'audio-transcript'
 
     try:
         transcript = await transcription_service.transcribe_message_content(bot, message)
@@ -1071,7 +1067,7 @@ async def handle_audio(message: Message, bot: Bot, agent_id: str) -> None:
             e,
             message.from_user.id,
         )
-        ctx.add_text(f'<{tag}_error>{e}</{tag}_error>')
+        ctx.add_text(f'<{tag}-error>{e}</{tag}-error>')
 
     # Send to agent
     content_parts = ctx.build_content_parts()
@@ -1107,7 +1103,7 @@ async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> N
             e,
             message.from_user.id,
         )
-        ctx.prepend_text(f'<sticker_processing_error>{e}</sticker_processing_error>')
+        ctx.prepend_text(f'<sticker-processing-error>{e}</sticker-processing-error>')
 
     # Send to agent
     content_parts = ctx.build_content_parts()
@@ -1132,9 +1128,10 @@ async def handle_text(message: Message, bot: Bot, agent_id: str) -> None:
 
     This handler must be registered LAST as it has no content type filter.
     """
+    assert message.from_user, 'from_user required (guaranteed by middleware)'
     LOGGER.debug(
         'handle_text: tg_id=%d, agent=%s',
-        message.from_user.id,  # type: ignore[union-attr]
+        message.from_user.id,
         agent_id,
     )
     ctx = init_message_context(message)

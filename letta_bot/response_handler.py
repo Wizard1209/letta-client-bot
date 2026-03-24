@@ -28,6 +28,7 @@ from aiogram.utils.formatting import (
 )
 from letta_client.types.agents import ApprovalRequestMessage
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
+from letta_client.types.agents.tool_call_message import ToolCallMessage
 
 from letta_bot.client_tools import extract_tool_calls
 from letta_bot.utils import merge_with_entity
@@ -134,17 +135,17 @@ def _format_tool_call(tool_name: str, arguments: str) -> dict[str, Any] | str | 
 
 
 def _format_tool_call_message(
-    event: LettaStreamingResponse,
+    event: ToolCallMessage | ApprovalRequestMessage,
 ) -> dict[str, Any] | str | None:
     """Format tool call message from a stream event.
 
     Thin wrapper around ``_format_tool_call`` that extracts fields from
     the streaming event.
     """
-    tool_call = event.tool_call  # type: ignore[union-attr]
-    name: str = tool_call.name  # type: ignore[assignment]
-    arguments: str = tool_call.arguments  # type: ignore[assignment]
-    return _format_tool_call(name, arguments)
+    tool_call = event.tool_call
+    if not tool_call.name or not tool_call.arguments:
+        return None
+    return _format_tool_call(tool_call.name, tool_call.arguments)
 
 
 def _format_tool_by_name(
@@ -781,6 +782,7 @@ class AgentStreamHandler:
             return
 
         if message_type == 'tool_call_message':
+            assert isinstance(event, ToolCallMessage)
             formatted_content = _format_tool_call_message(event)
             if formatted_content:
                 try:
@@ -807,8 +809,9 @@ class AgentStreamHandler:
 
         # Approval request: store and format tool calls for user
         if message_type == 'approval_request_message':
-            self.approval_request = event  # type: ignore[assignment]
-            tool_calls = extract_tool_calls(event)  # type: ignore[arg-type]
+            assert isinstance(event, ApprovalRequestMessage)
+            self.approval_request = event
+            tool_calls = extract_tool_calls(event)
             for tc in tool_calls:
                 formatted = _format_tool_call(tc.name, tc.arguments)
                 if formatted:

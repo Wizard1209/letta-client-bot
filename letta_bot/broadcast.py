@@ -1,6 +1,7 @@
 """Bot-level messaging: admin notifications and user broadcasts."""
 
 import logging
+from typing import Any
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
@@ -10,7 +11,7 @@ from letta_bot.config import CONFIG
 LOGGER = logging.getLogger(__name__)
 
 
-async def notify_admins(bot: Bot, **kwargs) -> None:  # type: ignore[no-untyped-def]  # noqa: ANN003
+async def notify_admins(bot: Bot, **kwargs: Any) -> None:  # noqa: ANN401
     """Send notification message to all configured admins.
 
     Accepts kwargs from aiogram formatting utilities (.as_kwargs()).
