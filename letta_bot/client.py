@@ -9,7 +9,6 @@ Isolating the client here prevents circular import issues.
 """
 
 from collections.abc import AsyncIterator
-from contextlib import suppress
 from dataclasses import dataclass
 import logging
 import random
@@ -262,27 +261,25 @@ async def get_or_create_agent_folder(agent_id: str, telegram_id: int) -> str:
     """
     folder_name = f'uploads-{agent_id}'
 
-    # Check if agent already has the uploads folder attached
-    async for folder in client.agents.folders.list(agent_id=agent_id):
-        if folder.name == folder_name:
-            return folder.id
+    # Check if folder already exists by name (project-scoped, not agent-scoped)
+    async for folder in client.folders.list(name=folder_name):
+        return folder.id
 
-    # Create and attach new folder with metadata
+    # Create new folder with metadata
     metadata: dict[str, object] = {
         'owner-tg': str(telegram_id),
     }
     try:
         new_folder = await client.folders.create(name=folder_name, metadata=metadata)
-        await client.agents.folders.attach(folder_id=new_folder.id, agent_id=agent_id)
-        return new_folder.id
     except ConflictError:
         # Race condition: folder was created by parallel request
-        # Find by name and attach (suppress ConflictError if already attached)
         async for existing in client.folders.list(name=folder_name):
-            with suppress(ConflictError):
-                await client.agents.folders.attach(folder_id=existing.id, agent_id=agent_id)
             return existing.id
         raise
+
+    # Attach folder to agent via agent update
+    await client.agents.update(agent_id=agent_id, folder_ids=[new_folder.id])
+    return new_folder.id
 
 
 async def upload_file_to_folder(

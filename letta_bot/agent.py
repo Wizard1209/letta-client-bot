@@ -254,11 +254,13 @@ async def send_to_agent(
             for _iteration in range(max_approval_iterations):
                 handler = AgentStreamHandler(message)
 
-                response_stream = await client.agents.messages.stream(
-                    agent_id=agent_id,
+                response_stream = await client.conversations.messages.create(
+                    conversation_id='default',
                     messages=messages_to_send,  # type: ignore[arg-type]
+                    streaming=True,
                     include_pings=True,
                     client_tools=client_tools,
+                    extra_body={'agent_id': agent_id},
                 )
 
                 async for event in response_stream:
