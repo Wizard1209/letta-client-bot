@@ -233,8 +233,9 @@ async def send_to_agent(
 
     assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
-    schemas = registry.get_schemas()
-    client_tools = schemas or None
+    # An explicit None serializes to `null`, which the API rejects
+    # ("client_tools: Expected array, received null"). Send the list as-is.
+    client_tools = registry.get_schemas()
 
     messages_to_send: list[LettaMessage] = [
         {'role': 'user', 'content': content_parts},
