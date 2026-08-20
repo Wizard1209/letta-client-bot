@@ -5,18 +5,21 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-  "aiogram>=3.22.0",
-  "elevenlabs>=2.31.0",
+  "aiogram>=3.30.0",
+  "elevenlabs>=2.64.0",
   "gel>=3.1.0",
-  "google-genai>=1.0.0",
-  "letta-client==1.7.0",
-  "mistune>=3.1.4",
-  "openai>=2.8.1",
-  "pydantic-settings>=2.11.0",
+  "google-genai>=2.0.0",
+  # openai 3.x ships httpx2; httpx itself is imported directly by generate_image.py
+  "httpx>=0.28",
+  "letta-client==1.12.1",
+  "mistune>=3.3.4",
+  "openai>=3.1.0",
+  "pydantic>=2.13.4",
+  "pydantic-settings>=2.15.0",
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.8.0", "mypy>=1.18.0", "pytest>=9.0.0"]
+dev = ["ruff>=0.16.3", "mypy>=2.3.1", "pytest>=9.1.1"]
 
 [tool.ruff]
 line-length = 92
@@ -31,6 +34,8 @@ exclude = [
   "letta_bot/queries/*_async_edgeql.py",
   "letta_bot/custom_tools/",
   "letta_bot/_archived/",
+  # ruff 0.16 formats Python blocks inside Markdown; keep docs hand-written.
+  "*.md",
 ]
 
 [tool.ruff.lint]
@@ -86,11 +91,6 @@ exclude = [
   "tests/",
 ]
 plugins = ['pydantic.mypy']
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-disable_error_code = ["operator", "arg-type", "var-annotated"]
 
 [[tool.mypy.overrides]]
 module = ["letta_client.*"]
