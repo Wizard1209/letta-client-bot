@@ -1,22 +1,15 @@
 **Contact & Support**
 
-We use GitHub Issues as our primary communication channel for support, bug reports, feature requests, and general questions.
+This bot is no longer under active development. The deployment keeps running, but new features are not planned and fixes are not promised.
 
-**GitHub Issues**
+**What still helps**
 
-🐛 **Report Bugs** - Found a bug or unexpected behavior? Please open an issue with details about what happened and steps to reproduce.
+🐛 **Report Bugs** - If something breaks, open an issue with what happened and how to reproduce it. It gets read, and anything that stops the bot working gets looked at.
 
-💡 **Request Features** - Have an idea for improvement? We'd love to hear it! Open a feature request to discuss.
+❓ **Ask Questions** - Open an issue if something is unclear. Answers may take a while.
 
-❓ **Ask Questions** - Need help or clarification? Don't hesitate to open an issue with your question.
-
-🤝 **Share Your Use Case** - Let us know how you're using the bot or what modifications you need.
+🍴 **Fork It** - The source is open. If you need a change, the fastest route is your own copy — the Telegram, Markdown and storage layers are not tied to any particular assistant backend.
 
 **Open an Issue**
 
-Visit our GitHub repository to get started:
 [github.com/Wizard1209/letta-client-bot](https://github.com/Wizard1209/letta-client-bot/issues)
-
-──────────────────────────────
-
-We're committed to keeping this bot flexible and adaptable for different deployments. Your feedback helps make it better for everyone!

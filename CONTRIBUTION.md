@@ -401,7 +401,7 @@ return None
 ### DEBUG
 
 **Step-by-step tracing inside one request** — middleware decisions, streaming
-chunks, document handling. Off in production.
+chunks, photo batching. Off in production.
 
 ### INFO
 
@@ -423,4 +423,4 @@ chunks, document handling. Off in production.
 
 1. MUST NOT log: passwords, API keys, tokens, credentials
 2. MUST include context: user telegram_id, request identifiers, resource IDs
-3. Use module loggers: `logger = logging.getLogger(__name__)`
+3. Use module loggers: `LOGGER = logging.getLogger(__name__)`

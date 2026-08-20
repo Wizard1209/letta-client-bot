@@ -36,3 +36,12 @@ Model usage data (your conversations) is accessible to the AI model provider use
 • Other model providers supported by Letta
 
 Each provider has their own data handling practices. Please review their privacy policies for details.
+
+**Voice and Image Services**
+
+Two kinds of message leave the bot before they ever reach your assistant:
+
+• **Voice and audio** is transcribed first. The audio file is sent to ElevenLabs if the deployment has a key for it, otherwise to OpenAI Whisper. Only the resulting text is passed on.
+• **Image generation and editing** sends your prompt — and, when you ask for an edit, the photo you sent — to whichever provider the chosen model belongs to: OpenAI, Google Gemini, or Black Forest Labs.
+
+A deployment configured without these keys never reaches those services, and the corresponding feature is simply unavailable.
