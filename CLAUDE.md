@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A multi-user Telegram bot bridging users to Letta AI agents. Built on aiogram 3.x (Telegram), Gel/EdgeDB (persistence), and the Letta SDK (AI agents). Supports multimodal input (text, images, voice, documents), agent isolation per user via tag-based identity, and an admin approval workflow for access control.
+A multi-user Telegram bot bridging users to Letta AI agents. Built on aiogram 3.x (Telegram), Gel/EdgeDB (persistence), and the Letta SDK (AI agents). Supports multimodal input (text, images, voice), agent isolation per user via tag-based identity, and an admin approval workflow for access control.
 
 ## Commands
 
@@ -42,7 +42,7 @@ Telegram → Middleware (user upsert, agent load, photo buffering)
 
 **Key modules:**
 - `client.py` — Shared async Letta client. Tag-based user-agent association (`identity-tg-{id}`, `owner-tg-{id}`, `creator-tg-{id}`) instead of Letta Identity API.
-- `agent.py` — Message context building, multimodal content, streaming response handling, file/image/voice processing.
+- `agent.py` — Message context building, multimodal content, streaming response handling, image/voice processing.
 - `response_handler.py` — Markdown→Telegram conversion via `md_tg`, message chunking (4096 char limit), streaming progressive updates.
 - `auth.py` — Identity model mapping Telegram users to `tg-{telegram_id}`, admin approval workflow for shared agents.
 - `middlewares.py` — User identity upsert, agent selection, access validation, photo batching (PhotoBuffer with ~1s delay for album support), typing indicators.

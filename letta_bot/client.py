@@ -9,23 +9,15 @@ Isolating the client here prevents circular import issues.
 """
 
 from collections.abc import AsyncIterator
-from contextlib import suppress
 from dataclasses import dataclass
 import logging
 import random
-from typing import BinaryIO, Literal
+from typing import Literal
 
-from letta_client import AsyncLetta as LettaClient, ConflictError, NotFoundError
+from letta_client import AsyncLetta as LettaClient, NotFoundError
 from letta_client.types.agent_state import AgentState
 
 from letta_bot.config import CONFIG
-
-
-class LettaProcessingError(Exception):
-    """Raised when Letta fails to process a file (parsing/embedding errors)."""
-
-    pass
-
 
 LETTA_CLIENT_TIMEOUT = 120
 
@@ -243,93 +235,3 @@ async def detach_user_from_agent(agent_id: str, telegram_id: int) -> DetachResul
     return DetachResult(
         agent_name=agent.name, was_owner=was_owner, new_owner_telegram_id=new_owner_id
     )
-
-
-# =============================================================================
-# Folder Management
-# =============================================================================
-
-
-async def get_or_create_agent_folder(agent_id: str, telegram_id: int) -> str:
-    """Get existing folder or create new one for an agent.
-
-    Args:
-        agent_id: The ID of the agent
-        telegram_id: Telegram user ID for metadata
-
-    Returns:
-        Folder ID
-    """
-    folder_name = f'uploads-{agent_id}'
-
-    # Check if agent already has the uploads folder attached
-    async for folder in client.agents.folders.list(agent_id=agent_id):
-        if folder.name == folder_name:
-            return folder.id
-
-    # Create and attach new folder with metadata
-    metadata: dict[str, object] = {
-        'owner-tg': str(telegram_id),
-    }
-    try:
-        new_folder = await client.folders.create(name=folder_name, metadata=metadata)
-        await client.agents.folders.attach(folder_id=new_folder.id, agent_id=agent_id)
-        return new_folder.id
-    except ConflictError:
-        # Race condition: folder was created by parallel request
-        # Find by name and attach (suppress ConflictError if already attached)
-        async for existing in client.folders.list(name=folder_name):
-            with suppress(ConflictError):
-                await client.agents.folders.attach(folder_id=existing.id, agent_id=agent_id)
-            return existing.id
-        raise
-
-
-async def upload_file_to_folder(
-    folder_id: str,
-    file: BinaryIO,
-) -> str:
-    """Upload file to Letta folder.
-
-    Args:
-        folder_id: Letta folder ID
-        file: File-like object with .name attribute set
-
-    Returns:
-        File ID from Letta
-
-    Raises:
-        LettaProcessingError: If Letta rejects the file
-    """
-    file_obj = await client.folders.files.upload(
-        folder_id=folder_id,
-        file=file,
-        duplicate_handling='replace',
-    )
-    # Check if upload was rejected immediately
-    if file_obj.processing_status == 'error':
-        raise LettaProcessingError(file_obj.error_message or 'Upload rejected')
-    return file_obj.id
-
-
-async def get_file_status(folder_id: str, file_id: str) -> str:
-    """Get current processing status of a file.
-
-    Args:
-        folder_id: Letta folder ID
-        file_id: Letta file ID
-
-    Returns:
-        Processing status string (pending, parsing, embedding, completed)
-
-    Raises:
-        NotFoundError: If file not found
-        ValueError: If file has no processing status
-        LettaProcessingError: If Letta failed to process the file
-    """
-    file_obj = await client.folders.files.retrieve(file_id, folder_id=folder_id)
-    if file_obj.processing_status is None:
-        raise ValueError(f'File {file_id} has no processing status')
-    if file_obj.processing_status == 'error':
-        raise LettaProcessingError(file_obj.error_message or 'Unknown processing error')
-    return file_obj.processing_status

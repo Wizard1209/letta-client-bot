@@ -99,6 +99,13 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ## Planned features
 
+### Blocked on the platform
+
+- Documents. Uploading needs a file store that parses, chunks and reports
+  processing status — properties F2-F5 in `docs/harness-spec.html`. Letta's was
+  retired, every route behind `client.folders` now answers 400, and the bot
+  declines documents instead.
+
 ### Very High Priority
 
 ### High Priority

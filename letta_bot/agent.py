@@ -16,20 +16,12 @@ from letta_client import APIError
 
 from letta_bot.client import (
     DetachResult,
-    LettaProcessingError,
     client,
     detach_user_from_agent,
     list_agents_by_user,
     validate_agent_access,
 )
 from letta_bot.client_tools import LettaMessage, registry, resolve_approval
-from letta_bot.documents import (
-    DocumentProcessingError,
-    FileTooLargeError,
-    file_processing_tracker,
-    process_telegram_document,
-    wait_for_file_processing,
-)
 from letta_bot.images import (
     ContentPart,
     ImageContentPart,
@@ -909,68 +901,26 @@ async def handle_detach_confirm(
 
 @agent_router.message(F.document, flags={'require_identity': True, 'require_agent': True})
 async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
-    """Handle document uploads with per-user concurrency control."""
-    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
-    assert message.document, 'document required (guaranteed by F.document filter)'
+    """Decline the document and pass the request on without it.
 
-    user_id = message.from_user.id
+    Letta retired the folders API this used to upload into, so there is
+    nowhere to put the file. The caption still reaches the agent, and the
+    agent is told the file did not arrive so it can answer without it.
+    """
+    await message.answer(
+        **Text('📄 Documents are not supported. Send the text itself.').as_kwargs()
+    )
+
     ctx = init_message_context(message)
+    ctx.add_text(
+        '<system>User sent a file; it was rejected and never reached you.</system>'
+    )
 
-    # Add caption if present (before document processing)
     caption = build_caption(message)
     if caption:
         ctx.add_text(caption)
 
-    async with file_processing_tracker.acquire(user_id) as acquired:
-        if not acquired:
-            await message.answer(
-                **Text('📄 Wait for the previous file to finish processing.').as_kwargs()
-            )
-            return
-
-        try:
-            file_name = message.document.file_name or 'document'
-            status_msg = await message.answer(
-                **Text(f'📄 Uploading "{file_name}"...').as_kwargs()
-            )
-
-            result = await process_telegram_document(
-                bot, message.document, agent_id, user_id
-            )
-            # Wait for Letta to process the file
-            await wait_for_file_processing(result['folder_id'], result['file_id'])
-
-            file_name = result['file_name']
-            file_id = result['file_id']
-
-            # Update status message to show upload complete
-            await status_msg.edit_text(**Text(f'✅ Uploaded "{file_name}"').as_kwargs())
-
-            ctx.add_text(f'<system>File "{file_name}" ready (id: {file_id})</system>')
-
-        except FileTooLargeError as e:
-            await message.answer(**Text(f'📄 {e}').as_kwargs())
-            return
-
-        except (DocumentProcessingError, LettaProcessingError) as e:
-            LOGGER.warning('Document processing failed: %s, telegram_id=%s', e, user_id)
-            ctx.add_text(f'<system>File error: {e}</system>')
-
-        except APIError as e:
-            status = getattr(e, 'status_code', 'unknown')
-            body = getattr(e, 'body', 'no body')
-            LOGGER.warning(
-                'Document processing failed: status=%s, body=%s, telegram_id=%s',
-                status,
-                body,
-                user_id,
-            )
-            ctx.add_text(f'<system>File error: status={status}, body={body}</system>')
-
-    # Send to agent if we have content
-    content_parts = ctx.build_content_parts()
-    if content_parts:
-        await send_to_agent(message, bot, agent_id, content_parts)
+    await send_to_agent(message, bot, agent_id, ctx.build_content_parts())
 
 
 @agent_router.message(F.photo, flags={'require_identity': True, 'require_agent': True})

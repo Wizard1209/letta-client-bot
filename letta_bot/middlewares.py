@@ -564,14 +564,13 @@ def setup_middlewares(dp: Dispatcher) -> None:
     dp.message.outer_middleware.register(UserMiddleware())
     dp.callback_query.outer_middleware.register(UserMiddleware())
 
-    # Document rate limiting (1 per 10s per user)
+    # Document rate limiting (1 per 10s per user) - each one still costs an agent turn
     dp.message.middleware(
         RateLimitMiddleware(
             max_requests=1,
             window_seconds=10.0,
             predicate=lambda e: isinstance(e, Message) and bool(e.document),
-            message="📄 Your document accepted, we can't process more documents"
-            ' for {wait}s.',
+            message='📄 Too many files. Wait {wait}s.',
         )
     )
 
