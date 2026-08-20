@@ -6,14 +6,15 @@ loaded as a Letta custom tool via source_code registration.
 This tool enables agents to view their scheduled messages using Letta's
 native scheduling API.
 
-Uses injected Letta context:
-- `client`: Letta SDK client (injected by runtime as global)
-- `LETTA_AGENT_ID`: Agent's own ID (available via os.getenv, injected by runtime)
+Reads from the tool execution environment:
+- `LETTA_AGENT_ID`: Agent's own ID, injected by the runtime
+- `LETTA_API_KEY`: from the agent's `secrets`, used to build a Letta client
 """
 
 import os
 from typing import Union
 
+from letta_client import Letta
 from letta_client._models import BaseModel
 
 
@@ -69,9 +70,8 @@ def list_scheduled_messages() -> str:
 
     Use this to check what reminders or recurring tasks are currently active.
 
-    Injected by Letta runtime:
-    - client: Letta SDK client for API calls
-    - LETTA_AGENT_ID: This agent's ID
+    LETTA_API_KEY must be set in the agent's secrets.
+    LETTA_AGENT_ID is injected by the runtime.
 
     Returns:
         str: Formatted list of scheduled messages, or message if none exist
@@ -82,12 +82,18 @@ def list_scheduled_messages() -> str:
     if not agent_id:
         return 'Error: LETTA_AGENT_ID not available in execution environment'
 
+    # The injected `client` is None without LETTA_API_KEY — build our own.
+    api_key = os.environ.get('LETTA_API_KEY')
+    if not api_key:
+        return 'Error: LETTA_API_KEY is not set in the agent secrets'
+    client = Letta(api_key=api_key)
+
     try:
         # Try SDK method first, fall back to direct API call
         try:
-            response = client.agents.schedule.list(agent_id=agent_id)  # type: ignore[name-defined]
+            response = client.agents.schedule.list(agent_id=agent_id)
         except AttributeError:
-            response = client.get(  # type: ignore[name-defined]
+            response = client.get(
                 f'/v1/agents/{agent_id}/schedule',
                 cast_to=ScheduleListResponse,
             )
@@ -122,7 +128,5 @@ def list_scheduled_messages() -> str:
 
         return '\n'.join(lines)
 
-    except NameError:
-        return 'Error: Letta client not available in execution environment'
     except Exception as e:
         return f'Error listing scheduled messages: {str(e)}'

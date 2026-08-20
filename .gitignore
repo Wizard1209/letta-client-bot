@@ -91,3 +91,6 @@ letta-telegram-reference
 
 # local subprojects
 evals/
+
+# lab: letta agent instruction testbed
+lab/

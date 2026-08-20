@@ -7,14 +7,15 @@ This tool enables agents to schedule messages to themselves using Letta's
 native scheduling API. Supports one-time (delay or timestamp) and recurring
 (cron expression) schedules.
 
-Uses injected Letta context:
-- `client`: Letta SDK client (injected by runtime as global)
-- `LETTA_AGENT_ID`: Agent's own ID (available via os.getenv, injected by runtime)
+Reads from the tool execution environment:
+- `LETTA_AGENT_ID`: Agent's own ID, injected by the runtime
+- `LETTA_API_KEY`: from the agent's `secrets`, used to build a Letta client
 """
 
 from datetime import datetime, timedelta, timezone
 import os
 
+from letta_client import Letta
 from letta_client._models import BaseModel
 
 
@@ -46,9 +47,8 @@ def schedule_message(
     Cron expression format (5 fields):
         minute (0-59) | hour (0-23) | day of month (1-31) | month (1-12) | day of week (0-6, 0=Sunday)
 
-    Injected by Letta runtime:
-    - client: Letta SDK client for API calls
-    - LETTA_AGENT_ID: This agent's ID (for self-messaging)
+    LETTA_API_KEY must be set in the agent's secrets.
+    LETTA_AGENT_ID is injected by the runtime.
 
     Args:
         message_to_self (str): The message to send to yourself after the delay/at scheduled time
@@ -65,6 +65,12 @@ def schedule_message(
     if not agent_id:
         return 'Error: LETTA_AGENT_ID not available in execution environment'
 
+    # The injected `client` is None without LETTA_API_KEY — build our own.
+    api_key = os.environ.get('LETTA_API_KEY')
+    if not api_key:
+        return 'Error: LETTA_API_KEY is not set in the agent secrets'
+    client = Letta(api_key=api_key)
+
     # Validate scheduling parameters - exactly one must be provided
     has_delay = delay_seconds > 0
     has_timestamp = schedule_at != ''
@@ -77,9 +83,10 @@ def schedule_message(
     if method_count > 1:
         return 'Error: Cannot provide multiple scheduling methods - choose only one'
 
-    # Calculate timing information
+    # Calculate timing information. `delivery_at` is when the message actually
+    # arrives; recurring schedules have no single such moment.
     now_utc = datetime.now(timezone.utc)
-    scheduled_at_str = now_utc.strftime('%Y-%m-%d %H:%M UTC')
+    delivery_at: datetime | None = None
 
     # Build schedule configuration
     if has_cron:
@@ -117,6 +124,8 @@ def schedule_message(
             'scheduled_at': unix_ms,
         }
 
+        delivery_at = expected_arrival
+
         # Preserve user's timezone from schedule_at
         tz_label = expected_arrival.strftime('%Z') or expected_arrival.strftime('%z')
         expected_at_str = expected_arrival.strftime(f'%Y-%m-%d %H:%M {tz_label}')
@@ -128,7 +137,8 @@ def schedule_message(
             return 'Error: delay_seconds must be a positive integer'
 
         # Calculate target time
-        unix_ms = int((now_utc.timestamp() + delay_seconds) * 1000)
+        delivery_at = now_utc + timedelta(seconds=delay_seconds)
+        unix_ms = int(delivery_at.timestamp() * 1000)
 
         schedule_config = {
             'type': 'one-time',
@@ -149,7 +159,7 @@ def schedule_message(
     try:
         # Try SDK method first, fall back to direct API call
         try:
-            response = client.agents.schedule.create(  # type: ignore[name-defined]
+            response = client.agents.schedule.create(
                 agent_id=agent_id,
                 schedule=schedule_config,
                 messages=messages_payload,
@@ -157,20 +167,20 @@ def schedule_message(
             schedule_id = response.id
         except AttributeError:
             # SDK doesn't have schedule method - use direct API call
-            response = client.post(  # type: ignore[name-defined]
+            response = client.post(
                 f'/v1/agents/{agent_id}/schedule',
                 body={'messages': messages_payload, 'schedule': schedule_config},
                 cast_to=ScheduleResponse,
             )
             schedule_id = response.id
 
-        return (
-            f'Scheduled at: {scheduled_at_str}\n'
-            f'{timing_description}\n'
-            f'Schedule ID: {schedule_id}'
-        )
+        lines = []
+        if delivery_at is not None:
+            arrival = delivery_at.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+            lines.append(f'Arrives at: {arrival}')
+        lines.append(timing_description)
+        lines.append(f'Schedule ID: {schedule_id}')
+        return '\n'.join(lines)
 
-    except NameError:
-        return 'Error: Letta client not available in execution environment'
     except Exception as e:
         return f'Error scheduling message: {str(e)}'
