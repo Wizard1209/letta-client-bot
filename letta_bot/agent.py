@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 import json
 import logging
+from typing import cast
 
 from aiogram import Bot, F, Router
 from aiogram.filters.callback_data import CallbackData
@@ -13,6 +14,9 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor
 from httpx import ReadError, ReadTimeout, RemoteProtocolError
 from letta_client import APIError
+from letta_client.types.agents.message_create_params import (
+    Message as SdkMessage,
+)
 
 from letta_bot.client import (
     DetachResult,
@@ -247,9 +251,10 @@ async def send_to_agent(
             for _iteration in range(max_approval_iterations):
                 handler = AgentStreamHandler(message)
 
-                response_stream = await client.agents.messages.stream(
+                response_stream = await client.agents.messages.create(
                     agent_id=agent_id,
-                    messages=messages_to_send,  # type: ignore[arg-type]
+                    streaming=True,
+                    messages=cast(list[SdkMessage], messages_to_send),
                     include_pings=True,
                     client_tools=client_tools,
                 )
