@@ -63,7 +63,7 @@ make check  # Runs linting, formatting, and type checking
 
 **Database schema changes:**
 
-1. Edit `dbschema/default.esdl`
+1. Edit `dbschema/default.gel`
 2. For development: `gel watch --migrate` (auto-applies schema changes)
 3. For production: `gel migration create` → `gel migrate`
 
@@ -78,6 +78,8 @@ Project-specific skills live in `.claude/skills/`. These are markdown prompts th
 | `update-changelog` | Drafts changelog entries from git history |
 | `update-docs` | Syncs CLAUDE.md with code changes |
 | `merge-readiness` | Pre-merge checklist (conflicts, migrations, tests, docs) |
+| `manual-review` | Reviews a diff or PR with concrete feedback |
+| `use-railway` | Deploy and operate the bot on Railway |
 
 **Usage:** Just ask naturally or use trigger phrases. Skills auto-activate based on context.
 
@@ -104,7 +106,6 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Agent content output configuration
   - Toggle verbose/brief tool execution display
   - Toggle reasoning messages on/off
-- Clear messages command (for testing clean assistants)
 
 ### Medium Priority
 
@@ -112,9 +113,8 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Multi-user agent from personal assistant
   - Clone personal agent
   - Shared memory blocks (some read-only)
-- Images support
 - LaTeX support
-- Memory block viewing and editing
+- Memory block editing (viewing is done — see `/current`)
 - Agent rename
 - Usage analytics per identity
 - Add message editing support
@@ -128,6 +128,17 @@ Development scripts for Letta API operations live in `devscripts/`. All scripts 
 ```bash
 uv run python -m devscripts.<script_name> [args]
 ```
+
+Fleet operations. The writing ones are dry-run by default — `--execute` applies:
+
+| Script | What it does | Writes |
+|--------|--------------|--------|
+| `context_headroom` | Report per-agent context headroom | no |
+| `detect_compaction_loop` | Find agents stuck summarizing themselves | no |
+| `sync_custom_tools` | Push tool sources, backfill `LETTA_API_KEY` | `--execute` |
+| `cancel_stuck_runs` | Cancel non-terminal runs that block new messages | `--execute` |
+| `raise_context_window` | Widen context windows kept from an older model | `--execute` |
+| `migrate_sonnet5` | Move agents to a newer model and notify them | `--execute` |
 
 ### Writing New Scripts
 
@@ -178,7 +189,7 @@ if __name__ == '__main__':
 
 ### Testing Custom Tools
 
-`run_tool.py` tests Letta custom tools with same injected context as cloud runtime:
+`run_tool.py` runs a custom tool locally, or on the platform with `--remote`:
 
 ```bash
 # List available tools
@@ -191,11 +202,52 @@ uv run python -m devscripts.run_tool -a <agent-id> notify_via_telegram "Hello"
 uv run python -m devscripts.run_tool search_x_posts "TzKT" 24 20
 ```
 
-**Injected context (same as Letta cloud):**
+**Tool execution environment:**
 
-- `client` - Letta SDK client (injected as global)
-- `LETTA_AGENT_ID` - agent ID (env var)
-- `LETTA_PROJECT_ID` - project ID (from .env)
+- `LETTA_AGENT_ID` - agent ID, the only env var the sandbox sets by itself
+- everything else in the environment comes from the agent's `secrets`:
+  `LETTA_API_KEY`, `TELEGRAM_BOT_TOKEN`
+- `LETTA_PROJECT_ID` - project ID (local runs only, from .env)
+
+The sandbox does define a `client` global, but it is built from
+`LETTA_API_KEY` — and Letta Cloud never sets that variable, so on an agent
+without the key in its `secrets` `client` is `None`. Measured on 2026-08-19 with
+a throwaway agent and a probe tool returning its own globals:
+
+| agent secrets | `client` | `Letta` | `agent_state` | env |
+| --- | --- | --- | --- | --- |
+| none | `None` | class available | absent | `LETTA_AGENT_ID` |
+| `LETTA_API_KEY` set | live client | class available | absent | `LETTA_AGENT_ID`, `LETTA_API_KEY` |
+
+Tools here build the client themselves from `LETTA_API_KEY` instead of using the
+global. It is the same credential, but a missing key returns an error string
+rather than an `AttributeError` on `None` — and it survives the injection
+changing shape again, which it did once already without notice.
+
+`agent_state` is never injected on Cloud; declaring it only adds a parameter.
+
+Running locally executes the file on disk; the sandbox executes whatever source
+is registered on the platform. The two drift. `--remote` runs the registered
+source as the agent and is the only check that means anything:
+
+```bash
+uv run python -m devscripts.run_tool -r -a <agent-id> notify_via_telegram "test"
+```
+
+Note that a tool returning an error string still reports `status: "success"` —
+read the payload, not the status.
+
+**Publishing tool changes:**
+
+```bash
+uv run python -m devscripts.sync_custom_tools            # dry-run
+uv run python -m devscripts.sync_custom_tools --execute  # push + backfill secrets
+```
+
+It updates tools by id rather than upserting: `tools.upsert()` names a tool
+after the first top-level function in the file, so a file with a helper above
+the tool function would register under the helper's name and leave the real
+tool — and every agent attached to it — on the old source.
 
 **Agent ID resolution order:**
 
@@ -247,7 +299,7 @@ To add new queries to use in the application put query.edgeql to letta_bot/queri
 - Base: `python:3.13-slim`
 - Non-root user: `app`
 - Dependencies: `uv sync --frozen --no-dev`
-- Entry: `uv run python letta_bot/main.py` (webhook mode)
+- Entry: `uv run --no-dev python -m letta_bot.main` (webhook mode)
 
 **docker-compose.yaml** (`deploy/docker-compose.yaml`):
 
@@ -256,16 +308,23 @@ To add new queries to use in the application put query.edgeql to letta_bot/queri
 - Traefik labels: TLS + Let's Encrypt (`lets-encrypt-ssl` resolver)
 - Router rule: `Host(${WEBHOOK_HOST}) && PathPrefix(${WEBHOOK_PATH})`
 - Network: `monitoring_monitoring` (external)
-- Volume: `bot-storage` (local)
+- Second service `gel`: self-hosted GelDB, applies migrations on start, own
+  Traefik router
 
 **Required env vars**:
 
 ```
-BOT_TOKEN, WEBHOOK_HOST, LETTA_PROJECT_ID, LETTA_API_KEY
-GEL_INSTANCE, GEL_SECRET_KEY (if using Gel Cloud)
+TELEGRAM_BOT_TOKEN, WEBHOOK_HOST, LETTA_PROJECT_ID, LETTA_API_KEY
+GEL_HOST, GEL_PORT, GEL_PASSWORD, GEL_CLIENT_TLS_SECURITY  (self-hosted gel)
+GEL_INSTANCE, GEL_SECRET_KEY                               (Gel Cloud instead)
 ```
 
 **Prerequisites**: Traefik with `lets-encrypt-ssl` resolver, `monitoring_monitoring` network exists, DNS configured for `WEBHOOK_HOST`.
+
+### Railway
+
+`deploy/railway.toml` and `deploy/gel.Dockerfile` cover the Railway path — the
+`use-railway` skill drives it.
 
 ## Error Handling Policy
 
@@ -333,7 +392,8 @@ return None
 
 ### DEBUG
 
-_(Reserved for future use)_
+**Step-by-step tracing inside one request** — middleware decisions, streaming
+chunks, document handling. Off in production.
 
 ### INFO
 

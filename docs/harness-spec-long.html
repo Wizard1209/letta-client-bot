@@ -1,0 +1,498 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Обвязка агента</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@400;900&family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+ --bg:#0c0c0c; --ink:#f2f2ef; --dim:#8a8a86; --faint:#5c5c58;
+ --line:#262624; --line2:#1a1a18;
+ --accent:#ff6a00;
+ --t-h1:68px; --t-idx:120px; --t-h2:30px; --t-body:20px; --t-mono:14px;
+ --s1:10px; --s2:20px; --s3:30px; --s4:40px; --s5:60px; --s6:76px;
+ --mono:'IBM Plex Mono',monospace; --sans:'Golos Text',sans-serif; --black:'Geologica',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;font-size:var(--t-body);
+ background-image:linear-gradient(var(--line2) 1px,transparent 1px),linear-gradient(90deg,var(--line2) 1px,transparent 1px);
+ background-size:42px 42px;background-position:-1px -1px}
+.wrap{max-width:1300px;margin:0 auto;padding:0 var(--s4);background:var(--bg);box-shadow:0 0 0 1px var(--line)}
+header{padding:var(--s6) 0 var(--s4);border-bottom:2px solid var(--ink);display:grid;grid-template-columns:1fr auto;align-items:end;gap:var(--s3)}
+.kick{font-family:var(--mono);font-size:var(--t-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 24px}
+.kick::before{content:"// ";color:var(--faint)}
+h1{font-family:var(--black);font-weight:900;font-size:var(--t-h1);line-height:.96;margin:0;letter-spacing:-.02em;text-transform:uppercase}
+.lede{grid-column:1/-1;color:var(--dim);max-width:900px;margin:var(--s2) 0 0;font-size:var(--t-body)}
+.lede b{color:var(--ink);font-weight:600}
+.scope{grid-column:1/-1;font-family:var(--mono);font-size:var(--t-mono);color:var(--dim);margin:var(--s3) 0 0;line-height:1.8;border-top:1px solid var(--line);padding-top:var(--s2)}
+.scope b{color:var(--dim);font-weight:500}
+section{padding:var(--s4) 0;border-bottom:1px solid var(--line)}
+.row{display:grid;grid-template-columns:190px 1fr;gap:34px}
+.sl{font-family:var(--mono);font-size:var(--t-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}.sl::before{content:"§ ";color:var(--accent)}
+h2{font-size:var(--t-h2);margin:0 0 5px;text-transform:uppercase;letter-spacing:-.01em;font-weight:700;line-height:1.15}
+.h2sub{font-family:var(--mono);font-size:var(--t-mono);color:var(--dim);margin:0 0 26px}
+p{margin:0 0 18px;max-width:900px}
+p.wide{max-width:none}
+code{font-family:var(--mono);font-size:.86em;color:var(--ink);background:var(--line2);padding:2px 6px}
+figcaption code,footer code,.fv small code,.src code{font-size:13px}
+.panel{border:1px solid var(--line);position:relative;margin:var(--s3) 0}
+.panel::after{content:"";position:absolute;top:14px;right:15px;width:38px;height:7px;background:repeating-linear-gradient(90deg,var(--line) 0 4px,transparent 4px 8px)}
+.pbar{font-family:var(--mono);font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);padding:14px 22px;border-bottom:1px solid var(--line)}.pbar b{color:var(--ink)}
+.step{display:grid;grid-template-columns:62px 1fr;gap:20px;padding:20px 22px;border-top:1px solid var(--line2)}.step:first-of-type{border-top:none}
+.n{font-family:var(--black);font-weight:900;font-size:32px;line-height:1;color:var(--ink)}
+.sh{margin:0;font-weight:600;font-size:19px;display:flex;align-items:baseline;flex-wrap:wrap}
+.sh .b{font-family:var(--mono);font-size:13px;text-transform:uppercase;letter-spacing:.08em;margin-left:16px;padding:4px 11px;white-space:nowrap}
+.sh .b.a{border:1px solid var(--accent);color:var(--accent);font-weight:600}.sh .b.b{border:1px solid var(--line);color:var(--dim)}
+.sd{color:var(--dim);margin:8px 0 0;font-size:17px;max-width:none}.sd code{font-size:15px}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);margin-top:24px;border-top:2px solid var(--ink)}
+.f{padding:20px 22px 20px 0;border-right:1px solid var(--line)}.f:last-child{border-right:none}
+.fk{font-family:var(--mono);font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 10px}
+.fv{font-family:var(--black);font-weight:900;font-size:26px;margin:0;line-height:1.05}.fv small{font-family:var(--sans);font-weight:400;font-size:15px;color:var(--dim);display:block;margin-top:6px;letter-spacing:0;line-height:1.45}
+table{width:100%;border-collapse:collapse;font-size:17px;margin:var(--s3) 0 0}
+th,td{text-align:left;padding:15px 18px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--ink)}
+td:first-child{color:var(--ink)}tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-size:15px;color:var(--dim);white-space:nowrap}
+.v{font-family:var(--mono);font-size:13px;letter-spacing:.04em;text-transform:uppercase;display:inline-block;padding:3px 10px;white-space:nowrap}
+.v.hard{color:#000;background:var(--accent);font-weight:600}
+.v.mod{color:var(--ink);border:1px solid var(--line)}
+.v.triv{color:var(--faint)}
+ul.req{list-style:none;padding:0;margin:14px 0 0;max-width:none}
+ul.req li{padding:9px 0 9px 26px;border-top:1px solid var(--line2);position:relative;font-size:17px;color:var(--dim)}
+ul.req li::before{content:"▪";position:absolute;left:2px;top:10px;color:var(--faint);font-size:15px}
+ul.req li b{color:var(--ink);font-weight:600}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:2px solid var(--ink);margin-top:var(--s3)}
+.two > div{padding:24px 26px 24px 0}
+.two > div:first-child{border-right:1px solid var(--line);padding-right:26px}
+.two > div:last-child{padding-left:26px;padding-right:0}
+.two h3{font-family:var(--mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;margin:0 0 18px;font-weight:500}
+.two h3.keep{color:var(--dim)}.two h3.drop{color:var(--ink)}
+.two ul{list-style:none;padding:0;margin:0}
+.two li{padding:11px 0;border-top:1px solid var(--line2);font-size:16px;color:var(--dim);line-height:1.45}
+.two li b{color:var(--ink);font-weight:600;display:block;margin-bottom:2px}
+figure{margin:var(--s3) 0;border:1px solid var(--line);padding:0}
+figcaption{font-family:var(--mono);font-size:13px;color:var(--dim);padding:14px 22px;border-top:1px solid var(--line);line-height:1.7}
+figcaption b{color:var(--dim);font-weight:500}
+svg{display:block;width:100%;height:auto}
+footer{padding:var(--s4) 0 var(--s5);color:var(--dim);font-family:var(--mono);font-size:14px;line-height:1.8}footer .s{color:var(--ink)}
+@media(max-width:680px){:root{--t-h1:40px}header{grid-template-columns:1fr}.row{grid-template-columns:1fr}.facts{grid-template-columns:1fr}.two{grid-template-columns:1fr}.two > div{padding:24px 0!important;border-right:none!important}}
+</style></head><body><div class="wrap">
+
+<header>
+ <div><p class="kick">спецификация · telegram-бот · выбор фреймворка</p><h1>Обвязка<br>агента</h1></div>
+ <p class="lede">Заменить надо не SDK модели, а <b>сервер состояния агента</b>. Вызов LLM — самая дешёвая часть; вокруг него работают семь <b>контуров</b>, и сегодня все семь целиком живут на чужой стороне. Любой кандидат оценивается одним вопросом: <b>сколько из этих семи он закрывает, а сколько мы строим сами и храним у себя.</b></p>
+ <p class="scope">
+  <b>ЧИТАТЕЛЬ:</b> тот, кто выбирает фреймворк и будет переписывать бота. Знает, что бот — мост Telegram ↔ LLM-агент; не обязан знать текущий код.<br>
+  <b>В ОБЪЁМЕ:</b> требования к слою между Telegram и моделью, выведенные из работающего прода. <b>НЕ В ОБЪЁМЕ:</b> сравнение конкретных фреймворков, план миграции, выбор модели.<br>
+  <b>ИСТОЧНИК:</b> исходники репозитория и живые замеры прод-проекта, 16 августа 2026. Всё непроверенное помечено как допущение.
+ </p>
+</header>
+
+<section><div class="row">
+ <div class="sl">01 · повод</div>
+ <div>
+  <h2>Ломается не код бота, а контракт с чужим сервером состояния</h2>
+  <p class="h2sub">пять ломающих изменений за девять месяцев · git log, 2025-11 → 2026-05</p>
+
+  <p>Бот сам по себе тонкий: он принимает сообщение Telegram, отдаёт его агенту и рисует ответ. Всё, что делает агента агентом — история, память, инструменты, расписания — живёт на стороне Letta. Это нормальное разделение ровно до тех пор, пока контракт стабилен.</p>
+
+  <p>Он не стабилен. За девять месяцев пять раз приходилось чинить работающего бота из-за изменений на той стороне, и ни разу — по своей инициативе. Характер поломок важнее их числа: это не баги, это <b>перестройка модели данных под живым клиентом</b>. Сначала переписали SDK, потом отменили Identity API, теперь идёт переезд с агентов на «беседы» — и метод, на котором держится каждое сообщение бота, уже помечен deprecated внутри той версии SDK, что стоит в проде.</p>
+
+  <table>
+   <thead><tr><th style="width:130px">Когда</th><th>Что изменилось на стороне Letta</th><th style="width:230px">Цена в нашем коде</th></tr></thead>
+   <tbody>
+    <tr><td class="num">2025-11-21</td><td>Переписан SDK (v1). Часть эндпоинтов из клиента пропала.</td><td>13 файлов, +670/−319. Появился <code>letta_sdk_extensions.py</code> — ручные REST-вызовы в обход SDK.</td></tr>
+    <tr><td class="num">2026-01-24</td><td>Появился нативный планировщик — свой стек планирования стал лишним.</td><td>183 строки в <code>_archived/</code>, три новых инструмента, команда <code>/notify</code> удалена.</td></tr>
+    <tr><td class="num">2026-02-05</td><td>Identity API брошен на полпути.</td><td>19 файлов, миграция БД, разовый скрипт на 224 строки. ACL переехал на строковые теги.</td></tr>
+    <tr><td class="num">2026-03-13&nbsp;→&nbsp;16</td><td>Регулярные обрывы TCP посреди стрима.</td><td>Три класса исключений, добавленных по одному за три дня.</td></tr>
+    <tr><td class="num">2026-05-18</td><td><code>agents.messages.stream</code> → <code>conversations.messages.create</code>; папки стали проектными.</td><td>Ветка <code>fix-file-handling</code> <b>до сих пор не влита</b>. <code>agent_id</code> приходится прятать в <code>extra_body</code>.</td></tr>
+   </tbody>
+  </table>
+
+  <div class="facts">
+   <div class="f"><p class="fk">пин зависимости</p><p class="fv">== 1.7.0<small>единственная зависимость проекта с точной версией; остальные восемь — <code>&gt;=</code>. Это шрам, а не решение.</small></p></div>
+   <div class="f"><p class="fk">статус метода</p><p class="fv">DEPRECATED<small><code>messages.stream</code> помечен так прямо в установленном SDK 1.7.0 — на нём работает каждое сообщение бота.</small></p></div>
+   <div class="f"><p class="fk">обходов SDK в коде</p><p class="fv">2 из 2<small>оба эндпоинта, без которых бот неполон (<code>/context</code>, <code>/templates</code>), вызываются через приватные внутренности SDK.</small></p></div>
+  </div>
+
+  <p style="margin-top:var(--s3)"><b>Отсюда вывод, который задаёт всю остальную спецификацию:</b> искать надо не «SDK попроще», а фреймворк, чьё состояние лежит в нашей базе. Устойчивость даёт не качество чужого API, а то, что при его поломке у нас на руках остаются данные.</p>
+
+  <p><b>Контрдовод, который стоит проговорить сразу.</b> Соблазн — взять голый SDK модели и написать цикл самому: тогда ломаться нечему. Это честный вариант, и он остаётся на столе. Но он означает семь подсистем своими руками, и §03 показывает, какие именно; §06 — девять вопросов, которые отделяют «фреймворк это уже умеет» от «мы это пишем».</p>
+ </div>
+</div></section>
+
+<section><div class="row">
+ <div class="sl">02 · масштаб</div>
+ <div>
+  <h2>Локально — три таблицы; на той стороне — весь агент целиком</h2>
+  <p class="h2sub">это и есть объём переноса</p>
+
+  <p>Наша база хранит три сущности: пользователя, его идентичность с выбранным агентом и заявку на доступ. Ни одной строки диалога, ни одного блока памяти, ни одного расписания. Всё остальное — на сервере Letta, и единственный способ достать его оттуда — выгрузка агента в файл <code>.af</code>.</p>
+
+  <p>Практическое следствие: <b>у бота нет деградированного режима.</b> Если сервер недоступен, бот не может даже назвать пользователю список его ассистентов — этот список каждый раз вычисляется запросом на ту сторону по тегу.</p>
+
+  <figure>
+  <svg viewBox="0 0 1240 572" role="img" aria-label="Разделение состояния между нашим процессом и сервером Letta">
+   <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+     <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a8a86"/>
+    </marker>
+    <marker id="ara" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+     <path d="M 0 0 L 10 5 L 0 10 z" fill="#ff6a00"/>
+    </marker>
+   </defs>
+
+   <text x="0" y="20" font-family="IBM Plex Mono, monospace" font-size="13" fill="#8a8a86" letter-spacing="1.4">СТРЕЛКА = ПОТОК ДАННЫХ. СПЛОШНАЯ — ЧЕРЕЗ НАШ ПРОЦЕСС, ШТРИХОВАЯ — МИМО НЕГО.</text>
+   <text x="0" y="40" font-family="IBM Plex Mono, monospace" font-size="13" fill="#ff6a00" letter-spacing="1.4">ОРАНЖЕВЫМ ОКРАШЕНО ТО, ЧЕГО НЕТ В ЛОКАЛЬНОЙ КОПИИ. ВЕРТИКАЛЬНАЯ ЛИНИЯ — ГРАНИЦА ВЛАДЕНИЯ ДАННЫМИ.</text>
+
+   <line x1="640" y1="60" x2="640" y2="500" stroke="#5c5c58" stroke-width="1.5"/>
+   <text x="628" y="300" transform="rotate(-90 628 300)" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" fill="#8a8a86" letter-spacing="1.2">ГРАНИЦА ВЛАДЕНИЯ ДАННЫМИ</text>
+
+   <!-- Telegram -->
+   <rect x="0" y="60" width="180" height="120" fill="none" stroke="#262624" stroke-width="1.5"/>
+   <text x="18" y="92" font-family="IBM Plex Mono, monospace" font-size="14" fill="#8a8a86" letter-spacing="1.2">КЛИЕНТ</text>
+   <text x="18" y="128" font-family="Geologica, sans-serif" font-weight="900" font-size="26" fill="#f2f2ef">TELEGRAM</text>
+   <text x="18" y="156" font-family="Golos Text, sans-serif" font-size="15" fill="#5c5c58">пользователь</text>
+
+   <!-- our process -->
+   <rect x="250" y="60" width="330" height="430" fill="none" stroke="#262624" stroke-width="1.5"/>
+   <rect x="250" y="60" width="330" height="46" fill="none" stroke="#262624" stroke-width="1.5"/>
+   <text x="268" y="89" font-family="IBM Plex Mono, monospace" font-size="14" fill="#8a8a86" letter-spacing="1.2">НАШ ПРОЦЕСС</text>
+   <text x="268" y="146" font-family="Geologica, sans-serif" font-weight="900" font-size="24" fill="#f2f2ef">БОТ + GEL</text>
+
+   <text x="268" y="188" font-family="IBM Plex Mono, monospace" font-size="13" fill="#8a8a86" letter-spacing="1">КОД — ПЕРЕЕЗЖАЕТ КАК ЕСТЬ</text>
+   <text x="268" y="216" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">маршрутизация, команды</text>
+   <text x="268" y="242" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">рендер Markdown → Telegram</text>
+   <text x="268" y="268" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">скачивание файлов, транскрипция</text>
+   <text x="268" y="294" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">батчинг альбомов, индикаторы</text>
+   <text x="268" y="320" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">клиентский инструмент рисования</text>
+
+   <line x1="268" y1="344" x2="562" y2="344" stroke="#262624" stroke-width="1.5"/>
+   <text x="268" y="374" font-family="IBM Plex Mono, monospace" font-size="13" fill="#8a8a86" letter-spacing="1">ХРАНИМ У СЕБЯ — 3 ТИПА</text>
+   <text x="268" y="402" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">User</text>
+   <text x="268" y="428" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">Identity (выбранный агент)</text>
+   <text x="268" y="454" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">AuthorizationRequest</text>
+
+   <!-- letta -->
+   <rect x="700" y="60" width="540" height="430" fill="none" stroke="#ff6a00" stroke-width="1.5"/>
+   <rect x="700" y="60" width="540" height="46" fill="none" stroke="#ff6a00" stroke-width="1.5"/>
+   <text x="718" y="89" font-family="IBM Plex Mono, monospace" font-size="14" fill="#ff6a00" letter-spacing="1.2">ЧУЖОЙ СЕРВЕР</text>
+   <text x="718" y="146" font-family="Geologica, sans-serif" font-weight="900" font-size="24" fill="#f2f2ef">СОСТОЯНИЕ АГЕНТА</text>
+
+   <text x="718" y="188" font-family="IBM Plex Mono, monospace" font-size="13" fill="#8a8a86" letter-spacing="1">ЛОКАЛЬНОЙ КОПИИ НЕТ НИ У ЧЕГО ИЗ СПИСКА</text>
+   <text x="718" y="218" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">журнал сообщений целиком</text>
+   <text x="718" y="244" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">блоки памяти + архив</text>
+   <text x="718" y="270" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">сборка контекста и компакция</text>
+   <text x="718" y="296" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">папки, эмбеддинги, файловый поиск</text>
+   <text x="718" y="322" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">расписания (cron и одноразовые)</text>
+   <text x="718" y="348" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">встроенные инструменты агента</text>
+   <text x="718" y="374" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">код серверных инструментов + секреты</text>
+   <text x="718" y="400" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">теги = список доступа</text>
+   <text x="718" y="426" font-family="Golos Text, sans-serif" font-size="16" fill="#f2f2ef">шаблоны = определение ассистента</text>
+   <text x="718" y="466" font-family="IBM Plex Mono, monospace" font-size="13" fill="#ff6a00" letter-spacing="1">ЕДИНСТВЕННЫЙ ВЫВОЗ: ЭКСПОРТ .AF</text>
+
+   <!-- arrows -->
+   <line x1="182" y1="106" x2="246" y2="106" stroke="#8a8a86" stroke-width="1.5" marker-end="url(#ar)"/>
+   <line x1="246" y1="134" x2="184" y2="134" stroke="#8a8a86" stroke-width="1.5" marker-end="url(#ar)"/>
+   <line x1="582" y1="134" x2="696" y2="134" stroke="#8a8a86" stroke-width="1.5" marker-end="url(#ar)"/>
+   <line x1="696" y1="162" x2="584" y2="162" stroke="#8a8a86" stroke-width="1.5" marker-end="url(#ar)"/>
+
+   <path d="M 1150 492 L 1150 528 L 90 528 L 90 184" fill="none" stroke="#8a8a86" stroke-width="1.5" stroke-dasharray="7 5" marker-end="url(#ar)"/>
+   <text x="112" y="552" font-family="IBM Plex Mono, monospace" font-size="13" fill="#8a8a86">↑ проактивные сообщения идут в Telegram напрямую — бот о них не знает</text>
+  </svg>
+  <figcaption><b>Как читать:</b> вертикальная линия делит то, чем мы владеем, и то, чем нет; штриховая дуга внизу — единственный поток, обходящий наш процесс. <b>Источник:</b> <code>dbschema/default.gel</code>, <code>letta_bot/client.py</code>, <code>letta_bot/custom_tools/</code>.</figcaption>
+  </figure>
+
+  <p>Асимметрия на рисунке — не описание архитектуры, а <b>смета</b>. Левая колонка переезжает копированием: она ничего не знает про фреймворк. Правая колонка — это то, что предстоит либо найти готовым, либо написать.</p>
+ </div>
+</div></section>
+
+<section><div class="row">
+ <div class="sl">03 · требования</div>
+ <div>
+  <h2>Семь контуров обвязки, и вызов модели — не один из них</h2>
+  <p class="h2sub">каждый контур: что нужно · почему · насколько дорого без фреймворка</p>
+
+  <p>Ниже — полный перечень того, что должно существовать между Telegram и моделью. Он выведен из работающего кода, а не из желаемого: каждое требование стоит там, потому что сегодня какое-то поведение бота на нём держится. Метка справа — оценка стоимости, если контур придётся реализовывать самим.</p>
+
+  <div class="panel">
+   <div class="pbar">КОНТУР <b>A</b> · <b>Ход диалога</b> · транспорт</div>
+   <div class="step"><div class="n b">A</div><div>
+    <p class="sh">Один вызов = целый ход агента, а не один ответ модели<span class="b b">цена: умеренно</span></p>
+    <p class="sd">Бот открывает поток и получает не токены, а <b>события шага</b>: рассуждение, вызов инструмента, результат, финальный текст. Между ними может пройти несколько минут и десяток шагов. Токенового стриминга в UI нет и не требуется — Telegram всё равно не редактирует сообщение по букве.</p>
+    <ul class="req">
+     <li><b>Дискриминированный поток событий</b> со стабильными типами: рассуждение · вызов инструмента · результат инструмента · текст ассистента · ошибка · завершение.</li>
+     <li><b>Keepalive внутри потока.</b> Сегодня это несущая конструкция, а не удобство: таймаут клиента плоские 120 с, и только пинги не дают длинному шагу инструмента оборваться по таймауту.</li>
+     <li><b>Внятная семантика обрыва.</b> Разрыв TCP посреди хода должен отличаться от отказа сервиса — пользователю показываются разные сообщения.</li>
+     <li><b>Идентификатор хода</b>, по которому ход можно отменить и с которым безопасен повтор запроса. Сегодня ни того, ни другого: повтор после таймаута может продублировать реплику пользователя в истории.</li>
+     <li><b>Сериализация ходов на агента.</b> Два параллельных сообщения от одного пользователя сейчас пишут в одну историю вперемешку — блокировки нет нигде.</li>
+    </ul>
+   </div></div>
+  </div>
+
+  <div class="panel">
+   <div class="pbar">КОНТУР <b>B</b> · <b>Журнал и сборка контекста</b> · ядро</div>
+   <div class="step"><div class="n a">B</div><div>
+    <p class="sh">Хранилище диалога и политика того, что влезает в окно<span class="b a">цена: дорого</span></p>
+    <p class="sd">Это самая недооценённая часть. Хранение сообщений — простое; <b>решение о том, какие из них попадут в следующий запрос</b> — нет. И именно эта политика сегодня даёт главный операционный сбой (см. факты ниже).</p>
+    <ul class="req">
+     <li><b>Долговременный журнал</b> всех типов реплик: пользователь, рассуждение, вызов и результат инструмента, ответ, служебные вставки.</li>
+     <li><b>Двухуровневая память диалога:</b> окно в контексте и полный журнал за его пределами, с поиском по второму.</li>
+     <li><b>Компакция при переполнении</b> — сжатие вытесняемого в резюме, которое остаётся в контексте.</li>
+     <li><b>Явное владение бюджетом окна:</b> размер окна, резерв под вывод модели, статический след системного промпта, блоков памяти и схем инструментов. Всё это должно быть настраиваемым и наблюдаемым, а не унаследованным от чужого шаблона.</li>
+     <li><b>Сброс окна</b> без потери журнала (команда <code>/clear</code>).</li>
+    </ul>
+    <div class="facts">
+     <div class="f"><p class="fk">статический след</p><p class="fv">41 590<small>токенов занято до первого сообщения на живом агенте <code>admin</code>: блоки памяти 32 930 + схемы инструментов 7 244 + системный промпт 1 416. Замер 16.08.2026.</small></p></div>
+     <div class="f"><p class="fk">окно против журнала</p><p class="fv">301 / 10 614<small>сообщений в контексте против сообщений в журнале того же агента. Тот, кто владеет журналом, владеет продуктом.</small></p></div>
+     <div class="f"><p class="fk">агентов без запаса</p><p class="fv">5 из 47<small>резерв под вывод превышает свободное окно ⇒ агент компактится каждый ход и теряет только что полученные данные. Ещё 5 на границе. Замер 16.08.2026.</small></p></div>
+    </div>
+   </div></div>
+  </div>
+
+  <div class="panel">
+   <div class="pbar">КОНТУР <b>C</b> · <b>Память, которую редактирует сама модель</b> · ядро</div>
+   <div class="step"><div class="n a">C</div><div>
+    <p class="sh">Не хранилище, а инструменты правки плюс их промптовая обвязка<span class="b a">цена: дорого</span></p>
+    <p class="sd">Агент сам создаёт, переименовывает и правит блоки своей памяти, кладёт факты в архив и ищет по нему. Это <b>не «векторная база сбоку»</b>: нужны определения инструментов, их исполнение, и то, как содержимое блоков попадает в системный промпт каждого запроса.</p>
+    <ul class="req">
+     <li><b>Именованные блоки памяти</b> с лимитом, описанием и версией; блок должен уметь быть общим для нескольких агентов и должен уметь удалить сам себя (онбординг-блок это делает).</li>
+     <li><b>Инструменты правки памяти для модели:</b> создать · вставить · заменить подстрокой · переименовать · удалить.</li>
+     <li><b>Архив с поиском:</b> запись факта и поиск по нему с фильтрами по тегам и датам.</li>
+     <li><b>Поиск по журналу диалога</b> как отдельный инструмент модели.</li>
+     <li><b>Слияние памяти двух агентов</b> — этого нет и у Letta, у нас это отдельный скрипт с вызовом LLM. Требование к кандидату: не мешать сделать это снаружи.</li>
+    </ul>
+   </div></div>
+  </div>
+
+  <div class="panel">
+   <div class="pbar">КОНТУР <b>D</b> · <b>Инструменты</b> · ядро</div>
+   <div class="step"><div class="n a">D</div><div>
+    <p class="sh">Два разных рантайма: серверный и клиентский, и клиентский сложнее<span class="b a">цена: дорого</span></p>
+    <p class="sd">Часть инструментов исполняется там же, где агент. Часть обязана исполняться <b>в процессе бота</b> — потому что результат надо отправить в Telegram (нарисованная картинка уходит фотографией, и её идентификатор известен только после отправки). Второй случай требует полноценного round-trip: поток прерывается, бот исполняет инструмент, открывает новый поток с результатом.</p>
+    <ul class="req">
+     <li><b>Клиентские инструменты, объявляемые на каждый запрос</b>, с протоколом «запрос на исполнение → результат», и возможностью приложить к результату дополнительное сообщение.</li>
+     <li><b>Схема инструмента из сигнатуры и докстринга.</b> Сегодня докстринг — это и есть промпт: в нём написаны правила использования, а не только типы аргументов.</li>
+     <li><b>Серверные инструменты с сетевым доступом.</b> Из контекста рантайм обязан давать хотя бы идентификатор агента — сегодня это единственное, что он даёт; клиент API инструмент собирает сам из секретов.</li>
+     <li><b>Секреты на агента</b>, доступные коду инструмента как переменные окружения.</li>
+     <li><b>Встроенный набор:</b> веб-поиск, загрузка страницы, исполнение кода. Сегодня всё это чужое и в репозитории не существует.</li>
+     <li><b>Развёртывание кода инструментов из репозитория</b> с обновлением по идентификатору, а не по имени: платформа именует инструмент по первой функции в файле, поэтому вспомогательная функция сверху молча создаёт второй инструмент и оставляет настоящий на старом коде.</li>
+     <li><b>Прогон зарегистрированного кода, а не локального файла.</b> Локальный запуск исполняет файл с диска, песочница — то, что загружено; расхождение видно только прогоном на той стороне.</li>
+    </ul>
+   </div></div>
+  </div>
+
+  <div class="panel">
+   <div class="pbar">КОНТУР <b>E</b> · <b>Проактивность</b> · ядро · разбор в §04</div>
+   <div class="step"><div class="n a">E</div><div>
+    <p class="sh">Агент, который просыпается сам, без подключённого клиента<span class="b a">цена: дорого</span></p>
+    <p class="sd">Агент ставит себе таймер, сервер будит его по расписанию и <b>прогоняет полный ход — с инструментами, минутами работы и без единого HTTP-клиента на другом конце</b>. Ни один «фреймворк для чат-ботов» этого не делает; это требование к серверу, а не к библиотеке.</p>
+    <ul class="req">
+     <li><b>Долговременный планировщик на агента:</b> одноразовый запуск и cron, переживающий перезапуск процесса.</li>
+     <li><b>Управление расписанием самой моделью</b> — создать, перечислить, удалить как обычные инструменты.</li>
+     <li><b>Пробуждение пишет в тот же журнал</b>, что и пользовательский диалог: иначе проактивный ход не помнит разговор.</li>
+     <li><b>Исходящий канал</b> от агента к пользователю, инициированный агентом.</li>
+     <li><b>Правила поведения как хранимый текст</b>, а не как код: протокол проактивности живёт блоком памяти и меняется без деплоя.</li>
+    </ul>
+   </div></div>
+  </div>
+
+  <div class="panel">
+   <div class="pbar">КОНТУР <b>F</b> · <b>Файлы и поиск по ним</b> · данные</div>
+   <div class="step"><div class="n b">F</div><div>
+    <p class="sh">Целая инфраструктура хранения, спрятанная за словом «прикрепить документ»<span class="b a">цена: дорого</span></p>
+    <p class="sd">Документ нельзя послать сообщением: в тело сообщения помещаются только текст и картинки. Документ загружается в хранилище, там его <b>разбирают, режут, эмбеддят и индексируют</b>, после чего агент получает инструменты чтения по этому хранилищу. Сегодня всё это невидимо для нашего кода — мы шлём байты и опрашиваем статус.</p>
+    <ul class="req">
+     <li><b>Мультимодальное сообщение:</b> текст и картинки частями в одном сообщении, с сохранением картинок в истории.</li>
+     <li><b>Хранилище документов на агента</b> с разбором форматов, чанкингом, эмбеддингом и статусом обработки.</li>
+     <li><b>Инструменты чтения для модели:</b> постраничное открытие файла в контекст, поиск по регулярке, семантический поиск.</li>
+     <li><b>Учёт занятого файлами места в окне</b> и закрытие лишних файлов.</li>
+     <li><b>Явные лимиты.</b> Потолок загрузки в 10 МБ у нас найден бинарным поиском по ответам сервера — он нигде не задокументирован.</li>
+    </ul>
+   </div></div>
+  </div>
+
+  <div class="panel">
+   <div class="pbar">КОНТУР <b>G</b> · <b>Доступ и провижининг</b> · периметр · забрать себе</div>
+   <div class="step"><div class="n b">G</div><div>
+    <p class="sh">Единственный контур, который надо не искать в кандидате, а вернуть в свою базу<span class="b b">цена: дёшево</span></p>
+    <p class="sd">Права доступа сейчас закодированы <b>строковыми тегами на агенте</b>: <code>identity-tg-{id}</code> — есть доступ, <code>owner-tg-{id}</code> — может пускать других. Каждая проверка прав — сетевой запрос с полной вычиткой агента; каждая выдача прав — перезапись всего списка тегов целиком, то есть две одновременные выдачи теряют одну. В проде уже есть агент с тегами, начинающимися с пробела, — и на нём тихо сломана проверка владельца.</p>
+    <ul class="req">
+     <li><b>Связь пользователь ↔ агент ↔ роль</b> обычной таблицей у нас. Требование к фреймворку здесь только одно: <b>не мешать</b> — не требовать, чтобы права жили на его стороне.</li>
+     <li><b>Определение ассистента должно лежать в репозитории.</b> Сегодня системный промпт, набор инструментов, блоки и модель заданы шаблоном на чужой стороне: в репозитории нет ни строчки о том, что такое «ассистент». Это крупнейший незеркалированный актив.</li>
+     <li><b>Создание агента из этого определения</b> и смена модели/окна на живом агенте.</li>
+     <li><b>Выгрузка агента целиком</b> — как страховка от следующей миграции.</li>
+    </ul>
+   </div></div>
+  </div>
+ </div>
+</div></section>
+
+<section><div class="row">
+ <div class="sl">04 · узкое место</div>
+ <div>
+  <h2>Проактивность — единственное требование, где «взять SDK и написать цикл» не работает</h2>
+  <p class="h2sub">пять шагов, и наш процесс не участвует ни в одном</p>
+
+  <p>Все остальные контуры при желании реализуемы поверх любого клиента модели. Этот — нет, потому что он требует, чтобы <b>ход агента выполнялся, когда никто не смотрит</b>. Запрос из Telegram живёт секунды; проактивный ход на проде занимает около минуты и десяток шагов инструментов. Значит, нужен процесс, который переживает отсутствие клиента, и хранилище таймеров, которое переживает перезапуск.</p>
+
+  <figure>
+  <svg viewBox="0 0 1240 322" role="img" aria-label="Последовательность проактивного пробуждения агента">
+   <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+     <path d="M 0 0 L 10 5 L 0 10 z" fill="#5c5c58"/>
+    </marker>
+   </defs>
+   <text x="0" y="20" font-family="IBM Plex Mono, monospace" font-size="13" fill="#8a8a86" letter-spacing="1.4">СТРЕЛКИ = ПОРЯДОК ВО ВРЕМЕНИ · ОРАНЖЕВЫЙ ШАГ — ТОТ, КОТОРОГО НЕТ НИ У ОДНОЙ БИБЛИОТЕКИ-КЛИЕНТА</text>
+
+   <g>
+    <rect x="0" y="60" width="212" height="150" fill="none" stroke="#262624" stroke-width="1.5"/>
+    <text x="16" y="88" font-family="Geologica, sans-serif" font-weight="900" font-size="22" fill="#5c5c58">1</text>
+    <text x="16" y="120" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">Агент ставит</text>
+    <text x="16" y="142" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">себе таймер</text>
+    <text x="16" y="172" font-family="Golos Text, sans-serif" font-size="15" fill="#8a8a86">вызовом инструмента,</text>
+    <text x="16" y="192" font-family="Golos Text, sans-serif" font-size="15" fill="#8a8a86">cron или разовый</text>
+   </g>
+   <line x1="216" y1="135" x2="252" y2="135" stroke="#5c5c58" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+   <g>
+    <rect x="256" y="60" width="212" height="150" fill="none" stroke="#262624" stroke-width="1.5"/>
+    <text x="272" y="88" font-family="Geologica, sans-serif" font-weight="900" font-size="22" fill="#5c5c58">2</text>
+    <text x="272" y="120" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">Срок наступает</text>
+    <text x="272" y="150" font-family="Golos Text, sans-serif" font-size="15" fill="#8a8a86">хранилище таймеров</text>
+    <text x="272" y="170" font-family="Golos Text, sans-serif" font-size="15" fill="#8a8a86">пережило перезапуски</text>
+    <text x="272" y="190" font-family="Golos Text, sans-serif" font-size="15" fill="#8a8a86">и, возможно, недели</text>
+   </g>
+   <line x1="472" y1="135" x2="508" y2="135" stroke="#5c5c58" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+   <g>
+    <rect x="512" y="60" width="212" height="150" fill="none" stroke="#262624" stroke-width="1.5"/>
+    <text x="528" y="88" font-family="Geologica, sans-serif" font-weight="900" font-size="22" fill="#5c5c58">3</text>
+    <text x="528" y="120" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">Сообщение</text>
+    <text x="528" y="142" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">падает в тот же</text>
+    <text x="528" y="164" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">журнал</text>
+    <text x="528" y="192" font-family="Golos Text, sans-serif" font-size="15" fill="#8a8a86">иначе агент не помнит</text>
+   </g>
+   <line x1="728" y1="135" x2="764" y2="135" stroke="#5c5c58" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+   <g>
+    <rect x="768" y="60" width="212" height="150" fill="none" stroke="#ff6a00" stroke-width="1.5"/>
+    <text x="784" y="88" font-family="Geologica, sans-serif" font-weight="900" font-size="22" fill="#ff6a00">4</text>
+    <text x="784" y="120" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">Полный ход</text>
+    <text x="784" y="142" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">без клиента</text>
+    <text x="784" y="172" font-family="Golos Text, sans-serif" font-size="15" fill="#ff6a00">~12 шагов инструментов,</text>
+    <text x="784" y="192" font-family="Golos Text, sans-serif" font-size="15" fill="#ff6a00">около минуты, замер</text>
+   </g>
+   <line x1="984" y1="135" x2="1020" y2="135" stroke="#5c5c58" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+   <g>
+    <rect x="1024" y="60" width="216" height="150" fill="none" stroke="#262624" stroke-width="1.5"/>
+    <text x="1040" y="88" font-family="Geologica, sans-serif" font-weight="900" font-size="22" fill="#5c5c58">5</text>
+    <text x="1040" y="120" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">Агент сам зовёт</text>
+    <text x="1040" y="142" font-family="Golos Text, sans-serif" font-weight="600" font-size="17" fill="#f2f2ef">Telegram API</text>
+    <text x="1040" y="172" font-family="Golos Text, sans-serif" font-size="15" fill="#8a8a86">получателей находит</text>
+    <text x="1040" y="192" font-family="Golos Text, sans-serif" font-size="15" fill="#8a8a86">по тегам агента</text>
+   </g>
+
+   <line x1="0" y1="248" x2="1240" y2="248" stroke="#5c5c58" stroke-width="1.5"/>
+   <line x1="0" y1="240" x2="0" y2="248" stroke="#5c5c58" stroke-width="1.5"/>
+   <line x1="1240" y1="240" x2="1240" y2="248" stroke="#5c5c58" stroke-width="1.5"/>
+   <text x="0" y="282" font-family="IBM Plex Mono, monospace" font-size="14" fill="#8a8a86" letter-spacing="1.2">НАШ ПРОЦЕСС</text>
+   <text x="200" y="282" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">не участвует ни в одном шаге: токен бота лежит в чужих секретах,</text>
+   <text x="200" y="306" font-family="Golos Text, sans-serif" font-size="16" fill="#8a8a86">форматирование сообщения написано второй раз внутри инструмента</text>
+
+  </svg>
+  <figcaption><b>Как читать:</b> шаг 4 — единственный, который нельзя эмулировать из обработчика входящего сообщения; всё остальное — обычный код. <b>Источник:</b> <code>letta_bot/custom_tools/schedule_message.py</code>, <code>notify_via_telegram.py</code>, история живого агента <code>celestia-socials-ai</code>.</figcaption>
+  </figure>
+
+  <p><b>Что из этого следует для выбора.</b> Кандидат без долговременного планировщика и фонового прогона хода не исключается сразу — эти две вещи можно построить самим (очередь задач плюс воркер, который вызывает тот же цикл агента). Но их надо посчитать в смету явно и заранее: это отдельный процесс, отдельное хранилище и отдельный режим отказа. И последний шаг стоит развернуть: если проактивный ход возвращается в бота, а не ходит в Telegram сам, шов проходит между пятым шагом и остальными — и всё, что слева от него, можно менять независимо от того, как бот доставляет сообщения.</p>
+ </div>
+</div></section>
+
+<section><div class="row">
+ <div class="sl">05 · границы</div>
+ <div>
+  <h2>Треть работы уже сделана, а часть требований воспроизводить не нужно</h2>
+  <p class="h2sub">две колонки, которые сужают объём переписывания</p>
+
+  <p>Спецификация выше выглядит тяжелее, чем работа на самом деле. Слева — то, что уже написано у нас и не зависит от фреймворка вообще: это переезжает копированием. Справа — то, что сегодня существует, но в новой системе не должно появиться: не потому что дорого, а потому что это следы предыдущих миграций и обходов.</p>
+
+  <div class="two">
+   <div>
+    <h3 class="keep">Переезжает как есть — фреймворк не при чём</h3>
+    <ul>
+     <li><b>Конвертер Markdown → Telegram</b>Собственный, с учётом UTF-16 смещений и разбиением по границам блоков. Покрыт тестами. Единственная часть репозитория с настоящим тестовым покрытием.</li>
+     <li><b>Голос</b>Транскрибируется до модели, приходит обычным текстом. Никогда не был функцией фреймворка.</li>
+     <li><b>Батчинг альбомов</b>Задержка ~1 с, чтобы собрать несколько фото в одно сообщение. Чисто телеграмная задача.</li>
+     <li><b>Скачивание файлов, лимиты, индикаторы набора</b>Всё на стороне aiogram.</li>
+     <li><b>Клиентский инструмент рисования</b>Логика исполнения наша; переносится сам протокол вызова, а не код.</li>
+     <li><b>Заявки на доступ и одобрение админом</b>Уже целиком в нашей базе — единственный кусок состояния, который мигрировать не придётся.</li>
+    </ul>
+   </div>
+   <div>
+    <h3 class="drop">Не воспроизводить</h3>
+    <ul>
+     <li><b>Второй рендерер Telegram внутри инструмента</b>Проактивные сообщения форматируются другим кодом с другими правилами экранирования и отказом вместо разбиения длинного текста. Один рендерер на систему.</li>
+     <li><b>Токен бота в чужом хранилище секретов</b>Записывается в каждого агента на горячем пути и читается обратно по API в открытом виде. Ротация требует обхода всех агентов.</li>
+     <li><b>Права как строковые теги</b>Перезапись всего списка целиком, гонки при одновременной выдаче, живой агент с тегом, начинающимся с пробела. Нужна таблица.</li>
+     <li><b>Молчаливое проглатывание событий</b>Ошибка в потоке и результаты инструментов не обрабатываются: упавший ход выглядит для пользователя как тишина. Исчерпание цикла одобрений — тоже тишина.</li>
+     <li><b>Отменённый внешний планировщик</b>Две настройки в конфиге и четыре мёртвых секрета в проде остались от архитектуры, которой нет с января.</li>
+     <li><b>Тег «создатель»</b>Пишется при создании каждого агента и не читается нигде.</li>
+     <li><b>Пол-отзыва доступа</b>Команда отзыва меняет статус заявки у нас, но не снимает тег на той стороне: доступ остаётся.</li>
+    </ul>
+   </div>
+  </div>
+ </div>
+</div></section>
+
+<section><div class="row">
+ <div class="sl">06 · отбор</div>
+ <div>
+  <h2>Девять вопросов, на которых отсеивается кандидат</h2>
+  <p class="h2sub">каждый выведен из требования, которое сегодня уже используется в проде</p>
+
+  <p>Вопросы отсортированы по разрушительности ответа «нет»: верхние определяют, годится ли кандидат вообще, нижние — сколько к нему придётся дописать. Колонка «если нет» — это то, что мы берём на себя, а не повод отказать.</p>
+
+  <table>
+   <thead><tr><th style="width:44px">#</th><th>Вопрос к кандидату</th><th style="width:150px">Контур</th><th style="width:330px">Если ответ «нет»</th></tr></thead>
+   <tbody>
+    <tr><td class="num">1</td><td><b>Где лежит состояние агента — в моей базе или в его сервисе?</b></td><td class="num">B, C</td><td>Отказ. Это единственный вопрос, ответ на который не компенсируется работой: он воспроизводит ровно ту ситуацию, из которой уходим.</td></tr>
+    <tr><td class="num">2</td><td>Может ли ход агента выполняться в фоне, без подключённого клиента, минутами?</td><td class="num">E</td><td>Свой воркер + очередь задач. Считать отдельным компонентом со своим режимом отказа.</td></tr>
+    <tr><td class="num">3</td><td>Есть ли долговременный планировщик на агента (cron + разовый), которым управляет сама модель?</td><td class="num">E</td><td>Своя таблица таймеров + три инструмента. Прямолинейно, но обязательно durable.</td></tr>
+    <tr><td class="num">4</td><td>Есть ли редактируемая моделью память: блоки, архив с поиском, поиск по журналу?</td><td class="num">C</td><td>Самая большая дописка: определения инструментов, исполнение, промптовая обвязка, векторный поиск.</td></tr>
+    <tr><td class="num">5</td><td>Управляю ли я политикой контекста явно — что вытесняется, что резервируется, что сжимается?</td><td class="num">B</td><td>Отказ, если политика зашита и непрозрачна. Именно непрозрачность даёт текущий цикл компакции на 5 агентах.</td></tr>
+    <tr><td class="num">6</td><td>Поддержан ли round-trip клиентских инструментов: прервать ход, исполнить у себя, продолжить?</td><td class="num">D</td><td>Обычно решается своим циклом вокруг вызова модели — дёшево, если поток событий вменяемый.</td></tr>
+    <tr><td class="num">7</td><td>Даёт ли поток типизированные события шага и keepalive, или только токены?</td><td class="num">A</td><td>Свой слой поверх сырого потока. Проверить отдельно: поведение при обрыве и повторе.</td></tr>
+    <tr><td class="num">8</td><td>Есть ли загрузка документов с разбором, эмбеддингом и файловыми инструментами для модели?</td><td class="num">F</td><td>Хранилище + парсер + эмбеддер + векторная база + три инструмента. Крупно, но изолированно — можно отложить на второй этап.</td></tr>
+    <tr><td class="num">9</td><td>Описывается ли агент файлом в репозитории, а не записью в чужом UI?</td><td class="num">G</td><td>Написать своё описание и загрузчик. Дёшево и делается в любом случае — сейчас такого файла нет вообще.</td></tr>
+   </tbody>
+  </table>
+
+  <p style="margin-top:var(--s3)">Отдельный критерий, не сводимый к функциям: <b>стабильность контракта.</b> Проверять по тому же признаку, по которому текущий провалился, — по истории: помечают ли устаревание заранее, ломают ли модель данных в минорных версиях, есть ли миграционные заметки. Для самостоятельного решения этот критерий отпадает, что само по себе часть его цены.</p>
+ </div>
+</div></section>
+
+<section><div class="row">
+ <div class="sl">07 · до переезда</div>
+ <div>
+  <h2>Часть данных перестанет существовать в момент отключения, а не в момент выбора</h2>
+  <p class="h2sub">фиксируется сейчас, независимо от того, какой кандидат победит</p>
+
+  <p>Выбор фреймворка можно откладывать; вывоз данных — нет. Три вещи не имеют локальной копии и не восстановятся: <b>содержимое шаблонов</b> (то есть определение того, что такое каждый ассистент), <b>активные расписания</b> (перечисляются только поагентно, сводного списка не существует) и <b>полный журнал диалогов</b> — на одном только рабочем агенте это 10 614 сообщений, из которых в окне лежит 301.</p>
+
+  <p>Экспорт агента в <code>.af</code> — единственный вывоз, и он же выбор развилки: либо новый фреймворк умеет этот формат читать, либо всё выгружается и переводится в свою схему до переключения. Второе надёжнее и не зависит от кандидата.</p>
+
+  <p>Отдельно стоит зафиксировать, что <b>пять агентов уже находятся в цикле компакции прямо сейчас</b> — резерв под вывод модели у них превышает свободное окно, поэтому каждый ход они теряют только что полученные данные и запрашивают их снова. Это не последствие миграции, а текущее состояние, и его стоит починить настройками до переезда: иначе непонятно, что улучшилось после.</p>
+
+  <div class="facts" style="grid-template-columns:repeat(2,1fr)">
+   <div class="f"><p class="fk">не имеет копии</p><p class="fv">3 класса<small>шаблоны агентов · активные расписания · журнал диалогов. Всё остальное либо у нас, либо восстановимо.</small></p></div>
+   <div class="f"><p class="fk">путь вывоза</p><p class="fv">один<small>экспорт <code>.af</code> поагентно. Сводной выгрузки проекта нет.</small></p></div>
+  </div>
+ </div>
+</div></section>
+
+<footer>
+ <span class="s">ДОПУЩЕНИЯ:</span> «около минуты и ~12 шагов» для проактивного хода — один наблюдённый запуск, не распределение. Порядок «сначала картинки, потом текст» в мультимодальном сообщении взят из комментария в коде и документацией не подтверждён.<br>
+ <span class="s">ПЕРЕПРОВЕРИТЬ:</span> замеры окна и запаса контекста — живые, меняются каждым разговором. Статус ветки <code>fix-file-handling</code>. Набор встроенных инструментов агента — инвентаризация существует только как список форматтеров в <code>response_handler.py</code>.<br>
+ <span class="s">ИСТОЧНИКИ:</span> исходники <code>letta_bot/</code>, <code>devscripts/</code>, <code>dbschema/</code> · <code>git log</code> 2025-11 → 2026-05 · живые замеры прод-проекта через <code>devscripts/context_headroom.py</code> и <code>/v1/agents/{id}/context</code> · проверено 16 августа 2026
+</footer>
+
+</div></body></html>
