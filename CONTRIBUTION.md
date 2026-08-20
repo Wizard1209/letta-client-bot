@@ -271,7 +271,9 @@ echo "agent-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" > .agent_id
 
 ## Technical TODOs
 
-Local TODOs are still in code
+Everything left open — code TODOs, runtime gaps, deployment risks, documentation
+drift and the features that will not be built — is one row each in
+[`docs/freeze.html`](docs/freeze.html). The two long-standing ones:
 
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>
 - Wrap auth logic with multiple db queries into transactions <https://docs.geldata.com/reference/using/python#transactions>
