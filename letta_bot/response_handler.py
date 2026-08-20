@@ -13,7 +13,7 @@ import difflib
 from itertools import islice
 import json
 import logging
-from typing import Any
+from typing import Any, Final
 
 from aiogram.types import Message
 from aiogram.utils.formatting import (
@@ -669,6 +669,22 @@ def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
 # =============================================================================
 # Message Sending
 # =============================================================================
+# Stop reasons that end a turn without an answer. Anything absent from this
+# table ended a turn that already said what it had to say.
+STOP_REASON_MESSAGES: Final[dict[str, str]] = {
+    'error': '❌ The assistant stopped with an error.',
+    'llm_api_error': '❌ The model provider returned an error.',
+    'invalid_llm_response': '❌ The model returned an unusable response.',
+    'invalid_tool_call': '❌ The assistant called a tool incorrectly and stopped.',
+    'max_tokens_exceeded': '❌ The answer hit the model output limit.',
+    'cancelled': '⛔ The run was cancelled.',
+    'insufficient_credits': '💳 The Letta account is out of credits.',
+    'context_window_overflow_in_system_prompt': (
+        '❌ The assistant does not fit in its own context window any more.'
+    ),
+}
+
+
 async def _send_error_message(message: Message, reason: Exception, content: str) -> None:
     """Send formatted error message to user and log the reason.
 
@@ -765,8 +781,12 @@ class AgentStreamHandler:
             await self._handle_ping()
             return
 
+        if message_type == 'stop_reason':
+            await self._handle_stop_reason(event)
+            return
+
         # Silent events — no user-facing output, no state change
-        if message_type in ('stop_reason', 'usage_statistics'):
+        if message_type == 'usage_statistics':
             return
 
         # Any content event: delete ping first (PINGING→IDLE)
@@ -824,12 +844,47 @@ class AgentStreamHandler:
                         await _send_error_message(self.telegram_message, e, str(formatted))
             return
 
+        # Server-side failure mid-run: the only event that carries it
+        if message_type == 'error_message':
+            detail = getattr(event, 'message', '') or getattr(event, 'error_type', '')
+            LOGGER.error('Stream error event: %s', detail or event)
+            await self.telegram_message.answer(
+                **Text('❌ The assistant stopped with an error.').as_kwargs()
+            )
+            return
+
         # Final response
         if message_type == 'assistant_message':
-            raw_content = getattr(event, 'content', '').strip()
+            raw_content = getattr(event, 'content', '')
+            if not isinstance(raw_content, str):
+                # The SDK types content as str | list of parts; only str is rendered
+                LOGGER.warning(
+                    'assistant_message content is %s', type(raw_content).__name__
+                )
+                raw_content = ''
+            raw_content = raw_content.strip()
             if raw_content:
-                await send_markdown_message(self.telegram_message, raw_content)
+                try:
+                    await send_markdown_message(self.telegram_message, raw_content)
+                except Exception as e:
+                    await _send_error_message(self.telegram_message, e, raw_content)
                 self.has_assistant_message = True
+
+    async def _handle_stop_reason(self, event: object) -> None:
+        """Report the stop reasons that mean the turn failed.
+
+        Every other reason ends a turn that produced its answer already, so
+        only the failures are worth a message. Without this the run simply
+        stops: the ping is removed and nothing takes its place.
+        """
+        reason = str(getattr(event, 'stop_reason', '') or '')
+        text = STOP_REASON_MESSAGES.get(reason)
+        if text is None:
+            return
+
+        LOGGER.warning('Run stopped: %s', reason)
+        await self._delete_ping()
+        await self.telegram_message.answer(**Text(text).as_kwargs())
 
     async def _handle_ping(self) -> None:
         """Handle ping events (IDLE→PINGING or PINGING→PINGING)."""

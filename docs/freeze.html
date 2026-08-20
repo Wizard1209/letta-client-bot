@@ -1,0 +1,147 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Реестр незакрытого</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@400;900&family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+ --bg:#0c0c0c; --ink:#f2f2ef; --dim:#8a8a86; --faint:#5c5c58;
+ --line:#262624; --line2:#1a1a18;
+ --accent:#ff6a00;
+ --mono:'IBM Plex Mono',monospace; --sans:'Golos Text',sans-serif; --black:'Geologica',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;font-size:20px}
+.wrap{max-width:1500px;margin:0 auto;padding:0 40px;background:var(--bg);box-shadow:0 0 0 1px var(--line)}
+header{padding:76px 0 0}
+.kick{font-family:var(--mono);font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 22px}
+.kick::before{content:"// ";color:var(--faint)}
+h1{font-family:var(--black);font-weight:900;font-size:58px;line-height:.98;margin:0;letter-spacing:-.02em;text-transform:uppercase}
+
+.layers{display:grid;grid-template-columns:1fr 1fr 1fr;margin:38px 0 0;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink)}
+.ly{padding:22px 26px 24px 0}
+.ly+.ly{padding-left:26px;border-left:1px solid var(--line)}
+.ly.mid{background:var(--line2)}
+.lk{font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+.ln{font-family:var(--black);font-weight:900;font-size:26px;margin:0 0 12px;line-height:1.05}
+.lp{color:var(--dim);font-size:16px;margin:0 0 10px;line-height:1.45}
+.lgo{font-family:var(--mono);font-size:13px;color:var(--ink);margin:14px 0 0;letter-spacing:.06em;text-transform:uppercase}
+
+.how{font-family:var(--mono);font-size:14px;color:var(--dim);line-height:1.9;margin:0;padding:20px 0 0}
+.how b{color:var(--ink);font-weight:600}
+.how .lg{display:inline-block;padding:2px 9px;margin-right:6px}
+.lg.hi{border:1px solid var(--accent);color:var(--accent);font-weight:600}
+.lg.md{border:1px solid var(--line);color:var(--ink)}
+.lg.lo{border:1px solid var(--line2);color:var(--faint)}
+
+.intro{padding:52px 0 4px}
+.intro .num{font-family:var(--mono);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 12px}
+.intro h2{font-family:var(--black);font-weight:900;font-size:34px;text-transform:uppercase;letter-spacing:-.01em;margin:0 0 18px;line-height:1.05}
+.intro p{color:var(--dim);font-size:18px;margin:0 0 16px;max-width:1050px}
+.intro p b{color:var(--ink);font-weight:600}
+.intro code,td code{font-family:var(--mono);font-size:.88em;color:var(--ink)}
+
+table{width:100%;border-collapse:collapse;margin:0}
+th{font-family:var(--mono);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
+   text-align:left;padding:18px 16px 12px;border-bottom:1px solid var(--ink);position:sticky;top:0;background:var(--bg)}
+td{padding:13px 16px;border-bottom:1px solid var(--line2);vertical-align:top;font-size:17px}
+tr.grp td{border-bottom:1px solid var(--line);border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);
+  padding:22px 16px 10px;background:var(--line2)}
+tr.grp td b{color:var(--accent);font-weight:600;margin-right:10px}
+td.id{font-family:var(--mono);font-size:14px;color:var(--faint);width:52px;white-space:nowrap}
+td.name{font-weight:600;color:var(--ink);width:300px}
+td.where{font-family:var(--mono);font-size:13px;color:var(--faint);width:230px;word-break:break-word}
+td.need{color:var(--dim)}
+td.act{width:140px;white-space:nowrap}
+.t{font-family:var(--mono);font-size:13px;letter-spacing:.04em;text-transform:uppercase;display:inline-block;padding:3px 10px}
+.t.now{border:1px solid var(--accent);color:var(--accent);font-weight:600}
+.t.sig{color:var(--ink);border:1px solid var(--line)}
+.t.keep{color:var(--faint)}
+.t.never{color:var(--faint);text-decoration:line-through}
+
+.tw{overflow-x:auto}
+footer{padding:44px 0 60px;margin-top:44px;border-top:2px solid var(--ink);color:var(--dim);font-family:var(--mono);font-size:14px;line-height:1.8}
+footer .s{color:var(--ink)}
+@media(max-width:900px){h1{font-size:36px}td.name,td.where{width:auto}.layers{grid-template-columns:1fr}.ly+.ly{border-left:none;border-top:1px solid var(--line);padding-left:0}}
+</style></head><body><div class="wrap">
+
+<header>
+ <p class="kick">letta-client-bot · что остаётся незакрытым после заморозки</p>
+ <h1>Реестр<br>незакрытого</h1>
+
+ <div class="layers">
+  <div class="ly">
+   <p class="lk">что замораживается</p>
+   <p class="ln">РАЗРАБОТКА</p>
+   <p class="lp">Новых фич не будет. Правки — только те, без которых перестаёт работать то, что уже работает.</p>
+  </div>
+  <div class="ly mid">
+   <p class="lk">что продолжает жить</p>
+   <p class="ln">БОТ И АГЕНТЫ</p>
+   <p class="lp">Задеплоенный бот обслуживает пользователей, у агентов Letta накоплена память. И то и другое надо поддерживать.</p>
+   <p class="lgo">↓ этот документ — для того, кто поддерживает</p>
+  </div>
+  <div class="ly">
+   <p class="lk">чего в реестре нет</p>
+   <p class="ln">ОБЪЯСНЕНИЙ</p>
+   <p class="lp">Почему уходим с Letta — в <code>harness-spec-long.html</code>. Здесь только то, что осталось несделанным, и что с этим делать.</p>
+  </div>
+ </div>
+
+ <p class="how">
+  <b>ОДНА СТРОКА = ОДНА НЕЗАКРЫТАЯ ВЕЩЬ.</b> Колонка «что делать» — единственное, что требует решения:<br>
+  <span class="lg hi">сейчас</span> сделать до заморозки — иначе живое ломается или уже сломано<br>
+  <span class="lg md">при отказе</span> делать нечего, пока работает; строка — это признак, по которому опознать отказ, когда он случится<br>
+  <span class="lg lo">оставлено</span> известный долг, сознательно не чинится<br>
+  <span class="lg lo">не будет</span> закрыто решением: не делается и не планируется
+ </p>
+</header>
+
+<div class="intro">
+ <p class="num">таблица 1</p>
+ <h2>Платформа: на чём это держится</h2>
+ <p>Всё в этой группе — чужой контракт. <b>Уведомления об изменениях не приходит: маршрут просто начинает отвечать 400.</b> Так уже произошло с файловым хранилищем. Поэтому строки описывают не «что чинить», а <b>что именно отвалится и как это опознать</b> — чтобы следующий отказ занял час, а не неделю.</p>
+</div>
+
+<div class="tw"><table>
+ <thead><tr><th>#</th><th>Что не закрыто</th><th>Где</th><th>Чем оборачивается</th><th>Что делать</th></tr></thead>
+ <tbody>
+
+  <tr class="grp"><td colspan="5"><b>P</b> Платформа Letta</td></tr>
+  <tr><td class="id">P1</td><td class="name">Разговор идёт одним вызовом</td><td class="where">letta_bot/agent.py:254</td><td class="need">Каждое сообщение пользователя и каждый ответ проходят через <code>agents.messages.create(streaming=True)</code>. Прежний <code>agents.messages.stream</code> помечен в SDK как deprecated и больше не используется. Если семья <code>agents.messages</code> повторит судьбу folders — замена проверена на живом агенте и даёт тот же поток событий: <code>conversations.messages.create(conversation_id='default', extra_body={'agent_id': …})</code>. Ничего в семье <code>conversations</code> не помечено deprecated.</td><td class="act"><span class="t sig">при отказе</span></td></tr>
+  <tr><td class="id">P2</td><td class="name">Файловое хранилище снято</td><td class="where">client.folders.*, agents.folders.*, agents.files.*</td><td class="need">Все маршруты отвечают <code>400 · This API route is deprecated and no longer supported</code>. SDK при этом всё ещё держит классы ресурсов, так что падает только сеть. Загрузка документов удалена, бот отклоняет файлы одним сообщением.</td><td class="act"><span class="t never">не будет</span></td></tr>
+  <tr><td class="id">P3</td><td class="name">Доступ читается через retrieve с include</td><td class="where">letta_bot/client.py:118,137,173,210</td><td class="need">Каждое решение о доступе — <code>agents.retrieve(include=['agent.tags'])</code>. Словарь include Letta уже меняла однажды; при следующей смене отказ выглядит как «у всех агентов нет тегов», то есть как полная потеря доступа, а не как ошибка.</td><td class="act"><span class="t sig">при отказе</span></td></tr>
+  <tr><td class="id">P4</td><td class="name">agents.update — единственный писатель</td><td class="where">letta_bot/client.py:123,234</td><td class="need">Гранты доступа, владелец, отвязка и секреты пишутся одним и тем же вызовом, и он заменяет набор целиком, а не дополняет. Отказ этого маршрута останавливает выдачу доступа и провижининг секретов сразу.</td><td class="act"><span class="t sig">при отказе</span></td></tr>
+  <tr><td class="id">P5</td><td class="name">/context идёт мимо публичного SDK</td><td class="where">letta_bot/letta_sdk_extensions.py:112</td><td class="need">Обзора контекста в SDK нет, поэтому запрос собирается вручную через <code>letta_client._base_client</code>, <code>_models</code>, <code>_types</code> — приватные модули без обещаний совместимости. Ломается на обновлении SDK, не только сервера.</td><td class="act"><span class="t sig">при отказе</span></td></tr>
+  <tr><td class="id">P6</td><td class="name">/new читает шаблоны своей моделью страницы</td><td class="where">letta_bot/letta_sdk_extensions.py:155</td><td class="need">Список шаблонов приходит с ключом <code>templates</code> вместо <code>items</code>, поэтому класс страницы написан руками поверх пагинации SDK. Создание агентов — единственное, что от него зависит.</td><td class="act"><span class="t sig">при отказе</span></td></tr>
+  <tr><td class="id">P7</td><td class="name">Расписания на своём HTTP-фолбэке</td><td class="where">letta_bot/custom_tools/schedule_message.py:162,170</td><td class="need">Вся проактивность агентов идёт через <code>/v1/agents/{id}/schedule</code>, и каждый вызов обёрнут в <code>except AttributeError</code> с ручным запросом по тому же пути. Перехватывается только пропавший атрибут: сменившаяся сигнатура или переехавший параметр пролетают насквозь.</td><td class="act"><span class="t sig">при отказе</span></td></tr>
+  <tr><td class="id">P8</td><td class="name">Получателей уведомлений считает песочница</td><td class="where">letta_bot/custom_tools/notify_via_telegram.py:100</td><td class="need">Тул строит свой клиент из <code>LETTA_API_KEY</code>, читает теги агента и режет из них telegram id срезами строк (<code>tag[12:]</code>). Смена формата тега или потеря include даёт молчаливую доставку никому.</td><td class="act"><span class="t sig">при отказе</span></td></tr>
+  <tr><td class="id">P9</td><td class="name">/clear и /export на одиночных маршрутах</td><td class="where">letta_bot/agent.py:643,669</td><td class="need"><code>messages.reset</code> и <code>export_file</code>; у второго ещё и предполагаемая форма <code>.af</code> (<code>{"agents":[{"name":…}]}</code>) с фолбэком на agent_id в имени файла. Отказ ограничен своей командой.</td><td class="act"><span class="t sig">при отказе</span></td></tr>
+  <tr><td class="id">P10</td><td class="name">SDK запинен, сервер за ним — нет</td><td class="where">pyproject.toml:14</td><td class="need"><code>letta-client==1.12.1</code> фиксирует клиент, но не поведение сервиса. Обратное тоже верно: сервис меняется под неизменным пином, и это уже случалось.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">P11</td><td class="name">Ветка fix-file-handling больше не нужна</td><td class="where">origin/fix-file-handling</td><td class="need">Её половина про folders мертва вместе с API, половина про поток решена иначе и проверена. Ветка висит как незакрытая работа, которой нет.</td><td class="act"><span class="t now">сейчас</span></td></tr>
+
+ </tbody>
+</table></div>
+
+<div class="intro">
+ <p class="num">таблица 2</p>
+ <h2>Флот: состояние живых агентов</h2>
+ <p>Единственная группа, где строки описывают <b>не код, а то, что происходит с агентами прямо сейчас</b>. Измерено 20.08.2026 на 53 агентах проекта.</p>
+</div>
+
+<div class="tw"><table>
+ <thead><tr><th>#</th><th>Что не закрыто</th><th>Где</th><th>Чем оборачивается</th><th>Что делать</th></tr></thead>
+ <tbody>
+
+  <tr class="grp"><td colspan="5"><b>F</b> Флот агентов</td></tr>
+  <tr><td class="id">F1</td><td class="name">Исходники тулов на платформе разошлись с репозиторием</td><td class="where">devscripts/sync_custom_tools.py</td><td class="need">Расходятся все четыре. У трёх — одна строка комментария, у <code>schedule_message</code> — <b>+9/−14 строк кода</b>: зарегистрированная версия пишет в ответ <code>Scheduled at: &lt;время вызова&gt;</code> вместо вычисленного времени доставки. Сам запрос к API идентичен, поэтому сообщения приходят вовремя, но агент называет пользователю неверное время. Лечится одной командой: <code>sync_custom_tools --execute</code>.</td><td class="act"><span class="t now">сейчас</span></td></tr>
+  <tr><td class="id">F2</td><td class="name">Семь агентов без запаса окна</td><td class="where">devscripts/context_headroom.py</td><td class="need">У 7 из 53 <code>headroom = ctx − current − max_tokens</code> отрицателен, ещё у 6 меньше 15k. Худшие: <code>kb-radik-main</code> −88354, <code>general-rose-ape</code> −69787, <code>image-gen</code> −65303. Каждый ход упирается в окно, Letta компактит, агент теряет только что полученные данные и идёт за ними снова — снаружи это выглядит как забывчивость, а не как отказ.</td><td class="act"><span class="t now">сейчас</span></td></tr>
+  <tr><td class="id">F3</td><td class="name">raise_context_window закрывает не тех</td><td class="where">devscripts/raise_context_window.py</td><td class="need">Скрипт поднимает окно только агентам на <code>claude-sonnet-5</code> ниже 200k — под фильтр попадают два <code>lab-*</code> агента с намеренно маленьким окном. Остальные из F2 уже на потолке своей модели: там надо снижать <code>max_tokens</code>, а не поднимать окно, и такого скрипта нет.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">F4</td><td class="name">detect_compaction_loop не доходит до вывода</td><td class="where">devscripts/detect_compaction_loop.py</td><td class="need">На текущем размере флота обходит историю сообщений дольше пяти минут и ничего не печатает до конца, так что диагностика F2 держится на <code>context_headroom</code>. Пагинации и промежуточного вывода в скрипте нет.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">F5</td><td class="name">Ключ проекта и токен бота лежат в каждом агенте</td><td class="where">letta_bot/middlewares.py:168; devscripts/sync_custom_tools.py</td><td class="need">Провижининг кладёт <code>LETTA_API_KEY</code> и <code>TELEGRAM_BOT_TOKEN</code> в секреты каждого агента, где тулы их читают. Ротация любого из двух означает обход всего флота, и процедуры для этого нигде нет.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">F6</td><td class="name">Определения ассистентов только в вендорском UI</td><td class="where">letta_bot/client.py:62</td><td class="need">Ни одного файла в репозитории, описывающего ассистента: системный промпт, набор тулов, блоки памяти, модель. <code>/new</code> показывает то, что вернёт платформа; исчезнет шаблон — исчезнет возможность создать такого агента, и восстановить его будет неоткуда.</td><td class="act"><span class="t never">не будет</span></td></tr>
+  <tr><td class="id">F7</td><td class="name">Блоки памяти проактивности ничем не деплоятся</td><td class="where">letta_bot/custom_tools/memory_blocks/</td><td class="need">Протокольные markdown-блоки лежат в репозитории, но ни один скрипт их не публикует: <code>sync_custom_tools</code> пушит только исходники тулов. Что реально стоит на агентах — известно только через API.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">F8</td><td class="name">Флотовые скрипты молча обрезаются на 200</td><td class="where">devscripts/*.py</td><td class="need">Каждый скрипт запрашивает одну страницу с жёстким лимитом и без цикла пагинации (у <code>cancel_stuck_runs</code> — 100). За пределом агенты пропускаются без предупреждения, а отчёт выглядит полным.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+
+ </tbody>
+</table></div>
