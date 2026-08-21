@@ -4,8 +4,6 @@ import logging
 import sys
 
 from aiogram import Bot, Dispatcher
-
-# from aiogram.client.default import DefaultBotProperties  # ВРЕМЕННО не используется
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 from aiogram.utils.formatting import Text

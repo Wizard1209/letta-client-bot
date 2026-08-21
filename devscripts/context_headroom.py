@@ -8,7 +8,7 @@ Letta compacts, the agent loses the data it just fetched and re-fetches it.
     headroom = context_window - static_current - max_tokens
 
 Usage:
-    uv run python -m devscripts._ctx_headroom
+    uv run python -m devscripts.context_headroom
 """
 
 from devscripts.bootstrap import letta, print_config

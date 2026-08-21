@@ -5,7 +5,7 @@ Signal: a `system_alert` user_message containing the compaction notice
 before nearly every step, i.e. the context window overflows on each turn.
 
 Usage:
-    uv run python -m devscripts._detect_compaction_loop [limit]
+    uv run python -m devscripts.detect_compaction_loop [limit]
 """
 
 import sys

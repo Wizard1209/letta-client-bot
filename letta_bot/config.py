@@ -29,10 +29,6 @@ class Config(BaseSettings):
     letta_project_id: str
     letta_api_key: str
 
-    # Scheduler configuration for schedule_message tool
-    scheduler_url: str | None = None
-    scheduler_api_key: str | None = None
-
     # Info notes directory (optional)
     info_dir: Path = Path.cwd() / 'notes'
 

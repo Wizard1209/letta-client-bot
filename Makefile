@@ -1,6 +1,6 @@
 # Letta Telegram Bot - Development & Deployment Commands
 
-.PHONY: help install dev lint format typecheck check test poll build up down logs restart clean
+.PHONY: help install dev lint format typecheck check poll build up down logs restart
 
 help:
 	@echo "Available commands:"

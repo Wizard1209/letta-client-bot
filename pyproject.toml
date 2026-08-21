@@ -33,7 +33,6 @@ exclude = [
   "devscripts/",
   "letta_bot/queries/*_async_edgeql.py",
   "letta_bot/custom_tools/",
-  "letta_bot/_archived/",
   # ruff 0.16 formats Python blocks inside Markdown; keep docs hand-written.
   "*.md",
 ]
@@ -83,11 +82,9 @@ warn_unused_ignores = true
 warn_unreachable = true
 strict_equality = true
 exclude = [
-  "letta-telegram-reference/",
   "letta_bot/queries/.*_async_edgeql\\.py$",
   "devscripts/",
   "letta_bot/custom_tools/",
-  "letta_bot/_archived/",
   "tests/",
 ]
 plugins = ['pydantic.mypy']
