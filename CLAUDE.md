@@ -6,57 +6,93 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A multi-user Telegram bot bridging users to Letta AI agents. Built on aiogram 3.x (Telegram), Gel/EdgeDB (persistence), and the Letta SDK (AI agents). Supports multimodal input (text, images, voice), agent isolation per user via tag-based identity, and an admin approval workflow for access control.
+A multi-user Telegram bot bridging users to Letta AI agents. Built on aiogram 3.x
+(Telegram), Gel/EdgeDB (persistence), and the Letta SDK (AI agents). Supports multimodal
+input (text, images, voice), agent isolation per user via tag-based identity, and an admin
+approval workflow for access control.
+
+Development is stopped, but the deployment is not: real users are talking to Letta agents
+that hold their memory. A change here is a change to something running. `docs/freeze.html`
+is the close-out worklist — what is left, and what is deliberately left alone.
 
 ## Commands
 
+`make check` before committing (format + lint + typecheck), `make poll` to run against
+Telegram locally. Everything else — setup, Gel migrations, codegen, devscripts — is in
+CONTRIBUTION.md.
+
 ```bash
-make dev          # Install all deps (including ruff, mypy, pytest)
-make check        # Format + lint + typecheck (run before committing)
-make poll         # Run bot locally in polling mode
-
-# Tests
-uv run pytest                                # Run all tests
-uv run pytest tests/test_md_tg_converter.py  # Single test file
-uv run pytest -k "test_name"                 # Single test by name
-
-# Database
-gel watch --migrate                    # Dev: auto-apply schema changes
-gel migration create && gel migrate    # Prod: create + apply migration
-uv run gel-py                          # Regenerate Python from .edgeql files
-
-# Devscripts (sync-only utilities)
-uv run python -m devscripts.<script_name> [args]
+uv run pytest                                # all tests
+uv run pytest tests/test_md_tg_converter.py  # one file
+uv run pytest -k "test_name"                 # one test
 ```
+
+Tests cover `md_tg/` and `response_handler.py` — the pure formatting layer. Anything that
+talks to Telegram, Gel or Letta is verified by running it, not by a test.
 
 ## Architecture
 
-**Entry point:** `letta_bot/main.py` — webhook (default) or polling (`--polling` flag).
+**Entry point:** `letta_bot/main.py` — webhook (default) or polling (`-p` / `--polling`).
 
-**Message flow:**
+**Middleware chain**, in registration order (`middlewares.py:setup_middlewares`):
+
 ```
-Telegram → Middleware (user upsert, agent load, photo buffering)
-  → Router (auth | info | agent commands | agent messages)
-  → Letta client streaming → Response handler → md_tg formatter → Telegram
+UserMiddleware        outer; upserts the Telegram user into Gel
+RateLimitMiddleware   ×2 — documents (1/10s), photos (10/10s)
+PhotoBufferMiddleware batches an album into one request (~1s window)
+IdentityMiddleware    flag require_identity — access check, injects identity
+AgentMiddleware       flag require_agent — resolves the agent, injects agent_id
 ```
+
+The last two run only for handlers carrying the matching flag; both raise if the event has
+no sender, so a flagged handler may use `event.from_user` directly. See "Events Without a
+Sender" in CONTRIBUTION.md.
+
+**Then:** router (`info` | `auth` | agent commands | agent messages — an unmatched message
+falls through to the agent) → Letta streaming → `response_handler` → `md_tg` → Telegram.
 
 **Key modules:**
-- `client.py` — Shared async Letta client. Tag-based user-agent association (`identity-tg-{id}`, `owner-tg-{id}`, `creator-tg-{id}`) instead of Letta Identity API.
-- `agent.py` — Message context building, multimodal content, streaming response handling, image/voice processing.
-- `response_handler.py` — Markdown→Telegram conversion via `md_tg`, message chunking (4096 char limit), streaming progressive updates.
-- `auth.py` — Identity model mapping Telegram users to `tg-{telegram_id}`, admin approval workflow for shared agents.
-- `middlewares.py` — User identity upsert, agent selection, access validation, photo batching (PhotoBuffer with ~1s delay for album support), typing indicators.
-- `client_tools/` — Registry pattern for custom tools (e.g., `generate_image`). Tools register at import time.
-- `md_tg/` — Custom Markdown→Telegram MessageEntity converter. UTF-16 aware offsets, smart chunking at block boundaries.
-- `transcription.py` — Voice→text via OpenAI Whisper or ElevenLabs Scribe.
 
-**Database:** Gel (EdgeDB) with schema in `dbschema/default.gel`. Three types: `User`, `Identity`, `AuthorizationRequest`. Queries in `letta_bot/queries/*.edgeql` with auto-generated Python via `gel-py`.
+- `client.py` — shared async Letta client. User↔agent association is tag-based
+  (`identity-tg-{id}`, `owner-tg-{id}`, `creator-tg-{id}`), not the Letta Identity API.
+  Note `agents.list()` returns empty tags unless you pass `include=['agent.tags']`.
+- `agent.py` — builds the message context (metadata, replies, captions), assembles
+  multimodal content, drives the stream, owns the typing indicator.
+- `response_handler.py` — stream events → Telegram: Markdown via `md_tg`, 4096-char
+  chunking, progressive edits, and the stop-reason table that reports a failed turn.
+- `auth.py` — Telegram user → `tg-{telegram_id}` identity, admin approval workflow,
+  `/revoke` unlinking.
+- `middlewares.py` — the chain above.
+- `letta_sdk_extensions.py` — REST endpoints the Python SDK does not expose yet.
+- `errors.py` — global handler: logs the traceback, answers the user, optionally pings
+  admins (`NOTIFY_ADMINS_ON_ERROR`).
+- `info.py`, `broadcast.py`, `commands.py`, `filters.py`, `images.py`, `transcription.py`,
+  `utils.py` — one concern each, named for it.
+- `md_tg/` — top-level package, not part of `letta_bot`. Markdown → Telegram
+  MessageEntity converter: UTF-16 aware offsets, chunking at block boundaries.
 
-**Config:** Pydantic Settings in `letta_bot/config.py`, reads from `.env`. Required: `telegram_bot_token`, `webhook_host`, `letta_project_id`, `letta_api_key`.
+**Two tool families, easy to conflate:**
+
+- `letta_bot/client_tools/` — executed *by the bot* when the agent calls them
+  (`generate_image`). Registry pattern, tools register at import time.
+- `letta_bot/custom_tools/` — Python sources *uploaded to Letta* and run in its sandbox.
+  Four that every agent has (Telegram notify + scheduling) and six opt-in X tools.
+  They read their credentials from the agent's secrets; see CONTRIBUTION.md.
+
+**Database:** Gel (EdgeDB), schema in `dbschema/default.gel`. Three types: `User`,
+`Identity`, `AuthorizationRequest`. Queries live in `letta_bot/queries/*.edgeql` with
+Python generated by `gel-py` alongside them.
+
+**Config:** Pydantic Settings in `letta_bot/config.py`, read from `.env`. Four fields have
+no default and the bot will not start without them: `telegram_bot_token`, `webhook_host`,
+`letta_project_id`, `letta_api_key`. Everything else degrades a feature instead of the
+process — no `openai_api_key`/`elevenlabs_api_key` means no voice, and so on.
 
 ## Code Style
 
-- **Strict mypy**: `disallow_untyped_defs`, `disallow_any_generics`, `strict_equality`. All code must be fully typed.
-- **Ruff**: Line length 92, Python 3.13 target.
-- **Devscripts excluded** from mypy (see pyproject.toml overrides).
+- **Strict mypy**: `disallow_untyped_defs`, `disallow_any_generics`, `strict_equality`.
+  All code must be fully typed. Excluded (pyproject.toml): `devscripts/`, `tests/`,
+  generated `*_async_edgeql.py`, and `custom_tools/` — that code runs in Letta's
+  sandbox, not here.
+- **Ruff**: line length 92, Python 3.13 target.
 - **Async everywhere** in bot code; devscripts are sync-only.
