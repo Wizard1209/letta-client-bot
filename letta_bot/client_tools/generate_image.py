@@ -41,7 +41,7 @@ LOGGER = logging.getLogger(__name__)
 
 # --- Provider model types ---
 
-OpenAIModel = Literal['gpt-image-1-mini', 'gpt-image-1', 'gpt-image-1.5']
+OpenAIModel = Literal['gpt-image-1-mini', 'gpt-image-1', 'gpt-image-1.5', 'gpt-image-2']
 GeminiModel = Literal[
     'gemini-2.5-flash-image',
     'gemini-3.1-flash-image-preview',
@@ -444,8 +444,11 @@ def _build_schema() -> ClientToolSchema:
         description_parts.append(
             'gpt-image-1-mini (default) — fastest, cheapest. '
             'gpt-image-1 — higher quality, slower. '
-            'gpt-image-1.5 — best quality, 4x faster than 1, '
-            'best text rendering and prompt adherence.'
+            'gpt-image-1.5 — high quality, 4x faster than 1, '
+            'strong text rendering and prompt adherence. '
+            'gpt-image-2 — latest model (released 2026-04), '
+            'best instruction-following, improved text and layout, '
+            'multilingual prompts, supports optional reasoning mode.'
         )
 
     if CONFIG.gemini_api_key:
