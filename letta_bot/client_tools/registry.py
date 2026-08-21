@@ -26,6 +26,10 @@ class ClientToolError(Exception):
     """Error safe to surface to the agent (no internal details)."""
 
 
+class ClientToolSoftError(ClientToolError):
+    """Expected failure (e.g. content moderation) — report to agent, no user alarm."""
+
+
 @dataclass(frozen=True)
 class TelegramPhoto:
     """Photo output to send to Telegram."""
@@ -250,6 +254,17 @@ async def resolve_approval(
                 }
             )
             extra_messages.extend(result.extra_messages)
+
+        except ClientToolSoftError as e:
+            LOGGER.warning('Client tool %s soft-failed: %s', tc.name, e)
+            approvals.append(
+                {
+                    'type': 'tool',
+                    'tool_call_id': tc.tool_call_id,
+                    'tool_return': f'Tool execution failed: {e}',
+                    'status': 'error',
+                }
+            )
 
         except Exception as e:
             LOGGER.exception('Client tool %s failed, sending error approval', tc.name)

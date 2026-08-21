@@ -242,6 +242,13 @@ async def send_to_agent(
 
     handler: AgentStreamHandler | None = None
 
+    LOGGER.debug(
+        'send_to_agent: agent=%s, tg_id=%d, parts=%d',
+        agent_id,
+        message.from_user.id,
+        len(content_parts),
+    )
+
     try:
         async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
             for _iteration in range(max_approval_iterations):
@@ -268,6 +275,11 @@ async def send_to_agent(
 
                 # No approval request — agent finished
                 if handler.approval_request is None:
+                    LOGGER.debug(
+                        'send_to_agent: done agent=%s, tg_id=%d',
+                        agent_id,
+                        message.from_user.id,
+                    )
                     return
 
                 # Process approval request and continue loop
@@ -758,9 +770,7 @@ async def detach(message: Message) -> None:
     agents = [agent async for agent in list_agents_by_user(message.from_user.id)]
 
     if not agents:
-        await message.answer(
-            **Text("You don't have any assistants.").as_kwargs()
-        )
+        await message.answer(**Text("You don't have any assistants.").as_kwargs())
         return
 
     builder = InlineKeyboardBuilder()
@@ -796,9 +806,7 @@ async def handle_detach_select(
         return
 
     # Check if last user (using tags already fetched by validate_agent_access)
-    identity_count = sum(
-        1 for t in (agent.tags or []) if t.startswith('identity-tg-')
-    )
+    identity_count = sum(1 for t in (agent.tags or []) if t.startswith('identity-tg-'))
     if identity_count <= 1:
         await callback.answer(
             '❌ Cannot detach: you are the last user on this assistant', show_alert=True
@@ -869,9 +877,7 @@ async def handle_detach_confirm(
 
     # Reset selected_agent if detached agent was selected
     if identity.selected_agent == callback_data.agent_id:
-        await reset_selected_agent_query(
-            gel_client, telegram_id=callback.from_user.id
-        )
+        await reset_selected_agent_query(gel_client, telegram_id=callback.from_user.id)
 
     if isinstance(callback.message, Message):
         await callback.message.edit_text(
@@ -939,9 +945,7 @@ async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
             # Update status message to show upload complete
             await status_msg.edit_text(**Text(f'✅ Uploaded "{file_name}"').as_kwargs())
 
-            ctx.add_text(
-                f'<system_message>File "{file_name}" ready (id: {file_id})</system_message>'
-            )
+            ctx.add_text(f'<system>File "{file_name}" ready (id: {file_id})</system>')
 
         except FileTooLargeError as e:
             await message.answer(**Text(f'📄 {e}').as_kwargs())
@@ -949,7 +953,7 @@ async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
 
         except (DocumentProcessingError, LettaProcessingError) as e:
             LOGGER.warning('Document processing failed: %s, telegram_id=%s', e, user_id)
-            ctx.add_text(f'<system_message>File error: {e}</system_message>')
+            ctx.add_text(f'<system>File error: {e}</system>')
 
         except APIError as e:
             status = getattr(e, 'status_code', 'unknown')
@@ -960,9 +964,7 @@ async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
                 body,
                 user_id,
             )
-            ctx.add_text(
-                f'<system_message>File error: status={status}, body={body}</system_message>'
-            )
+            ctx.add_text(f'<system>File error: status={status}, body={body}</system>')
 
     # Send to agent if we have content
     content_parts = ctx.build_content_parts()
@@ -1017,7 +1019,7 @@ async def handle_album(
     # If all images failed, add error context
     if successful_count == 0 and results:
         ctx.prepend_text(
-            '<image_processing_error>Failed to process all images</image_processing_error>'
+            '<image-processing-error>Failed to process all images</image-processing-error>'
         )
 
     # Add file_id annotations for agent to reference via client tools
@@ -1053,7 +1055,7 @@ async def handle_audio(message: Message, bot: Bot, agent_id: str) -> None:
         ctx.add_text(caption)
 
     # Determine tag based on content type
-    tag = 'voice_transcript' if message.voice else 'audio_transcript'
+    tag = 'voice-transcript' if message.voice else 'audio-transcript'
 
     try:
         transcript = await transcription_service.transcribe_message_content(bot, message)
@@ -1065,7 +1067,7 @@ async def handle_audio(message: Message, bot: Bot, agent_id: str) -> None:
             e,
             message.from_user.id,
         )
-        ctx.add_text(f'<{tag}_error>{e}</{tag}_error>')
+        ctx.add_text(f'<{tag}-error>{e}</{tag}-error>')
 
     # Send to agent
     content_parts = ctx.build_content_parts()
@@ -1101,7 +1103,7 @@ async def handle_regular_sticker(message: Message, bot: Bot, agent_id: str) -> N
             e,
             message.from_user.id,
         )
-        ctx.prepend_text(f'<sticker_processing_error>{e}</sticker_processing_error>')
+        ctx.prepend_text(f'<sticker-processing-error>{e}</sticker-processing-error>')
 
     # Send to agent
     content_parts = ctx.build_content_parts()
@@ -1126,6 +1128,12 @@ async def handle_text(message: Message, bot: Bot, agent_id: str) -> None:
 
     This handler must be registered LAST as it has no content type filter.
     """
+    assert message.from_user, 'from_user required (guaranteed by middleware)'
+    LOGGER.debug(
+        'handle_text: tg_id=%d, agent=%s',
+        message.from_user.id,
+        agent_id,
+    )
     ctx = init_message_context(message)
 
     # Add text content

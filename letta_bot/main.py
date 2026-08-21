@@ -56,7 +56,8 @@ def setup_bot_handlers(dp: Dispatcher) -> None:
 
 async def on_startup(bot: Bot) -> None:
     LOGGER.info(f'Registering webhook: {CONFIG.webhook_url}')
-    await bot.set_webhook(f'{CONFIG.webhook_url}')
+    result = await bot.set_webhook(f'{CONFIG.webhook_url}')
+    LOGGER.debug('set_webhook response: %s', result)
     await register_commands(bot)
 
 
@@ -72,7 +73,8 @@ def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
 
     # Webhook-specific setup
     dp.startup.register(on_startup)  # register webhook
-    dp.shutdown.register(bot.delete_webhook)
+    # Don't delete webhook on shutdown — during rolling deploys
+    # the old instance would remove the webhook set by the new one
     app = web.Application()
     webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path=CONFIG.webhook_path)
@@ -90,6 +92,9 @@ async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
     # Register all common bot handlers
     setup_bot_handlers(dp)
 
+    # Clean up webhook before switching to polling
+    await bot.delete_webhook()
+
     # Register command menu and start polling loop
     await register_commands(bot)
     await dp.start_polling(bot)
@@ -97,6 +102,18 @@ async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
 
 if __name__ == '__main__':
     logging.basicConfig(level=getattr(logging, CONFIG.logging_level), stream=sys.stdout)
+
+    if CONFIG.logging_level == 'DEBUG':
+        for lib in ('httpx', 'httpcore', 'gel', 'edb', 'aiogram', 'aiohttp'):
+            logging.getLogger(lib).setLevel(logging.DEBUG)
+
+    LOGGER.debug(
+        'Bot config: webhook_url=%s, port=%d, host=%s, webhook_path=%r',
+        CONFIG.webhook_url,
+        CONFIG.backend_port,
+        CONFIG.backend_host,
+        CONFIG.webhook_path,
+    )
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--polling', action='store_true', help='Enable polling mode.')

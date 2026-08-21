@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import (
     BotCommand,
     BotCommandScopeAllPrivateChats,
@@ -53,13 +54,22 @@ async def register_commands(bot: Bot) -> None:
         return
 
     combined_commands = user_commands + admin_commands
+    registered = 0
     for admin_id in CONFIG.admin_ids:
-        await bot.set_my_commands(
-            commands=combined_commands,
-            scope=BotCommandScopeChat(chat_id=admin_id),
-        )
+        try:
+            await bot.set_my_commands(
+                commands=combined_commands,
+                scope=BotCommandScopeChat(chat_id=admin_id),
+            )
+            registered += 1
+        except (TelegramBadRequest, TelegramForbiddenError):
+            LOGGER.warning(
+                'Admin %d unreachable (not started or blocked), skipping',
+                admin_id,
+            )
     LOGGER.info(
-        'Registered %d admin commands for %d admin(s)',
+        'Registered %d admin commands for %d/%d admin(s)',
         len(combined_commands),
+        registered,
         len(CONFIG.admin_ids),
     )

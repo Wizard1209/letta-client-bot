@@ -69,7 +69,7 @@ from letta_bot.queries.revoke_user_access_async_edgeql import (
 from letta_bot.queries.update_auth_request_status_async_edgeql import (
     update_auth_request_status as update_auth_request_status_query,
 )
-from letta_bot.utils import validate_uuid
+from letta_bot.utils import chunk_texts, validate_uuid
 
 LOGGER = logging.getLogger(__name__)
 
@@ -332,7 +332,8 @@ async def pending_command(message: Message, gel_client: AsyncIOExecutor) -> None
             )
         )
 
-    await message.answer(**as_list(*response_lines).as_kwargs())
+    for text, entities in chunk_texts(response_lines):
+        await message.answer(text, entities=entities)
 
 
 @auth_router.message(Command('allow'), AdminOnlyFilter)
@@ -663,25 +664,25 @@ async def users_command(message: Message, gel_client: AsyncIOExecutor) -> None:
     response_parts = [Text('👥 Active Users:')]
 
     # Group by telegram_id (DB already returns sorted by telegram_id)
+    # Each user is one Text part so chunk_texts never splits mid-user
     for _, requests in groupby(all_requests, key=lambda r: r.user.telegram_id):
-        # Convert iterator to list to use first item and iterate again
         requests_list = list(requests)
         user = requests_list[0].user
         username_str = f'@{user.username}' if user.username else 'no username'
-        response_parts.append(
+        user_lines: list[Text] = [
             Text(
                 f'• {user.full_name or user.first_name} ({username_str})\n  Telegram ID: ',
                 Code(str(user.telegram_id)),
-            )
-        )
-
-        # List all accesses for this user
-        for req in requests_list:
-            response_parts.append(
+            ),
+            *(
                 Text(f'  └─ {req.resource_type.value}: ', req.resource_id)
-            )
+                for req in requests_list
+            ),
+        ]
+        response_parts.append(as_list(*user_lines))
 
-    await message.answer(**as_list(*response_parts).as_kwargs())
+    for text, entities in chunk_texts(response_parts):
+        await message.answer(text, entities=entities)
 
 
 @auth_router.message(Command('attach'), flags={'require_identity': True})

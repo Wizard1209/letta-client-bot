@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from functools import wraps
 import mimetypes
 import time
@@ -10,6 +10,8 @@ from aiogram.utils.formatting import Text
 
 from md_tg import markdown_to_telegram
 from md_tg.utils import utf16_len
+
+CHUNK_MAX_LEN = 2048
 
 P = ParamSpec('P')
 R = TypeVar('R')
@@ -98,11 +100,75 @@ def get_mime_type(file_name: str | None) -> str | None:
     return mime_type
 
 
+def chunk_texts(
+    parts: Iterable[Text],
+    max_len: int = CHUNK_MAX_LEN,
+    separator: str = '\n',
+) -> Iterator[tuple[str, list[MessageEntity]]]:
+    """Yield (text, entities) chunks from aiogram Text parts.
+
+    Renders each Text part, accumulates with separator until the next
+    part would exceed max_len, then yields the chunk and starts a new one.
+
+    Args:
+        parts: Iterable of aiogram Text objects
+        max_len: Max UTF-16 length per chunk (default: 2048)
+        separator: String between parts within a chunk
+
+    Yields:
+        (text, entities) tuples ready for message.answer(text, entities=...)
+    """
+    chunk_text = ''
+    chunk_entities: list[MessageEntity] = []
+    chunk_len = 0
+    sep_len = utf16_len(separator)
+
+    for part in parts:
+        part_text, part_entities = part.render()
+        part_len = utf16_len(part_text)
+
+        # Would adding this part exceed the limit?
+        needed = part_len + (sep_len if chunk_text else 0)
+        if chunk_text and chunk_len + needed > max_len:
+            yield chunk_text, chunk_entities
+            chunk_text = ''
+            chunk_entities = []
+            chunk_len = 0
+
+        # Append separator if not first in chunk
+        offset = chunk_len
+        if chunk_text:
+            chunk_text += separator
+            offset += sep_len
+            chunk_len += sep_len
+
+        # Append part text and shift entity offsets
+        chunk_text += part_text
+        for entity in part_entities:
+            chunk_entities.append(
+                MessageEntity(
+                    type=entity.type,
+                    offset=entity.offset + offset,
+                    length=entity.length,
+                    url=entity.url,
+                    language=entity.language,
+                    user=entity.user,
+                    custom_emoji_id=entity.custom_emoji_id,
+                )
+            )
+        chunk_len += part_len
+
+    # Yield remaining
+    if chunk_text:
+        yield chunk_text, chunk_entities
+
+
 def merge_with_entity(
     header: Text,
     content: str,
     entity_type: str,
     separator: str = '\n',
+    parse_markdown: bool = True,
 ) -> list[tuple[str, list[MessageEntity]]]:
     """Merge aiogram header with md_tg content and wrap content with entity.
 
@@ -114,6 +180,9 @@ def merge_with_entity(
         content: Markdown content to convert and wrap
         entity_type: MessageEntity type for wrapping content
         separator: String between header and content (default: newline)
+        parse_markdown: If True, keep inner entities from md_tg. If False,
+            use md_tg only for chunking and discard inner entities (plain
+            text inside the wrapping entity).
 
     Returns:
         List of (text, entities) tuples for message.answer()
@@ -133,8 +202,10 @@ def merge_with_entity(
     if not content or not content.strip():
         return [(header_text, list(header_entities))]
 
-    # Convert content via md_tg
+    # Always use md_tg for chunking; optionally discard inner entities
     content_chunks = markdown_to_telegram(content)
+    if not parse_markdown:
+        content_chunks = [(text, []) for text, _ in content_chunks]
     if not content_chunks:
         return [(header_text, list(header_entities))]
 

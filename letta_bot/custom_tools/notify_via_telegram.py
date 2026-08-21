@@ -13,6 +13,42 @@ import re
 import time
 
 
+def _parse_tg_error(resp):
+    """Parse Telegram API error into agent-friendly message."""
+    try:
+        data = resp.json()
+    except Exception:
+        return f'Telegram API HTTP {resp.status_code}'
+
+    code = data.get('error_code', resp.status_code)
+    desc = data.get('description', '')
+    desc_lower = desc.lower()
+
+    if code == 400:
+        if 'message_too_long' in desc_lower or 'message is too long' in desc_lower:
+            return 'Message too long (limit 4096). Shorten and retry.'
+        if 'chat not found' in desc_lower:
+            return 'Chat not found.'
+        if 'message text is empty' in desc_lower:
+            return 'Message text is empty.'
+        return f'Bad request: {desc}'
+
+    if code == 403:
+        if 'blocked' in desc_lower:
+            return 'User blocked the bot.'
+        if 'kicked' in desc_lower:
+            return 'Bot was removed from chat.'
+        if 'deactivated' in desc_lower:
+            return 'User account is deactivated.'
+        return f'Forbidden: {desc}'
+
+    if code == 429:
+        retry_after = data.get('parameters', {}).get('retry_after', '?')
+        return f'Rate limited. Retry after {retry_after}s.'
+
+    return f'Telegram error {code}: {desc}'
+
+
 def notify_via_telegram(
     message: str,
     owner_only: bool = False,
@@ -85,9 +121,18 @@ def notify_via_telegram(
     # Escape MarkdownV2 special characters
     escaped = re.sub(r'([_*\[\]()~`>#+=|{}.!-])', r'\\\1', message)
 
+    msg_len = len(escaped.encode('utf-16-le')) // 2
+    if msg_len > 4096:
+        orig_len = len(message.encode('utf-16-le')) // 2
+        return (
+            f'Error: escaped message is {msg_len} UTF-16 chars (original: {orig_len}), '
+            f'Telegram limit is 4096. Shorten your message and try again.'
+        )
+
     # Send message to each recipient
     url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
-    results = []
+    sent = 0
+    errors = []
 
     for chat_id in chat_ids:
         try:
@@ -96,16 +141,18 @@ def notify_via_telegram(
                 'text': escaped,
                 'parse_mode': 'MarkdownV2',
             }, timeout=30)
-            results.append((chat_id, resp.ok))
+            if resp.ok:
+                sent += 1
+            else:
+                errors.append(_parse_tg_error(resp))
             time.sleep(3)
-        except requests.exceptions.RequestException:
-            results.append((chat_id, False))
+        except requests.exceptions.RequestException as e:
+            errors.append(f'Network error: {e}. Retryable.')
 
-    sent = sum(ok for _, ok in results)
-    total = len(results)
+    if not errors:
+        return 'Sent.' if sent == 1 else f'Sent to {sent} users.'
 
-    if sent == total:
-        return 'Message sent successfully via Telegram' if total == 1 else f'Message sent to {sent} users via Telegram'
-
-    failed = [cid for cid, ok in results if not ok]
-    return f'Sent to {sent}/{total} users. Failed: {", ".join(failed)}'
+    summary = '; '.join(set(errors))
+    if sent:
+        return f'Sent to {sent}/{sent + len(errors)}. Errors: {summary}'
+    return f'Error: {summary}'

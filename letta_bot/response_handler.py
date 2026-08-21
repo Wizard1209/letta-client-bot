@@ -7,6 +7,7 @@ This module handles:
 4. Sending responses to users
 """
 
+import contextlib
 from datetime import datetime, timedelta
 import difflib
 from itertools import islice
@@ -27,6 +28,7 @@ from aiogram.utils.formatting import (
 )
 from letta_client.types.agents import ApprovalRequestMessage
 from letta_client.types.agents.letta_streaming_response import LettaStreamingResponse
+from letta_client.types.agents.tool_call_message import ToolCallMessage
 
 from letta_bot.client_tools import extract_tool_calls
 from letta_bot.utils import merge_with_entity
@@ -36,6 +38,25 @@ LOGGER = logging.getLogger(__name__)
 
 # Telegram message limit in characters
 TELEGRAM_MAX_LEN = 4096
+
+
+def _make_code_fence(content: str, language: str = '') -> str:
+    """Wrap content in a markdown code fence, escaping inner backticks.
+
+    Finds the longest run of backticks in content and uses a fence
+    one backtick longer, per CommonMark spec.
+    """
+    max_run = 2  # minimum fence is 3 backticks
+    current_run = 0
+    for ch in content:
+        if ch == '`':
+            current_run += 1
+            max_run = max(max_run, current_run)
+        else:
+            current_run = 0
+
+    fence = '`' * (max_run + 1)
+    return f'{fence}{language}\n{content}\n{fence}'
 
 
 # =============================================================================
@@ -114,17 +135,17 @@ def _format_tool_call(tool_name: str, arguments: str) -> dict[str, Any] | str | 
 
 
 def _format_tool_call_message(
-    event: LettaStreamingResponse,
+    event: ToolCallMessage | ApprovalRequestMessage,
 ) -> dict[str, Any] | str | None:
     """Format tool call message from a stream event.
 
     Thin wrapper around ``_format_tool_call`` that extracts fields from
     the streaming event.
     """
-    tool_call = event.tool_call  # type: ignore[union-attr]
-    name: str = tool_call.name  # type: ignore[assignment]
-    arguments: str = tool_call.arguments  # type: ignore[assignment]
-    return _format_tool_call(name, arguments)
+    tool_call = event.tool_call
+    if not tool_call.name or not tool_call.arguments:
+        return None
+    return _format_tool_call(tool_call.name, tool_call.arguments)
 
 
 def _format_tool_by_name(
@@ -454,7 +475,7 @@ def _format_archival_memory_insert(args_obj: dict[str, Any]) -> str:
         formatted_tags = ', '.join(tags)
         parts.append(f'**Tags:** {formatted_tags}\n')
 
-    parts.append(f'**Content:**\n{content_text}')
+    parts.append(f'**Content:**\n{_make_code_fence(content_text)}')
 
     return ''.join(parts)
 
@@ -498,28 +519,19 @@ def _format_archival_memory_search(args_obj: dict[str, Any]) -> dict[str, Any]:
     return as_line(*elements, sep='\n').as_kwargs()
 
 
-def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> dict[str, Any]:
+def _format_memory_insert(args_obj: dict[str, Any], legacy: bool = False) -> str:
     """Format memory_insert tool call."""
     insert_text = args_obj.get('new_str' if legacy else 'insert_text', '')
     path = args_obj.get('path', '')
 
-    return as_line(
-        *(
-            Italic('📝 Updating memory block...'),
-            Text(
-                as_key_value(
-                    'Path',
-                    path,
-                ),
-                '\n',
-            ),
-            Text(insert_text),
-        ),
-        sep='\n',
-    ).as_kwargs()
+    parts = ['*📝 Updating memory block...*\n']
+    parts.append(f'**Path:** {path}\n')
+    parts.append(_make_code_fence(insert_text))
+
+    return ''.join(parts)
 
 
-def _format_memory_replace(args_obj: dict[str, Any]) -> dict[str, Any]:
+def _format_memory_replace(args_obj: dict[str, Any]) -> str:
     """Format memory_replace tool call."""
     path = args_obj.get('path', '')
     old_string = args_obj.get('old_string', '')
@@ -527,14 +539,12 @@ def _format_memory_replace(args_obj: dict[str, Any]) -> dict[str, Any]:
 
     diff = _get_diff_text(old_string, new_string)
 
-    parts: list[Any] = [Italic('🔧 Modifying memory block...')]
-
+    parts = ['*🔧 Modifying memory block...*\n']
     if path:
-        parts.append(as_key_value('Path', path))
+        parts.append(f'**Path:** {path}\n')
+    parts.append(_make_code_fence(diff, 'diff'))
 
-    parts.append(Pre(diff, language='diff'))
-
-    return as_line(*parts, sep='\n').as_kwargs()
+    return ''.join(parts)
 
 
 def _format_memory_rename(args_obj: dict[str, Any]) -> dict[str, Any]:
@@ -590,7 +600,7 @@ def _format_memory_create(args_obj: dict[str, Any]) -> str:
         parts.append(f'**Description:** "{description}"\n')
 
     if file_text:
-        parts.append(f'**Initial content:**\n{file_text}')
+        parts.append(f'**Initial content:**\n{_make_code_fence(file_text)}')
 
     return ''.join(parts)
 
@@ -613,17 +623,16 @@ def _format_memory(args_obj: dict[str, Any]) -> dict[str, Any] | str | None:
             return None
 
 
-def _format_run_code(args_obj: dict[str, Any]) -> dict[str, Any]:
+def _format_run_code(args_obj: dict[str, Any]) -> str:
     """Format run_code tool call."""
     code = args_obj.get('code', '')
     language = args_obj.get('language', 'python')
 
-    return as_line(
-        Italic('⚙️ Executing code...'),
-        as_key_value('Language', language),
-        Pre(code, language=language),
-        sep='\n',
-    ).as_kwargs()
+    parts = ['*⚙️ Executing code...*\n']
+    parts.append(f'**Language:** {language}\n')
+    parts.append(_make_code_fence(code, language))
+
+    return ''.join(parts)
 
 
 def _format_generate_image(args_obj: dict[str, Any]) -> dict[str, Any]:
@@ -631,10 +640,15 @@ def _format_generate_image(args_obj: dict[str, Any]) -> dict[str, Any]:
     prompt = args_obj.get('prompt', '')
     reference_images = args_obj.get('reference_images', [])
 
+    model = args_obj.get('model')
+
     elements: list[Any] = [
         Italic('🎨 Generating image...'),
         as_key_value('Prompt', f'"{prompt}"'),
     ]
+
+    if model:
+        elements.append(as_key_value('Model', model))
 
     if reference_images:
         elements.append(as_key_value('References', f'{len(reference_images)} image(s)'))
@@ -647,7 +661,7 @@ def _format_generic_tool(tool_name: str, args_obj: dict[str, Any]) -> str:
     formatted_args = json.dumps(args_obj, indent=2)
 
     parts = ['*🔧 Using tool...*\n', f'**Tool:** {tool_name}\n']
-    parts.append(f'**Arguments:**\n```json\n{formatted_args}\n```')
+    parts.append(f'**Arguments:**\n{_make_code_fence(formatted_args, "json")}')
 
     return ''.join(parts)
 
@@ -692,16 +706,15 @@ async def send_reasoning_message(message: Message, reasoning_text: str) -> None:
     """Send reasoning message with expandable blockquote.
 
     Header stays visible, content is wrapped in expandable_blockquote.
-    Code blocks (```) are stripped (pre entities break blockquote).
-
     Args:
         message: Telegram message to reply to
         reasoning_text: Raw reasoning content
     """
     chunks = merge_with_entity(
         header=Italic('Agent reasoning:'),
-        content=reasoning_text.replace('```', ''),
+        content=reasoning_text,
         entity_type='expandable_blockquote',
+        parse_markdown=False,
     )
     for text, entities in chunks:
         await message.answer(text, entities=entities)
@@ -728,30 +741,37 @@ class AgentStreamHandler:
         self.has_assistant_message = False
 
     async def handle_event(self, event: LettaStreamingResponse) -> None:
-        """Process event
+        """Process event via ping state machine.
 
-        Event order during streaming:
-        1. Ping indicators (progress updates)
-        2. Tool calls and reasoning (processing)
-        3. Assistant message (final response)
-
-        Only assistant_message clears ping state.
+        States: IDLE ↔ PINGING
+        - IDLE + ping → create ⏳ → PINGING
+        - PINGING + ping → edit ⏳ → PINGING
+        - PINGING + content → delete ⏳, send content → IDLE
+        - IDLE + content → send content → IDLE
 
         Args:
             event: Stream event from Letta API
         """
         # Guard: Do nothing for events without message_type
         if not hasattr(event, 'message_type'):
+            LOGGER.debug('Stream event without message_type: %s', type(event).__name__)
             return
 
         message_type = event.message_type
+        LOGGER.debug('Stream event: %s', message_type)
 
-        # Phase 1: Progress indicator (state management)
+        # Ping: progress indicator (IDLE→PINGING or PINGING→PINGING)
         if message_type == 'ping':
             await self._handle_ping()
             return
 
-        # Phase 2: Processing content (reasoning, tool calls, system alerts)
+        # Silent events — no user-facing output, no state change
+        if message_type in ('stop_reason', 'usage_statistics'):
+            return
+
+        # Any content event: delete ping first (PINGING→IDLE)
+        await self._delete_ping()
+
         if message_type == 'reasoning_message':
             reasoning_text = getattr(event, 'reasoning', '')
             if reasoning_text:
@@ -762,6 +782,7 @@ class AgentStreamHandler:
             return
 
         if message_type == 'tool_call_message':
+            assert isinstance(event, ToolCallMessage)
             formatted_content = _format_tool_call_message(event)
             if formatted_content:
                 try:
@@ -788,8 +809,9 @@ class AgentStreamHandler:
 
         # Approval request: store and format tool calls for user
         if message_type == 'approval_request_message':
-            self.approval_request = event  # type: ignore[assignment]
-            tool_calls = extract_tool_calls(event)  # type: ignore[arg-type]
+            assert isinstance(event, ApprovalRequestMessage)
+            self.approval_request = event
+            tool_calls = extract_tool_calls(event)
             for tc in tool_calls:
                 formatted = _format_tool_call(tc.name, tc.arguments)
                 if formatted:
@@ -802,43 +824,40 @@ class AgentStreamHandler:
                         await _send_error_message(self.telegram_message, e, str(formatted))
             return
 
-        # Silent events — no user-facing output
-        if message_type in ('stop_reason', 'usage_statistics'):
-            return
-
-        # Phase 3: Final response (clears ping state)
+        # Final response
         if message_type == 'assistant_message':
             raw_content = getattr(event, 'content', '').strip()
             if raw_content:
                 await send_markdown_message(self.telegram_message, raw_content)
                 self.has_assistant_message = True
-                self._clear_ping_state()
 
     async def _handle_ping(self) -> None:
-        """Handle ping events with state management."""
+        """Handle ping events (IDLE→PINGING or PINGING→PINGING)."""
         self.ping_count += 1
         ping_text = '⏳' * self.ping_count
 
         if self.ping_message is None:
-            # First ping: Send new message
             self.ping_message = await self.telegram_message.answer(ping_text)
         else:
-            # Subsequent pings: Edit to add more hourglasses
             try:
                 await self.ping_message.edit_text(ping_text)
-            except Exception as e:
-                LOGGER.warning(f'Failed to edit ping message: {e}')
+            except Exception:
+                # Edit failed — delete stale message before creating fresh
+                with contextlib.suppress(Exception):
+                    await self.ping_message.delete()
+                self.ping_message = await self.telegram_message.answer(ping_text)
+
+    async def _delete_ping(self) -> None:
+        """Delete ping message and reset state (PINGING→IDLE)."""
+        if self.ping_message is None:
+            return
+        try:
+            await self.ping_message.delete()
+        except Exception as e:
+            LOGGER.warning('Failed to delete ping message: %s', e)
+        self.ping_message = None
+        self.ping_count = 0
 
     async def cleanup_ping(self) -> None:
-        """Delete hanging ping message (e.g. after connection interruption)."""
-        if self.ping_message is not None:
-            try:
-                await self.ping_message.delete()
-            except Exception as e:
-                LOGGER.warning('Failed to delete ping message: %s', e)
-            self._clear_ping_state()
-
-    def _clear_ping_state(self) -> None:
-        """Reset ping tracking state."""
-        self.ping_count = 0
-        self.ping_message = None
+        """Public API for error handlers in agent.py."""
+        await self._delete_ping()

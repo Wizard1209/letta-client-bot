@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Callable, Sequence
 import re
 from typing import Any
@@ -1027,7 +1028,7 @@ class TelegramRenderer(BaseRenderer):
 
         return '\n'.join(lines)
 
-    def finalize(self) -> tuple[str, list[MessageEntity]]:  # type: ignore[valid-type]
+    def finalize(self) -> tuple[str, builtins.list[MessageEntity]]:
         """Finalize rendering and return result.
 
         Removes trailing whitespace and filters invalid entities.

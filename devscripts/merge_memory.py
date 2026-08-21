@@ -163,7 +163,7 @@ def send_system_message(agent_id: str, message: str) -> bool:
     try:
         letta.agents.messages.create(
             agent_id=agent_id,
-            messages=[{'role': 'system', 'content': message}],
+            messages=[{'role': 'user', 'content': f'<system>{message}</system>'}],
         )
         return True
     except APIError as e:

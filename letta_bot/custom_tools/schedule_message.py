@@ -141,8 +141,8 @@ def schedule_message(
     # Build messages payload
     messages_payload = [
         {
-            'role': 'system',
-            'content': message_to_self,
+            'role': 'user',
+            'content': f'<system>{message_to_self}</system>',
         }
     ]
 

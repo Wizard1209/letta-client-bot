@@ -4,7 +4,7 @@ import contextlib
 from dataclasses import dataclass, field
 import logging
 import time
-from typing import cast
+from typing import Literal, cast
 
 from aiogram import BaseMiddleware, Dispatcher
 from aiogram.dispatcher.flags import get_flag
@@ -117,7 +117,17 @@ class PhotoBuffer:
 # Agent Resolution Helpers
 # =============================================================================
 
-AGENT_INCLUDE = ['agent.tags', 'agent.secrets']
+_AgentInclude = Literal[
+    'agent.blocks',
+    'agent.identities',
+    'agent.managed_group',
+    'agent.pending_approval',
+    'agent.secrets',
+    'agent.sources',
+    'agent.tags',
+    'agent.tools',
+]
+AGENT_INCLUDE: list[_AgentInclude] = ['agent.tags', 'agent.secrets']
 
 
 async def _validate_selected_agent(
@@ -132,7 +142,7 @@ async def _validate_selected_agent(
     try:
         agent = await client.agents.retrieve(
             agent_id,
-            include=AGENT_INCLUDE,  # type: ignore[arg-type]
+            include=AGENT_INCLUDE,
         )
     except NotFoundError:
         return None
@@ -390,8 +400,7 @@ class UserMiddleware(BaseMiddleware):
             user = await upsert_user_cached(gel_client, **user_model)
 
         data['user'] = user
-
-        # LOGGER.info(f'User upserted: {user.id}') #
+        LOGGER.debug('UserMiddleware: upserted tg_id=%d', from_user.id)
 
         return await handler(event, data)
 
@@ -429,6 +438,7 @@ class IdentityMiddleware(BaseMiddleware):
 
         # Authorization - check if user has allowed identity
         if not await get_allowed_identity_query(gel_client, telegram_id=telegram_id):
+            LOGGER.debug('IdentityMiddleware: denied tg_id=%d', telegram_id)
             await event.answer(
                 **Text('❌ No access — use /new or /access to request').as_kwargs()
             )
@@ -441,6 +451,7 @@ class IdentityMiddleware(BaseMiddleware):
 
         # Inject identity into handler data
         data['identity'] = cast(GetIdentityResult, identity_list[0])
+        LOGGER.debug('IdentityMiddleware: allowed tg_id=%d', telegram_id)
 
         return await handler(event, data)
 
@@ -496,13 +507,14 @@ class AgentMiddleware(BaseMiddleware):
             try:
                 agent_id = await get_oldest_agent_by_user(telegram_id)
             except IndexError:
+                LOGGER.debug('AgentMiddleware: no agents for tg_id=%d', telegram_id)
                 await event.answer(
                     **Text('❌ No assistants yet — use /new to request one').as_kwargs()
                 )
                 return None
             agent = await client.agents.retrieve(
                 agent_id,
-                include=AGENT_INCLUDE,  # type: ignore[arg-type]
+                include=AGENT_INCLUDE,
             )
             selection_changed = True
 
@@ -527,6 +539,7 @@ class AgentMiddleware(BaseMiddleware):
 
         # 5. INJECT
         data['agent_id'] = agent.id
+        LOGGER.debug('AgentMiddleware: resolved tg_id=%d, agent=%s', telegram_id, agent.id)
         return await handler(event, data)
 
 
