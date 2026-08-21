@@ -288,10 +288,7 @@ echo "agent-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" > .agent_id
 
 ## Technical TODOs
 
-What is left to finish before the project is closed — which branches to merge,
-what to fix, what to run against the live agents — is in
-[`docs/freeze.html`](docs/freeze.html), together with what was found and
-deliberately left alone. The two long-standing ones:
+Two long-standing ones:
 
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>
 - Wrap auth logic with multiple db queries into transactions <https://docs.geldata.com/reference/using/python#transactions>

@@ -94,3 +94,6 @@ evals/
 
 # lab: letta agent instruction testbed
 lab/
+
+# internal close-out worklist
+docs/freeze.html

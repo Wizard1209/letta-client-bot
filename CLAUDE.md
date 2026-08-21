@@ -12,8 +12,7 @@ input (text, images, voice), agent isolation per user via tag-based identity, an
 approval workflow for access control.
 
 Development is stopped, but the deployment is not: real users are talking to Letta agents
-that hold their memory. A change here is a change to something running. `docs/freeze.html`
-is the close-out worklist — what is left, and what is deliberately left alone.
+that hold their memory. A change here is a change to something running.
 
 ## Commands
 
