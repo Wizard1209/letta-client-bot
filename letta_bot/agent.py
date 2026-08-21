@@ -362,8 +362,7 @@ class DetachConfirmCallback(CallbackData, prefix='detach_c'):
 @agent_commands_router.message(Command('switch'), flags={'require_identity': True})
 async def switch(message: Message, identity: GetIdentityResult) -> None:
     """List user's assistants and allow switching between them."""
-    if not message.from_user:
-        return
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
     # List all agents for this user (via identity tags)
     try:
@@ -412,8 +411,7 @@ async def handle_switch_assistant(
     gel_client: AsyncIOExecutor,
 ) -> None:
     """Handle assistant selection callback."""
-    if not callback.from_user:
-        return
+    assert callback.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
     # Check if already selected - avoid unnecessary update and Telegram API error
     if identity.selected_agent == callback_data.agent_id:
@@ -465,9 +463,6 @@ async def handle_switch_assistant(
 )
 async def assistant_info_handler(message: Message, agent_id: str) -> None:
     """Show assistant info with memory blocks."""
-    if not message.from_user:
-        return
-
     # Send loading indicator
     status_msg = await message.answer(**Text('⏳ Fetching assistant info...').as_kwargs())
 
@@ -536,9 +531,6 @@ async def assistant_info_handler(message: Message, agent_id: str) -> None:
 )
 async def context_handler(message: Message, agent_id: str) -> None:
     """Show assistant context window breakdown."""
-    if not message.from_user:
-        return
-
     # Send loading indicator
     status_msg = await message.answer(**Text('⏳ Fetching context info...').as_kwargs())
 
@@ -593,9 +585,6 @@ async def context_handler(message: Message, agent_id: str) -> None:
 )
 async def clear_messages(message: Message, agent_id: str) -> None:
     """Show confirmation prompt for clearing message history."""
-    if not message.from_user:
-        return
-
     try:
         agent = await client.agents.retrieve(agent_id)
 
@@ -635,9 +624,6 @@ async def handle_clear_messages(
     agent_id: str,
 ) -> None:
     """Handle message history clearing confirmation."""
-    if not callback.from_user or not callback.message:
-        return
-
     if not callback_data.confirm:
         if isinstance(callback.message, Message):
             await callback.message.delete()

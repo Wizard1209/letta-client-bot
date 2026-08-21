@@ -385,19 +385,34 @@ gel_client: AsyncIOExecutor = data['gel_client']
 
 **Raise exceptions** - missing business objects should raise errors that propagate to common error handler:
 
-- `from_user` is None (Telegram event without user context)
 - Identity not found for authorized user
 - Database query returned unexpected empty result
+- A handler receives an event type its flags cannot support
 
 ```python
 # WRONG - silent skip
-if not event.from_user:
+identity_list = await get_identity_query(gel_client, telegram_id=telegram_id)
+if not identity_list:
     return None
 
 # RIGHT - raise error for common handler
-if not event.from_user:
-    raise ValueError('Event missing from_user context')
+if not identity_list:
+    raise RuntimeError(f'Identity not found for authorized user {telegram_id}')
 ```
+
+### Events Without a Sender
+
+Telegram delivers channel posts and service messages with `from_user` unset. There is
+nobody to answer and nothing to attribute, so such an event is simply not handled. That
+decision is made once, at the edge, never per handler:
+
+- Handlers flagged `require_identity` / `require_agent` are unreachable without a sender,
+  so the middleware raises `ValueError` if one arrives anyway. Inside them use
+  `event.from_user` directly, with an `assert` where mypy needs the narrowing.
+- Handlers registered without those flags (`/start`, `/access`) return silently.
+
+A `from_user` check inside a flagged handler is dead code, and it makes a guarantee the
+middleware already gives look optional.
 
 ### Authorization Failures
 

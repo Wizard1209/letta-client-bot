@@ -150,6 +150,7 @@ class NewAssistantCallback(CallbackData, prefix='new'):
 @auth_router.message(Command('access'))
 async def access_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) -> None:
     """Request general bot access (identity only, no assistant capabilities)."""
+    # Nothing to register and nobody to answer — see the error handling policy
     if not message.from_user:
         return
 

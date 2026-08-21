@@ -114,6 +114,7 @@ footer .s{color:var(--ink)}
   <tr><td class="id">0.7</td><td class="name">deny_tool_call салважен из research</td><td class="where">devscripts/deny_tool_call.py</td><td class="need">Агент, зависший на неотвеченном одобрении, держит run и отказывает каждому следующему сообщению с 409. Ничем другим в репозитории это не разблокировать. Добавлен <code>approval_request_id</code>, без которого запрос остаётся открытым.</td><td class="act"><span class="t keep">готово</span></td></tr>
   <tr><td class="id">0.8</td><td class="name">Ветки прибраны, роли инструментов записаны</td><td class="where">origin/*; CONTRIBUTION.md</td><td class="need">Из девяти веток осталось три: master, эта и <code>nix-infra</code>. Пустой скилл <code>use-railway</code> убран, а Railway описан на месте как второй рабочий пример деплоя. Записано, что X-тулы опциональные: они читают <code>X_API_KEY</code> из секретов агента и подключаются только тем, кто его завёл, — поэтому <code>sync_custom_tools</code> и покрывает только четыре клиентских тула, а не все десять.</td><td class="act"><span class="t keep">готово</span></td></tr>
   <tr><td class="id">0.9</td><td class="name">/revoke упрощён до отвязки</td><td class="where">letta_bot/client.py; auth.py</td><td class="need">Раньше команда меняла только статус в Gel: входящий доступ закрывался, а <code>identity-tg-{id}</code> оставался на агентах, и отозванный продолжал получать проактивные уведомления. Теперь она снимает связь со всех агентов, кроме созданных самим пользователем — те остаются его. Владение передаётся оставшемуся пользователю, а агент, оставшийся вообще без людей, называется админу отдельной строкой. Проверено на четырёх подставных агентах: созданный, общий с передачей владения, единственный и чужой.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.10</td><td class="name">Проверка отправителя сведена в одно место</td><td class="where">letta_bot/agent.py; auth.py; main.py; CONTRIBUTION.md</td><td class="need">Одно и то же условие — событие без <code>from_user</code> — было написано четырьмя способами: молчаливый <code>return</code>, <code>assert</code>, <code>raise ValueError</code> и ответ «Can't identify user» в чат. Шесть проверок в хендлерах были при этом недостижимы: они стоят за флагами <code>require_identity</code>, а мидлварь уже отсекает такие события раньше. Проверки убраны, у <code>/start</code> и <code>/access</code> остался молчаливый выход — отвечать некому и регистрировать нечего. Политика ошибок больше не приводит <code>from_user</code> как пример бизнес-ошибки: у него теперь свой раздел про то, где решение принимается.</td><td class="act"><span class="t keep">готово</span></td></tr>
  </tbody>
 </table></div>
 
@@ -139,7 +140,7 @@ footer .s{color:var(--ink)}
 <div class="intro">
  <p class="num">таблица 3</p>
  <h2>Мелочи, которые ещё стоит поправить</h2>
- <p>Всё, что специфично для проекта и стоит правки перед закрытием. Первые две требуют решения, а не только правки: там <b>расходится замысел, а не текст</b>. Остальные — работа на минуты.</p>
+ <p>Всё, что специфично для проекта и стоит правки перед закрытием. Первая требует решения, а не только правки: там <b>расходится замысел, а не текст</b>. Остальные — работа на минуты.</p>
 </div>
 
 <div class="tw"><table>
@@ -147,7 +148,6 @@ footer .s{color:var(--ink)}
  <tbody>
 
   <tr class="grp"><td colspan="5"><b>C</b> Требует решения</td></tr>
-  <tr><td class="id">C1</td><td class="name">«Never silently skip» против двенадцати мест</td><td class="where">CONTRIBUTION.md:394 vs auth.py, agent.py</td><td class="need">Политика ошибок прямо называет <code>if not event.from_user: return None</code> неправильным образцом. Ровно так написаны двенадцать хендлеров. Расходится либо политика, либо код — и на замороженном проекте это решается один раз: либо правило смягчается до того, что код делает, либо двенадцать мест приводятся к правилу. Оставлять расхождение хуже обоих вариантов: следующий читатель поверит документу.</td><td class="act"><span class="t now">решить</span></td></tr>
   <tr><td class="id">C2</td><td class="name">Релиз не нарезан</td><td class="where">pyproject.toml:3; letta_bot/__init__.py; notes/changelog.md</td><td class="need">Обе строки версии — 1.1.0 от 09.12.2025, а в <code>[Latest additions]</code> накопился релиз целиком: <code>/detach</code>, <code>/export</code>, <code>/clear</code>, генерация картинок, альбомы, стикеры, ElevenLabs, нативные расписания, переезд на md_tg. По версии нельзя понять, что стоит в проде — а после закрытия это единственный способ узнать.</td><td class="act"><span class="t now">решить</span></td></tr>
 
   <tr class="grp"><td colspan="5"><b>D</b> Просто поправить</td></tr>
