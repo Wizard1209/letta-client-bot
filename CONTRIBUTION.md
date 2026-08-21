@@ -79,7 +79,6 @@ Project-specific skills live in `.claude/skills/`. These are markdown prompts th
 | `update-docs` | Syncs CLAUDE.md with code changes |
 | `merge-readiness` | Pre-merge checklist (conflicts, migrations, tests, docs) |
 | `manual-review` | Reviews a diff or PR with concrete feedback |
-| `use-railway` | Deploy and operate the bot on Railway |
 
 **Usage:** Just ask naturally or use trigger phrases. Skills auto-activate based on context.
 
@@ -215,7 +214,8 @@ uv run python -m devscripts.run_tool search_x_posts "TzKT" 24 20
 
 - `LETTA_AGENT_ID` - agent ID, the only env var the sandbox sets by itself
 - everything else in the environment comes from the agent's `secrets`:
-  `LETTA_API_KEY`, `TELEGRAM_BOT_TOKEN`
+  `LETTA_API_KEY` and `TELEGRAM_BOT_TOKEN` on every agent, plus `X_API_KEY` on
+  the agents that opted into the X tools
 - `LETTA_PROJECT_ID` - project ID (local runs only, from .env)
 
 The sandbox does define a `client` global, but it is built from
@@ -246,12 +246,28 @@ uv run python -m devscripts.run_tool -r -a <agent-id> notify_via_telegram "test"
 Note that a tool returning an error string still reports `status: "success"` —
 read the payload, not the status.
 
+**Two families of custom tool.** The four Letta-client tools
+(`notify_via_telegram`, `schedule_message`, `list_scheduled_messages`,
+`delete_scheduled_message`) belong to every agent — they are what proactive
+messaging and reminders are made of, and they need `LETTA_API_KEY` and
+`TELEGRAM_BOT_TOKEN` in the agent's secrets.
+
+The six X/Twitter tools (`search_x_posts`, `x_api_request`,
+`get_account_timeline`, `get_users_info`, `discover_topics`,
+`discover_accounts`) are opt-in. They read `X_API_KEY` from the agent's secrets
+and go straight to `api.x.com`, so they are attached only to agents whose owner
+has set that key up. Nothing provisions it: an agent without `X_API_KEY` simply
+should not carry these tools.
+
 **Publishing tool changes:**
 
 ```bash
 uv run python -m devscripts.sync_custom_tools            # dry-run
 uv run python -m devscripts.sync_custom_tools --execute  # push + backfill secrets
 ```
+
+This covers the four client tools only, because those are the ones every agent
+has. The X tools are pushed by hand for the agents that use them.
 
 It updates tools by id rather than upserting: `tools.upsert()` names a tool
 after the first top-level function in the file, so a file with a helper above
@@ -335,8 +351,11 @@ GEL_INSTANCE, GEL_SECRET_KEY                               (Gel Cloud instead)
 
 ### Railway
 
-`deploy/railway.toml` and `deploy/gel.Dockerfile` cover the Railway path — the
-`use-railway` skill drives it.
+`deploy/railway.toml` and `deploy/gel.Dockerfile` are kept as a worked example
+of a second deployment target: a `[build]`/`[deploy]` pair for the bot and a Gel
+image that copies the schema in. Migrations there are applied by
+`GEL_DOCKER_APPLY_MIGRATIONS`, set in the Railway dashboard rather than in the
+file.
 
 ## Error Handling Policy
 
