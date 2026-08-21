@@ -4,24 +4,28 @@ All notable changes to this project will be documented in this file.
 
 **[Latest additions]**
 
+**[1.2.0] - 2026-08-21**
+
 **Added:**
 • `/detach` command to remove your access from a shared assistant (with ownership transfer if you're the owner)
-• Image generation: your assistant can now create images from text descriptions and edit photos you send (powered by OpenAI Images API with model selection)
+• Image generation: your assistant can now create images from text descriptions and edit photos you send (OpenAI, Google Gemini or Black Forest Labs, chosen by model name)
 • `/export` command to download your assistants as portable .af agent files (available to all users with agents)
 • Photo album support: send multiple photos at once and they're processed together as a single request to your assistant
 • Sticker support: regular (static) stickers are now processed as images and sent to your assistant (animated and video stickers remain unsupported)
 • Image support: send photos to your assistant and it can see and analyze them (uses Letta's multimodal API with base64 encoding)
-• Document upload: send files (PDF, code, text, markdown, configs) to your assistant for analysis and RAG-indexed search (~10MB limit)
 • ElevenLabs Scribe transcription engine: alternative to OpenAI Whisper with 100MB file size limit and automatic language detection (prioritized when API key configured)
 • Native scheduling tools: schedule with delay, timestamp, or cron expressions; list and delete scheduled messages via Letta's built-in API
 • `/clear` command to clear messages from agent's context window
+• Failed turns now say why they failed instead of ending in silence (model provider error, cancelled run, output limit, exhausted Letta credits, context window overflow)
 
 **Changed:**
+• Revoking access now also unlinks the user from the assistants they were given access to — assistants they created themselves stay theirs
 • Renamed `/botaccess` → `/access` with clearer description emphasizing this grants general bot access only (identity), not assistant capabilities
 • Reasoning messages now display in collapsible blockquote (tap to expand full reasoning)
 • Message formatting migrated to native Telegram entities via custom md_tg module (replaces telegramify-markdown library)
 
 **Removed:**
+• Document upload: files are declined with a short reply — the storage they were uploaded into no longer exists on the platform side. Send the text itself, or a photo of the page
 • `/notify` command: scheduling now built into agents via native Letta API (no setup required)
 
 **[1.1.0] - 2025-12-09**

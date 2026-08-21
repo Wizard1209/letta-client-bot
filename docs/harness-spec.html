@@ -1,0 +1,229 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Реестр свойств харнеса</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@400;900&family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+ --bg:#0c0c0c; --ink:#f2f2ef; --dim:#8a8a86; --faint:#5c5c58;
+ --line:#262624; --line2:#1a1a18;
+ --accent:#ff6a00;
+ --mono:'IBM Plex Mono',monospace; --sans:'Golos Text',sans-serif; --black:'Geologica',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;font-size:20px}
+.wrap{max-width:1500px;margin:0 auto;padding:0 40px;background:var(--bg);box-shadow:0 0 0 1px var(--line)}
+header{padding:76px 0 0}
+.kick{font-family:var(--mono);font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 22px}
+.kick::before{content:"// ";color:var(--faint)}
+h1{font-family:var(--black);font-weight:900;font-size:58px;line-height:.98;margin:0;letter-spacing:-.02em;text-transform:uppercase}
+
+/* three-layer strip */
+.layers{display:grid;grid-template-columns:1fr 1.15fr 1fr;margin:38px 0 0;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink)}
+.ly{padding:22px 26px 24px 0}
+.ly+.ly{padding-left:26px;border-left:1px solid var(--line)}
+.ly.mid{background:var(--line2)}
+.lk{font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+.ln{font-family:var(--black);font-weight:900;font-size:26px;margin:0 0 12px;line-height:1.05}
+.lp{color:var(--dim);font-size:16px;margin:0 0 10px;line-height:1.45}
+.la{font-family:var(--mono);font-size:13px;color:var(--faint);margin:0;line-height:1.6}
+.la b{color:var(--dim);font-weight:500}
+.lgo{font-family:var(--mono);font-size:13px;color:var(--ink);margin:14px 0 0;letter-spacing:.06em;text-transform:uppercase}
+
+.how{font-family:var(--mono);font-size:14px;color:var(--dim);line-height:1.9;margin:0;padding:20px 0 0}
+.how b{color:var(--ink);font-weight:600}
+.how .lg{display:inline-block;padding:2px 9px;margin-right:6px}
+.lg.hi{border:1px solid var(--accent);color:var(--accent);font-weight:600}
+.lg.md{border:1px solid var(--line);color:var(--ink)}
+.lg.lo{border:1px solid var(--line2);color:var(--faint)}
+
+.intro{padding:52px 0 4px}
+.intro .num{font-family:var(--mono);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 12px}
+.intro h2{font-family:var(--black);font-weight:900;font-size:34px;text-transform:uppercase;letter-spacing:-.01em;margin:0 0 18px;line-height:1.05}
+.intro p{color:var(--dim);font-size:18px;margin:0 0 16px;max-width:1050px}
+.intro p b{color:var(--ink);font-weight:600}
+
+table{width:100%;border-collapse:collapse;margin:0}
+th{font-family:var(--mono);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
+   text-align:left;padding:18px 16px 12px;border-bottom:1px solid var(--ink);position:sticky;top:0;background:var(--bg)}
+td{padding:13px 16px;border-bottom:1px solid var(--line2);vertical-align:top;font-size:17px}
+tr.grp td{border-bottom:1px solid var(--line);border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);
+  padding:22px 16px 10px;background:var(--line2)}
+tr.grp td b{color:var(--accent);font-weight:600;margin-right:10px}
+td.id{font-family:var(--mono);font-size:14px;color:var(--faint);width:52px;white-space:nowrap}
+td.name{font-weight:600;color:var(--ink);width:290px}
+td.need{color:var(--dim)}
+td.have,td.cost{width:150px;white-space:nowrap}
+td.dep{width:190px;font-family:var(--mono);font-size:14px;color:var(--ink);white-space:normal}
+td.dep.none{color:var(--faint)}
+.t{font-family:var(--mono);font-size:13px;letter-spacing:.04em;text-transform:uppercase;display:inline-block;padding:3px 10px}
+.t.no{color:var(--faint)}
+.t.part{color:var(--ink);border:1px solid var(--line)}
+.t.ours{color:var(--ink);border:1px solid var(--ink)}
+.t.hi{border:1px solid var(--accent);color:var(--accent);font-weight:600}
+.t.md{color:var(--ink);border:1px solid var(--line)}
+.t.lo{color:var(--faint)}
+
+footer{padding:44px 0 60px;margin-top:44px;border-top:2px solid var(--ink);color:var(--dim);font-family:var(--mono);font-size:14px;line-height:1.8}
+footer .s{color:var(--ink)}
+@media(max-width:900px){h1{font-size:36px}td.name{width:auto}.layers{grid-template-columns:1fr}.ly+.ly{border-left:none;border-top:1px solid var(--line);padding-left:0}}
+</style></head><body><div class="wrap">
+
+<header>
+ <p class="kick">telegram-бот · что должно существовать между Telegram и моделью</p>
+ <h1>Реестр свойств<br>харнеса</h1>
+
+ <div class="layers">
+  <div class="ly">
+   <p class="lk">слой 1</p>
+   <p class="ln">МОДЕЛЬ</p>
+   <p class="lp">Сам вызов LLM. Не имеет состояния и ничего не помнит между запросами.</p>
+   <p class="la"><b>в аналогии:</b> модель</p>
+  </div>
+  <div class="ly mid">
+   <p class="lk">слой 2 · предмет этого документа</p>
+   <p class="ln">ХАРНЕС</p>
+   <p class="lp">То, что обвязывает модель: состояние, память, инструменты, цикл хода, расписания.</p>
+   <p class="la"><b>в аналогии:</b> Claude Code</p>
+   <p class="lgo">↓ таблица 1 · 40 свойств</p>
+  </div>
+  <div class="ly">
+   <p class="lk">слой 3</p>
+   <p class="ln">КЛИЕНТ</p>
+   <p class="lp">То, что показывает ответы харнеса и кормит его вводом: наш бот.</p>
+   <p class="la"><b>в аналогии:</b> терминал + шелл + отрисовщик</p>
+   <p class="lgo">↓ таблица 2 · 31 фича</p>
+  </div>
+ </div>
+
+ <p class="how">
+  <b>ОДНА СТРОКА = ОДНО СВОЙСТВО.</b> Читается сверху вниз, каждая строка проверяется отдельно.<br>
+  <b>ЕСТЬ У НАС</b> — реализовано ли это сегодня в нашем коде: <span class="t no">нет</span> целиком на чужой стороне · <span class="t part">частично</span> наша только половина · <span class="t ours">у нас</span> уже наше и от фреймворка не зависит.<br>
+  <b>ЦЕНА</b> — сколько работы, если кандидат этого не даёт: <span class="lg hi">дорого</span> отдельная подсистема · <span class="lg md">средне</span> дни · <span class="lg lo">дёшево</span> часы.
+ </p>
+</header>
+
+<div class="intro">
+ <p class="num">таблица 1</p>
+ <h2>Харнес: что обвязывает модель</h2>
+ <p>Харнес принимает одно сообщение и возвращает поток событий целого хода — с вызовами инструментов, правками памяти и, возможно, минутами работы между ними. <b>Он владеет всем состоянием агента</b>: журналом, памятью, файлами, расписаниями, определением самого ассистента.</p>
+ <p>Границы с двух сторон: модель в него не входит — харнес её вызывает; Telegram в него тоже не входит — про Telegram харнес не знает ничего. Всё, что ниже, сегодня живёт на чужой стороне, и это ровно тот объём, который переносится.</p>
+</div>
+
+<table id="t1">
+ <thead><tr><th>#</th><th>Свойство харнеса</th><th>Что конкретно нужно</th><th>Есть у нас</th><th>Цена</th></tr></thead>
+ <tbody>
+
+  <tr class="grp"><td colspan="5"><b>A</b> Ход диалога</td></tr>
+  <tr><td class="id">A1</td><td class="name">Поток событий шага</td><td class="need">Типизированные события: рассуждение · вызов инструмента · результат инструмента · текст ассистента · ошибка · конец хода</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">A2</td><td class="name">Keepalive внутри потока</td><td class="need">Пинги, иначе длинный шаг инструмента рвётся по таймауту клиента</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">A3</td><td class="name">Различимый обрыв</td><td class="need">Разрыв соединения посреди хода отличается от отказа сервиса — пользователю нужны разные сообщения</td><td class="have"><span class="t part">частично</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">A4</td><td class="name">Идентификатор хода</td><td class="need">Отмена начатого хода и безопасный повтор запроса без дубля реплики в журнале</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">A5</td><td class="name">Сериализация ходов на агента</td><td class="need">Два сообщения подряд от одного пользователя не пишут в журнал вперемешку</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+
+  <tr class="grp"><td colspan="5"><b>B</b> Журнал и контекст</td></tr>
+  <tr><td class="id">B1</td><td class="name">Журнал диалога</td><td class="need">Долговременное хранение всех типов реплик, включая рассуждения, вызовы и результаты инструментов</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">B2</td><td class="name">Двухуровневая память</td><td class="need">Окно в контексте и полный журнал за его пределами, с поиском по второму</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">B3</td><td class="name">Компакция</td><td class="need">Сжатие вытесняемого в резюме, которое остаётся в контексте</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">B4</td><td class="name">Бюджет окна</td><td class="need">Размер окна, резерв под вывод, статический след системного промпта, блоков и схем инструментов — настраиваемо и наблюдаемо</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">B5</td><td class="name">Сброс окна</td><td class="need">Очистить контекст, не тронув журнал</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+
+  <tr class="grp"><td colspan="5"><b>C</b> Память</td></tr>
+  <tr><td class="id">C1</td><td class="name">Блоки памяти</td><td class="need">Именованные, с лимитом и описанием; один блок общий для нескольких агентов; блок умеет удалить сам себя</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">C2</td><td class="name">Блоки в системном промпте</td><td class="need">Содержимое блоков подставляется в системный промпт каждого запроса</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">C3</td><td class="name">Правка памяти моделью</td><td class="need">Инструменты create · insert · str_replace · rename · delete, исполняемые сервером</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">C4</td><td class="name">Архив с поиском</td><td class="need">Запись факта и поиск по нему с фильтрами по тегам и датам</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">C5</td><td class="name">Поиск по журналу</td><td class="need">Отдельный инструмент модели поверх реплик за пределами окна</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+
+  <tr class="grp"><td colspan="5"><b>D</b> Инструменты</td></tr>
+  <tr><td class="id">D1</td><td class="name">Серверный инструмент</td><td class="need">Наш Python исполняется там же, где агент, с выходом в сеть; платформа сама вызывает и кладёт результат в ход</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">D2</td><td class="name">Схема из кода</td><td class="need">Сигнатура и докстринг → JSON-схема. Докстринг работает как промпт: в нём правила использования, а не только типы</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">D3</td><td class="name">Форма авторства инструмента</td><td class="need">Обычный модуль проекта с любыми зависимостями, а не одинокий файл с урезанным списком импортов вне линтера и типов</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">D4</td><td class="name">Контекст внутри инструмента</td><td class="need">Идентификатор своего агента и секреты агента как переменные окружения</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">D5</td><td class="name">Деплой инструментов из репозитория</td><td class="need">Обновление по идентификатору, а не по имени функции; прогон именно загруженного кода, а не локального файла</td><td class="have"><span class="t ours">у нас</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">D6</td><td class="name">Клиентский инструмент</td><td class="need">Объявляется в каждом запросе; ход прерывается, бот исполняет у себя, ответ уходит новым потоком</td><td class="have"><span class="t part">частично</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">D7</td><td class="name">Сообщение вдогонку к результату</td><td class="need">К результату инструмента прикладывается ещё одно сообщение, в том числе мультимодальное</td><td class="have"><span class="t part">частично</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">D8</td><td class="name">Отложенная подстановка в результат</td><td class="need">Часть результата известна только после доставки в Telegram — <code>file_id</code> появляется, когда фото уже отправлено</td><td class="have"><span class="t ours">у нас</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">D9</td><td class="name">Встроенный набор</td><td class="need">Веб-поиск, загрузка страницы, исполнение кода</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+
+  <tr class="grp"><td colspan="5"><b>E</b> Проактивность</td></tr>
+  <tr><td class="id">E1</td><td class="name">Планировщик на агента</td><td class="need">Одноразовый запуск и cron, переживающие перезапуск процесса</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">E2</td><td class="name">Расписание под управлением модели</td><td class="need">Создать · перечислить · удалить как обычные инструменты агента</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">E3</td><td class="name">Фоновый ход без клиента</td><td class="need">Полный ход с инструментами, минутами работы и без HTTP-клиента на другом конце</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">E4</td><td class="name">Пробуждение в тот же журнал</td><td class="need">Проактивный ход пишет туда же, где пользовательский диалог, иначе не помнит разговор</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">E5</td><td class="name">Исходящий канал</td><td class="need">Доставка сообщения, инициированного агентом, а не ответом на входящее</td><td class="have"><span class="t part">частично</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">E6</td><td class="name">Правила поведения хранимым текстом</td><td class="need">Протокол проактивности лежит блоком памяти и меняется без деплоя</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+
+  <tr class="grp"><td colspan="5"><b>F</b> Файлы</td></tr>
+  <tr><td class="id">F1</td><td class="name">Мультимодальное сообщение</td><td class="need">Текст и картинки частями в одном сообщении; картинки остаются в журнале</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">F2</td><td class="name">Хранилище документов</td><td class="need">Разбор форматов, чанкинг, эмбеддинг, статус обработки, привязка к агенту</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">F3</td><td class="name">Файловые инструменты</td><td class="need">Постраничное открытие файла в контекст, поиск регуляркой, семантический поиск</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t hi">дорого</span></td></tr>
+  <tr><td class="id">F4</td><td class="name">Файлы в бюджете окна</td><td class="need">Учёт занятого открытыми файлами места и закрытие лишних</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">F5</td><td class="name">Объявленные лимиты загрузки</td><td class="need">Размер и форматы заданы в контракте, а не находятся опытным путём</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+
+  <tr class="grp"><td colspan="5"><b>G</b> Доступ и провижининг</td></tr>
+  <tr><td class="id">G1</td><td class="name">Связь пользователь–агент–роль</td><td class="need">Обычная таблица у нас. От кандидата нужно только одно: не требовать, чтобы права жили на его стороне</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">G2</td><td class="name">Определение ассистента в репозитории</td><td class="need">Системный промпт, набор инструментов, блоки памяти и модель заданы файлом, а не записью в чужом UI</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">G3</td><td class="name">Создание агента из определения</td><td class="need">Новый агент разворачивается из этого файла, без ручных шагов</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t lo">дёшево</span></td></tr>
+  <tr><td class="id">G4</td><td class="name">Модель и окно на живом агенте</td><td class="need">Сменить модель, размер окна и резерв вывода без пересоздания агента</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+  <tr><td class="id">G5</td><td class="name">Выгрузка агента целиком</td><td class="need">Полный дамп состояния одним файлом — страховка от следующей миграции</td><td class="have"><span class="t no">нет</span></td><td class="cost"><span class="t md">средне</span></td></tr>
+
+ </tbody>
+</table>
+<div class="intro">
+ <p class="num">таблица 2</p>
+ <h2>Клиент: что показывает ответы харнеса</h2>
+ <p>Бот превращает Telegram во вход для харнеса и поток его событий — в сообщения. <b>Он не владеет ничем из состояния агента</b> и потому переезжает почти целиком: строки без ссылки в правой колонке не зависят от выбора фреймворка вообще.</p>
+ <p>Колонка <b>«опирается на»</b> — это счёт зависимостей: она называет свойства из таблицы 1, без которых фича перестаёт работать. По ней видно, что именно сломается, если кандидат не закрывает конкретную строку.</p>
+</div>
+
+<table id="t2">
+ <thead><tr><th>#</th><th>Фича бота</th><th>Что делает</th><th>Опирается на</th></tr></thead>
+ <tbody>
+
+  <tr class="grp"><td colspan="4"><b>I</b> Ввод</td></tr>
+  <tr><td class="id">1</td><td class="name">Текст</td><td class="need">Обычное сообщение пользователя уходит ходом агента</td><td class="dep">A1</td></tr>
+  <tr><td class="id">2</td><td class="name">Фото и альбомы</td><td class="need">Буфер ~1 с собирает несколько фото Telegram в одно сообщение агенту</td><td class="dep">F1</td></tr>
+  <tr><td class="id">3</td><td class="name">Статичные стикеры</td><td class="need">Идут как картинка, анимированные не поддержаны</td><td class="dep">F1</td></tr>
+  <tr><td class="id">4</td><td class="name">Документы</td><td class="need">Отклоняются сообщением — хранилища больше нет; возвращаются вместе с F2</td><td class="dep">F2</td></tr>
+  <tr><td class="id">5</td><td class="name">Голос и аудио</td><td class="need">Транскрипция до модели (Whisper или ElevenLabs), в харнес уходит текст</td><td class="dep none">—</td></tr>
+  <tr><td class="id">6</td><td class="name">Видео</td><td class="need">Отклоняется сообщением — не поддержано</td><td class="dep none">—</td></tr>
+  <tr><td class="id">7</td><td class="name">Контекст ответа</td><td class="need">На какое сообщение отвечает пользователь, подмешивается в реплику</td><td class="dep none">—</td></tr>
+  <tr class="grp"><td colspan="4"><b>II</b> Отрисовка</td></tr>
+  <tr><td class="id">8</td><td class="name">Markdown → Telegram</td><td class="need">Свой конвертер в сущности Telegram с учётом UTF-16 смещений</td><td class="dep none">—</td></tr>
+  <tr><td class="id">9</td><td class="name">Разбиение длинных ответов</td><td class="need">По границам блоков, лимит 4096 символов</td><td class="dep none">—</td></tr>
+  <tr><td class="id">10</td><td class="name">Карточки вызовов инструментов</td><td class="need">Отдельный рендер под каждый инструмент: диффы правки памяти, код-фенсы, поиск, файлы</td><td class="dep">A1, C3, D9</td></tr>
+  <tr><td class="id">11</td><td class="name">Рассуждения</td><td class="need">Показываются отдельным сообщением</td><td class="dep">A1</td></tr>
+  <tr><td class="id">12</td><td class="name">Индикатор ожидания</td><td class="need">Сообщение-таймер обновляется по пингам, снимается на первом содержательном событии</td><td class="dep">A2</td></tr>
+  <tr><td class="id">13</td><td class="name">Индикатор набора</td><td class="need">Typing в Telegram на всё время хода</td><td class="dep none">—</td></tr>
+  <tr><td class="id">14</td><td class="name">Фото от инструмента</td><td class="need">Результат рисования уходит фотографией, ссылка возвращается агенту</td><td class="dep">D6, D8</td></tr>
+  <tr><td class="id">15</td><td class="name">Сообщения об ошибках</td><td class="need">Обрыв соединения и отказ сервиса дают разный текст пользователю</td><td class="dep">A3</td></tr>
+  <tr class="grp"><td colspan="4"><b>III</b> Команды ассистента</td></tr>
+  <tr><td class="id">16</td><td class="name">/switch</td><td class="need">Список ассистентов пользователя и переключение между ними</td><td class="dep">G1</td></tr>
+  <tr><td class="id">17</td><td class="name">/current</td><td class="need">Модель, блоки памяти и их заполнение</td><td class="dep">C1, B4</td></tr>
+  <tr><td class="id">18</td><td class="name">/context</td><td class="need">Разбивка окна по статьям расхода</td><td class="dep">B4</td></tr>
+  <tr><td class="id">19</td><td class="name">/clear</td><td class="need">Сброс окна текущего ассистента</td><td class="dep">B5</td></tr>
+  <tr><td class="id">20</td><td class="name">/export</td><td class="need">Выгрузка ассистента файлом</td><td class="dep">G5</td></tr>
+  <tr><td class="id">21</td><td class="name">/new</td><td class="need">Запрос нового ассистента из каталога определений</td><td class="dep">G2, G3</td></tr>
+  <tr><td class="id">22</td><td class="name">/attach и /detach</td><td class="need">Доступ к чужому ассистенту и отвязка от него</td><td class="dep">G1</td></tr>
+  <tr class="grp"><td colspan="4"><b>IV</b> Доступ</td></tr>
+  <tr><td class="id">23</td><td class="name">/access</td><td class="need">Заявка на доступ к боту без ассистента</td><td class="dep none">—</td></tr>
+  <tr><td class="id">24</td><td class="name">Одобрение админом</td><td class="need">Инлайн-кнопки плюс /pending, /allow, /deny</td><td class="dep none">—</td></tr>
+  <tr><td class="id">25</td><td class="name">/revoke и /users</td><td class="need">Отзыв доступа и список пользователей</td><td class="dep">G1</td></tr>
+  <tr><td class="id">26</td><td class="name">Уведомления админам</td><td class="need">Рассылка в личку о заявках и событиях</td><td class="dep none">—</td></tr>
+  <tr class="grp"><td colspan="4"><b>V</b> Инфо</td></tr>
+  <tr><td class="id">27</td><td class="name">/help, /about, /privacy, /contact, /changelog</td><td class="need">Статические тексты, ассистента не трогают</td><td class="dep none">—</td></tr>
+  <tr class="grp"><td colspan="4"><b>VI</b> Инфраструктура</td></tr>
+  <tr><td class="id">28</td><td class="name">Вебхук и поллинг</td><td class="need">Два режима запуска: прод и локальная разработка</td><td class="dep none">—</td></tr>
+  <tr><td class="id">29</td><td class="name">Rate limit</td><td class="need">Ограничение частоты, настраиваемое по типам событий</td><td class="dep none">—</td></tr>
+  <tr><td class="id">30</td><td class="name">Учёт пользователя</td><td class="need">Апсерт пользователя в базу на каждом сообщении</td><td class="dep none">—</td></tr>
+  <tr><td class="id">31</td><td class="name">Выбор агента</td><td class="need">Текущий ассистент на пользователя, автовыбор если не задан или пропал</td><td class="dep">G1</td></tr>
+ </tbody>
+</table>
+
+<footer>
+ <span class="s">ИСТОЧНИК:</span> исходники <code>letta_bot/</code>, <code>devscripts/</code>, <code>dbschema/</code>, <code>deploy/commands.json</code> · выведено из работающего кода, а не из желаемого<br>
+ <span class="s">СОСТАВЛЕНО:</span> 16 августа 2026
+</footer>
+
+</div></body></html>

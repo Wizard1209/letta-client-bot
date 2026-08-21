@@ -2,16 +2,15 @@
 
 This is a multi-user Telegram bot that provides access to AI assistants powered by Letta. Each user gets their own personal assistants with persistent memory and advanced capabilities.
 
-**Available Assistant Templates**
+**Assistant Templates**
 
-**Librarian (Claude Haiku)**
-Your personal librarian optimized for efficiency. I maintain the same self-aware memory architecture—organizing information into core memory, searchable archives, and conversation history. I understand what to store where and maintain an index for retrieval. Haiku handles this organizational work quickly and cost-effectively, best for straightforward storage, retrieval, and interactions where speed matters over deep analytical reasoning.
+`/new` lists the templates currently available and lets you pick one. Which ones exist changes over time, so the list you see in the command is the accurate one.
 
 ──────────────────────────────
 
 **Key Capabilities**
 
-Both assistant templates include:
+Every template includes:
 
 • **Persistent Memory** - Core memory blocks that evolve with your interactions
 • **Archival Storage** - Long-term information storage with search and retrieval

@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, ValidationError, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,10 +28,6 @@ class Config(BaseSettings):
 
     letta_project_id: str
     letta_api_key: str
-
-    # Scheduler configuration for schedule_message tool
-    scheduler_url: str | None = None
-    scheduler_api_key: str | None = None
 
     # Info notes directory (optional)
     info_dir: Path = Path.cwd() / 'notes'
@@ -65,9 +61,9 @@ class Config(BaseSettings):
         elif isinstance(ids, str):
             return list(map(int, ids.split(',')))
         else:
-            raise ValidationError(
-                'admin_ids must be an int or comma separated list of ints, instead of %s',
-                type(ids),
+            raise ValueError(
+                'admin_ids must be an int or comma separated list of ints, '
+                f'instead of {type(ids)}'
             )
 
     @field_validator('info_dir', mode='before')
@@ -77,7 +73,7 @@ class Config(BaseSettings):
         if isinstance(notes_full_path, str):
             notes_full_path = Path(notes_full_path)
         if not notes_full_path.exists():
-            raise ValidationError('Bot info directory doesnt exist')
+            raise ValueError(f'Bot info directory does not exist: {notes_full_path}')
         return notes_full_path
 
     @property

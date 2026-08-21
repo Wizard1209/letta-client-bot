@@ -4,11 +4,8 @@ import logging
 import sys
 
 from aiogram import Bot, Dispatcher
-
-# from aiogram.client.default import DefaultBotProperties  # ВРЕМЕННО не используется
 from aiogram.filters import CommandStart
 from aiogram.types import Message
-from aiogram.utils.formatting import Text
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 from gel import create_async_client
@@ -29,9 +26,8 @@ def start_command(dp: Dispatcher) -> None:
     @dp.message(CommandStart())
     async def welcome_handler(message: Message) -> None:
         """Display welcome information."""
+        # Nothing to register and nobody to answer — see the error handling policy
         if not message.from_user:
-            await message.answer(**Text("Can't identify user").as_kwargs())
-            LOGGER.warning('User invoked start command cant be identified')
             return
         content = load_info_command_content('welcome')
         await send_markdown_message(message, content)

@@ -63,7 +63,7 @@ make check  # Runs linting, formatting, and type checking
 
 **Database schema changes:**
 
-1. Edit `dbschema/default.esdl`
+1. Edit `dbschema/default.gel`
 2. For development: `gel watch --migrate` (auto-applies schema changes)
 3. For production: `gel migration create` → `gel migrate`
 
@@ -78,6 +78,7 @@ Project-specific skills live in `.claude/skills/`. These are markdown prompts th
 | `update-changelog` | Drafts changelog entries from git history |
 | `update-docs` | Syncs CLAUDE.md with code changes |
 | `merge-readiness` | Pre-merge checklist (conflicts, migrations, tests, docs) |
+| `manual-review` | Reviews a diff or PR with concrete feedback |
 
 **Usage:** Just ask naturally or use trigger phrases. Skills auto-activate based on context.
 
@@ -97,6 +98,13 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 
 ## Planned features
 
+### Blocked on the platform
+
+- Documents. Uploading needs a file store that parses, chunks and reports
+  processing status — properties F2-F5 in `docs/harness-spec.html`. Letta's was
+  retired, every route behind `client.folders` now answers 400, and the bot
+  declines documents instead.
+
 ### Very High Priority
 
 ### High Priority
@@ -104,7 +112,6 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Agent content output configuration
   - Toggle verbose/brief tool execution display
   - Toggle reasoning messages on/off
-- Clear messages command (for testing clean assistants)
 
 ### Medium Priority
 
@@ -112,9 +119,8 @@ Telegram can't parse '.' and other characters without escaping, so I had to wrap
 - Multi-user agent from personal assistant
   - Clone personal agent
   - Shared memory blocks (some read-only)
-- Images support
 - LaTeX support
-- Memory block viewing and editing
+- Memory block editing (viewing is done — see `/current`)
 - Agent rename
 - Usage analytics per identity
 - Add message editing support
@@ -128,6 +134,19 @@ Development scripts for Letta API operations live in `devscripts/`. All scripts 
 ```bash
 uv run python -m devscripts.<script_name> [args]
 ```
+
+Fleet operations. The writing ones are dry-run by default — `--execute` applies:
+
+| Script | What it does | Writes |
+|--------|--------------|--------|
+| `context_headroom` | Report per-agent context headroom | no |
+| `detect_compaction_loop` | Find agents stuck summarizing themselves | no |
+| `sync_custom_tools` | Push tool sources, backfill `LETTA_API_KEY` | `--execute` |
+| `cancel_stuck_runs` | Cancel non-terminal runs that block new messages | `--execute` |
+| `raise_context_window` | Widen context windows kept from an older model | `--execute` |
+| `migrate_sonnet5` | Move agents to a newer model and notify them | `--execute` |
+| `detach_file_feature` | Strip the retired file tools and `file_handling` block off agents | `--execute` |
+| `deny_tool_call` | Deny the approval an agent is blocked on, so it accepts messages again | `--execute` |
 
 ### Writing New Scripts
 
@@ -178,7 +197,7 @@ if __name__ == '__main__':
 
 ### Testing Custom Tools
 
-`run_tool.py` tests Letta custom tools with same injected context as cloud runtime:
+`run_tool.py` runs a custom tool locally, or on the platform with `--remote`:
 
 ```bash
 # List available tools
@@ -191,11 +210,69 @@ uv run python -m devscripts.run_tool -a <agent-id> notify_via_telegram "Hello"
 uv run python -m devscripts.run_tool search_x_posts "TzKT" 24 20
 ```
 
-**Injected context (same as Letta cloud):**
+**Tool execution environment:**
 
-- `client` - Letta SDK client (injected as global)
-- `LETTA_AGENT_ID` - agent ID (env var)
-- `LETTA_PROJECT_ID` - project ID (from .env)
+- `LETTA_AGENT_ID` - agent ID, the only env var the sandbox sets by itself
+- everything else in the environment comes from the agent's `secrets`:
+  `LETTA_API_KEY` and `TELEGRAM_BOT_TOKEN` on every agent, plus `X_API_KEY` on
+  the agents that opted into the X tools
+- `LETTA_PROJECT_ID` - project ID (local runs only, from .env)
+
+The sandbox does define a `client` global, but it is built from
+`LETTA_API_KEY` — and Letta Cloud never sets that variable, so on an agent
+without the key in its `secrets` `client` is `None`. Measured on 2026-08-19 with
+a throwaway agent and a probe tool returning its own globals:
+
+| agent secrets | `client` | `Letta` | `agent_state` | env |
+| --- | --- | --- | --- | --- |
+| none | `None` | class available | absent | `LETTA_AGENT_ID` |
+| `LETTA_API_KEY` set | live client | class available | absent | `LETTA_AGENT_ID`, `LETTA_API_KEY` |
+
+Tools here build the client themselves from `LETTA_API_KEY` instead of using the
+global. It is the same credential, but a missing key returns an error string
+rather than an `AttributeError` on `None` — and it survives the injection
+changing shape again, which it did once already without notice.
+
+`agent_state` is never injected on Cloud; declaring it only adds a parameter.
+
+Running locally executes the file on disk; the sandbox executes whatever source
+is registered on the platform. The two drift. `--remote` runs the registered
+source as the agent and is the only check that means anything:
+
+```bash
+uv run python -m devscripts.run_tool -r -a <agent-id> notify_via_telegram "test"
+```
+
+Note that a tool returning an error string still reports `status: "success"` —
+read the payload, not the status.
+
+**Two families of custom tool.** The four Letta-client tools
+(`notify_via_telegram`, `schedule_message`, `list_scheduled_messages`,
+`delete_scheduled_message`) belong to every agent — they are what proactive
+messaging and reminders are made of, and they need `LETTA_API_KEY` and
+`TELEGRAM_BOT_TOKEN` in the agent's secrets.
+
+The six X/Twitter tools (`search_x_posts`, `x_api_request`,
+`get_account_timeline`, `get_users_info`, `discover_topics`,
+`discover_accounts`) are opt-in. They read `X_API_KEY` from the agent's secrets
+and go straight to `api.x.com`, so they are attached only to agents whose owner
+has set that key up. Nothing provisions it: an agent without `X_API_KEY` simply
+should not carry these tools.
+
+**Publishing tool changes:**
+
+```bash
+uv run python -m devscripts.sync_custom_tools            # dry-run
+uv run python -m devscripts.sync_custom_tools --execute  # push + backfill secrets
+```
+
+This covers the four client tools only, because those are the ones every agent
+has. The X tools are pushed by hand for the agents that use them.
+
+It updates tools by id rather than upserting: `tools.upsert()` names a tool
+after the first top-level function in the file, so a file with a helper above
+the tool function would register under the helper's name and leave the real
+tool — and every agent attached to it — on the old source.
 
 **Agent ID resolution order:**
 
@@ -211,7 +288,10 @@ echo "agent-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" > .agent_id
 
 ## Technical TODOs
 
-Local TODOs are still in code
+What is left to finish before the project is closed — which branches to merge,
+what to fix, what to run against the live agents — is in
+[`docs/freeze.html`](docs/freeze.html), together with what was found and
+deliberately left alone. The two long-standing ones:
 
 - Try gel single-file codegen <https://docs.geldata.com/reference/using/python/api/codegen#single-file-mode>
 - Wrap auth logic with multiple db queries into transactions <https://docs.geldata.com/reference/using/python#transactions>
@@ -247,7 +327,7 @@ To add new queries to use in the application put query.edgeql to letta_bot/queri
 - Base: `python:3.13-slim`
 - Non-root user: `app`
 - Dependencies: `uv sync --frozen --no-dev`
-- Entry: `uv run python letta_bot/main.py` (webhook mode)
+- Entry: `uv run --no-dev python -m letta_bot.main` (webhook mode)
 
 **docker-compose.yaml** (`deploy/docker-compose.yaml`):
 
@@ -256,16 +336,26 @@ To add new queries to use in the application put query.edgeql to letta_bot/queri
 - Traefik labels: TLS + Let's Encrypt (`lets-encrypt-ssl` resolver)
 - Router rule: `Host(${WEBHOOK_HOST}) && PathPrefix(${WEBHOOK_PATH})`
 - Network: `monitoring_monitoring` (external)
-- Volume: `bot-storage` (local)
+- Second service `gel`: self-hosted GelDB, applies migrations on start, own
+  Traefik router
 
 **Required env vars**:
 
 ```
-BOT_TOKEN, WEBHOOK_HOST, LETTA_PROJECT_ID, LETTA_API_KEY
-GEL_INSTANCE, GEL_SECRET_KEY (if using Gel Cloud)
+TELEGRAM_BOT_TOKEN, WEBHOOK_HOST, LETTA_PROJECT_ID, LETTA_API_KEY
+GEL_HOST, GEL_PORT, GEL_PASSWORD, GEL_CLIENT_TLS_SECURITY  (self-hosted gel)
+GEL_INSTANCE, GEL_SECRET_KEY                               (Gel Cloud instead)
 ```
 
 **Prerequisites**: Traefik with `lets-encrypt-ssl` resolver, `monitoring_monitoring` network exists, DNS configured for `WEBHOOK_HOST`.
+
+### Railway
+
+`deploy/railway.toml` and `deploy/gel.Dockerfile` are kept as a worked example
+of a second deployment target: a `[build]`/`[deploy]` pair for the bot and a Gel
+image that copies the schema in. Migrations there are applied by
+`GEL_DOCKER_APPLY_MIGRATIONS`, set in the Railway dashboard rather than in the
+file.
 
 ## Error Handling Policy
 
@@ -295,19 +385,34 @@ gel_client: AsyncIOExecutor = data['gel_client']
 
 **Raise exceptions** - missing business objects should raise errors that propagate to common error handler:
 
-- `from_user` is None (Telegram event without user context)
 - Identity not found for authorized user
 - Database query returned unexpected empty result
+- A handler receives an event type its flags cannot support
 
 ```python
 # WRONG - silent skip
-if not event.from_user:
+identity_list = await get_identity_query(gel_client, telegram_id=telegram_id)
+if not identity_list:
     return None
 
 # RIGHT - raise error for common handler
-if not event.from_user:
-    raise ValueError('Event missing from_user context')
+if not identity_list:
+    raise RuntimeError(f'Identity not found for authorized user {telegram_id}')
 ```
+
+### Events Without a Sender
+
+Telegram delivers channel posts and service messages with `from_user` unset. There is
+nobody to answer and nothing to attribute, so such an event is simply not handled. That
+decision is made once, at the edge, never per handler:
+
+- Handlers flagged `require_identity` / `require_agent` are unreachable without a sender,
+  so the middleware raises `ValueError` if one arrives anyway. Inside them use
+  `event.from_user` directly, with an `assert` where mypy needs the narrowing.
+- Handlers registered without those flags (`/start`, `/access`) return silently.
+
+A `from_user` check inside a flagged handler is dead code, and it makes a guarantee the
+middleware already gives look optional.
 
 ### Authorization Failures
 
@@ -333,7 +438,8 @@ return None
 
 ### DEBUG
 
-_(Reserved for future use)_
+**Step-by-step tracing inside one request** — middleware decisions, streaming
+chunks, photo batching. Off in production.
 
 ### INFO
 
@@ -355,4 +461,4 @@ _(Reserved for future use)_
 
 1. MUST NOT log: passwords, API keys, tokens, credentials
 2. MUST include context: user telegram_id, request identifiers, resource IDs
-3. Use module loggers: `logger = logging.getLogger(__name__)`
+3. Use module loggers: `LOGGER = logging.getLogger(__name__)`

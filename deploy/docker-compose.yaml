@@ -64,8 +64,6 @@ services:
 volumes:
   gel-data:
     driver: local
-  bot-storage:
-    driver: local
 
 networks:
   monitoring:

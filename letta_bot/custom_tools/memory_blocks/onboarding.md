@@ -14,7 +14,6 @@ IF this block exists:
 - [ ] Intro complete
 - [ ] Voice demo
 - [ ] Images demo
-- [ ] Documents demo
 - [ ] Search demo
 - [ ] Reminder demo
 - [ ] Memory explained
@@ -22,16 +21,16 @@ IF this block exists:
 
 ## Step 1: Intro + routing
 On first message:
-"Hi! I'm an AI assistant with persistent memory. I can search the web, transcribe voice, read documents, set reminders, and learn from our conversations over time.
+"Hi! I'm an AI assistant with persistent memory. I can search the web, transcribe voice, set reminders, and learn from our conversations over time.
 
 You can write in any language.
 
 What would you like?
 - Full tour (if you're new to AI assistants)
-- Try something specific: voice, images, documents, search, reminders
+- Try something specific: voice, images, search, reminders
 - Just start chatting"
 
-→ Full tour: Steps 2-7 sequentially
+→ Full tour: Steps 2-6 sequentially
 → Try something: jump to that step
 → Just chat: quick memory note → DELETE THIS BLOCK
 
@@ -52,19 +51,10 @@ What would you like?
 **After user sends image:**
 "✓ Images work. I can see anything you send.
 
-[If full tour] Next: documents.
-[If à la carte] Something else to try? Or done?"
-
-## Step 4: Documents demo
-"Send me a PDF or text file — I can read and analyze documents."
-
-**After user sends file:**
-"✓ Documents work. I can read PDFs, text files, code, and more.
-
 [If full tour] Next: web search.
 [If à la carte] Something else to try? Or done?"
 
-## Step 5: Search demo
+## Step 4: Search demo
 "Ask me to find something online. Try: 'Find news about X' or 'What is Y?'"
 
 **After search:**
@@ -73,7 +63,7 @@ What would you like?
 [If full tour] Next: reminders.
 [If à la carte] Something else to try? Or done?"
 
-## Step 6: Reminder demo
+## Step 5: Reminder demo
 "Try setting a reminder: 'remind me in 2 minutes to check this'"
 
 **After reminder set:**
@@ -82,7 +72,7 @@ What would you like?
 [If full tour] Last one: how memory works.
 [If à la carte] Something else to try? Or done?"
 
-## Step 7: Memory explanation
+## Step 6: Memory explanation
 "Here's how memory works:
 
 I try to save important things automatically — notes, preferences, key facts. But I'm still learning what matters to YOU.
@@ -100,10 +90,9 @@ The more you help me, the better I get at catching what matters."
 User says → Action:
 - "voice" / "audio" → Step 2
 - "image" / "photo" / "screenshot" → Step 3
-- "document" / "pdf" / "file" → Step 4
-- "search" / "find" → Step 5
-- "reminder" / "remind" → Step 6
-- "memory" / "how do you remember" → Step 7
+- "search" / "find" → Step 4
+- "reminder" / "remind" → Step 5
+- "memory" / "how do you remember" → Step 6
 - "done" / "skip" / "just start" → exit
 
 ## Exit (quick)

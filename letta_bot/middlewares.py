@@ -155,13 +155,24 @@ async def _validate_selected_agent(
 
 
 async def _set_secrets(agent: AgentState) -> None:
-    """Inject required secrets if missing."""
-    has_token = any(s.key == 'TELEGRAM_BOT_TOKEN' for s in (agent.secrets or []))
-    if not has_token:
-        LOGGER.info(f'Injecting TELEGRAM_BOT_TOKEN for agent {agent.id}')
-        await client.agents.update(
-            agent.id, secrets={'TELEGRAM_BOT_TOKEN': CONFIG.telegram_bot_token}
-        )
+    """Provision the secrets custom tools read from their execution environment.
+
+    LETTA_API_KEY is what each tool builds its own Letta client from, and also
+    what the sandbox's own injected `client` is built from — Letta Cloud sets
+    neither, so without this secret every tool loses API access.
+    """
+    required = {
+        'TELEGRAM_BOT_TOKEN': CONFIG.telegram_bot_token,
+        'LETTA_API_KEY': CONFIG.letta_api_key,
+    }
+    current = {s.key: s.value for s in (agent.secrets or [])}
+    missing = [key for key in required if key not in current]
+    if not missing:
+        return
+
+    LOGGER.info(f'Injecting secrets {missing} for agent {agent.id}')
+    # `secrets` replaces the whole set, so resend what is already there.
+    await client.agents.update(agent.id, secrets={**current, **required})
 
 
 class PhotoBufferMiddleware(BaseMiddleware):
@@ -553,14 +564,13 @@ def setup_middlewares(dp: Dispatcher) -> None:
     dp.message.outer_middleware.register(UserMiddleware())
     dp.callback_query.outer_middleware.register(UserMiddleware())
 
-    # Document rate limiting (1 per 10s per user)
+    # Document rate limiting (1 per 10s per user) - each one still costs an agent turn
     dp.message.middleware(
         RateLimitMiddleware(
             max_requests=1,
             window_seconds=10.0,
             predicate=lambda e: isinstance(e, Message) and bool(e.document),
-            message="📄 Your document accepted, we can't process more documents"
-            ' for {wait}s.',
+            message='📄 Too many files. Wait {wait}s.',
         )
     )
 

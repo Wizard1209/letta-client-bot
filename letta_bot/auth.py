@@ -18,6 +18,7 @@ from letta_bot.client import (
     create_agent_from_template,
     get_agent_owner_telegram_id,
     list_agents_by_user,
+    revoke_user_agent_links,
 )
 from letta_bot.config import CONFIG
 from letta_bot.filters import AdminOnlyFilter
@@ -149,6 +150,7 @@ class NewAssistantCallback(CallbackData, prefix='new'):
 @auth_router.message(Command('access'))
 async def access_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor) -> None:
     """Request general bot access (identity only, no assistant capabilities)."""
+    # Nothing to register and nobody to answer — see the error handling policy
     if not message.from_user:
         return
 
@@ -627,11 +629,17 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
         )
         return
 
-    await message.answer(
-        **Text(
-            f'🚫 Access revoked for user {telegram_id} ({len(result)} request(s) updated)\n'
-        ).as_kwargs()
-    )
+    links = await revoke_user_agent_links(telegram_id)
+
+    report = [f'🚫 Access revoked for user {telegram_id} ({len(result)} request(s))']
+    if links.detached:
+        report.append(f'Detached from: {", ".join(links.detached)}')
+    if links.kept:
+        report.append(f'Still theirs (created): {", ".join(links.kept)}')
+    if links.orphaned:
+        report.append(f'⚠️ Left with no users: {", ".join(links.orphaned)}')
+
+    await message.answer(**Text('\n'.join(report)).as_kwargs())
 
     # Notify user of revocation
     try:
@@ -639,11 +647,12 @@ async def revoke_command(message: Message, bot: Bot, gel_client: AsyncIOExecutor
             chat_id=telegram_id,
             **Text(
                 '🚫 Your access to the bot has been revoked.\n\n'
-                'You can export your assistants using /export.\n\n'
+                'Assistants you created are still yours and are waiting for you; '
+                'access to the others has been removed.\n\n'
                 'If you believe this was done in error, '
                 'please contact the administrator.\n'
-                'You can submit a new request using /new or '
-                '/access if you wish to regain access.'
+                'You can submit a new request using /access '
+                'if you wish to regain access.'
             ).as_kwargs(),
         )
     except Exception as e:

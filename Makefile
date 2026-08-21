@@ -1,6 +1,6 @@
 # Letta Telegram Bot - Development & Deployment Commands
 
-.PHONY: help install dev lint format typecheck check test poll build up down logs restart clean
+.PHONY: help install dev lint format typecheck check poll build up down logs restart
 
 help:
 	@echo "Available commands:"
@@ -35,7 +35,11 @@ format:
 typecheck:
 	uv run mypy .
 
+# lab/ is gitignored, so ruff skips it by default while mypy does not. The
+# subproject carries its own gate; run it here too when it is present, or the
+# root gate reports green on code it never linted.
 check: format lint typecheck
+	@if [ -d lab ]; then $(MAKE) -C lab check; fi
 	@echo "All checks passed!"
 
 poll:

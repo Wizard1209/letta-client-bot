@@ -3,9 +3,10 @@
 NOTE: This file is excluded from linting/formatting and designed to be
 loaded as a Letta custom tool via source_code registration.
 
-Uses injected Letta context:
-- `client`: Pre-authenticated Letta SDK client (injected by runtime)
-- `LETTA_AGENT_ID`: Agent's own ID (available via os.getenv)
+Reads from the tool execution environment:
+- `LETTA_AGENT_ID`: Agent's own ID, injected by the runtime
+- `LETTA_API_KEY`: from the agent's `secrets`, used to build a Letta client
+- `TELEGRAM_BOT_TOKEN`: from the agent's `secrets`
 """
 
 import os
@@ -66,12 +67,8 @@ def notify_via_telegram(
     By default, it sends to ALL users (identities) attached to the agent.
     Set owner_only=True to send only to the agent owner.
 
-    Environment variable TELEGRAM_BOT_TOKEN must be set in the agent's tool
-    execution environment.
-
-    Injected by Letta runtime:
-    - `client`: Authenticated Letta SDK client
-    - `LETTA_AGENT_ID`: This agent's ID (via os.getenv)
+    TELEGRAM_BOT_TOKEN and LETTA_API_KEY must be set in the agent's secrets.
+    LETTA_AGENT_ID is injected by the runtime.
 
     Args:
         message: The proactive notification message to send to the user(s)
@@ -82,6 +79,7 @@ def notify_via_telegram(
         str: Confirmation of messages sent or error message
     """
     import requests
+    from letta_client import Letta
 
     bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
     if not bot_token:
@@ -92,8 +90,12 @@ def notify_via_telegram(
     if not agent_id:
         return 'Error: LETTA_AGENT_ID not available in execution environment'
 
-    # Use injected client to fetch agent data
-    # `client` is automatically injected by Letta runtime
+    # The injected `client` is None without LETTA_API_KEY — build our own.
+    api_key = os.environ.get('LETTA_API_KEY')
+    if not api_key:
+        return 'Error: LETTA_API_KEY is not set in the agent secrets'
+    client = Letta(api_key=api_key)
+
     try:
         agent = client.agents.retrieve(agent_id=agent_id, include=['agent.tags'])
     except Exception as e:

@@ -6,14 +6,15 @@ loaded as a Letta custom tool via source_code registration.
 This tool enables agents to delete/cancel scheduled messages using Letta's
 native scheduling API.
 
-Uses injected Letta context:
-- `client`: Letta SDK client (injected by runtime as global)
-- `LETTA_AGENT_ID`: Agent's own ID (available via os.getenv, injected by runtime)
+Reads from the tool execution environment:
+- `LETTA_AGENT_ID`: Agent's own ID, injected by the runtime
+- `LETTA_API_KEY`: from the agent's `secrets`, used to build a Letta client
 """
 
 import os
 from typing import Literal
 
+from letta_client import Letta
 from letta_client._models import BaseModel
 
 
@@ -31,9 +32,8 @@ def delete_scheduled_message(scheduled_message_id: str) -> str:
     For one-time messages: Prevents the message from being delivered.
     For recurring messages: Stops all future executions.
 
-    Injected by Letta runtime:
-    - client: Letta SDK client for API calls
-    - LETTA_AGENT_ID: This agent's ID
+    LETTA_API_KEY must be set in the agent's secrets.
+    LETTA_AGENT_ID is injected by the runtime.
 
     Args:
         scheduled_message_id (str): The ID of the scheduled message to delete
@@ -53,23 +53,27 @@ def delete_scheduled_message(scheduled_message_id: str) -> str:
 
     scheduled_message_id = scheduled_message_id.strip()
 
+    # The injected `client` is None without LETTA_API_KEY — build our own.
+    api_key = os.environ.get('LETTA_API_KEY')
+    if not api_key:
+        return 'Error: LETTA_API_KEY is not set in the agent secrets'
+    client = Letta(api_key=api_key)
+
     try:
         # Try SDK method first, fall back to direct API call
         try:
-            client.agents.schedule.delete(  # type: ignore[name-defined]
+            client.agents.schedule.delete(
                 agent_id=agent_id,
                 scheduled_message_id=scheduled_message_id,
             )
         except AttributeError:
-            client.delete(  # type: ignore[name-defined]
+            client.delete(
                 f'/v1/agents/{agent_id}/schedule/{scheduled_message_id}',
                 cast_to=ScheduleDeleteResponse,
             )
 
         return f'Successfully deleted scheduled message: {scheduled_message_id}'
 
-    except NameError:
-        return 'Error: Letta client not available in execution environment'
     except Exception as e:
         error_str = str(e)
         if '404' in error_str or 'not found' in error_str.lower():

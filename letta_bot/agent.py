@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 import json
 import logging
+from typing import cast
 
 from aiogram import Bot, F, Router
 from aiogram.filters.callback_data import CallbackData
@@ -13,23 +14,18 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from gel import AsyncIOExecutor
 from httpx import ReadError, ReadTimeout, RemoteProtocolError
 from letta_client import APIError
+from letta_client.types.agents.message_create_params import (
+    Message as SdkMessage,
+)
 
 from letta_bot.client import (
     DetachResult,
-    LettaProcessingError,
     client,
     detach_user_from_agent,
     list_agents_by_user,
     validate_agent_access,
 )
 from letta_bot.client_tools import LettaMessage, registry, resolve_approval
-from letta_bot.documents import (
-    DocumentProcessingError,
-    FileTooLargeError,
-    file_processing_tracker,
-    process_telegram_document,
-    wait_for_file_processing,
-)
 from letta_bot.images import (
     ContentPart,
     ImageContentPart,
@@ -233,8 +229,9 @@ async def send_to_agent(
 
     assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
-    schemas = registry.get_schemas()
-    client_tools = schemas or None
+    # An explicit None serializes to `null`, which the API rejects
+    # ("client_tools: Expected array, received null"). Send the list as-is.
+    client_tools = registry.get_schemas()
 
     messages_to_send: list[LettaMessage] = [
         {'role': 'user', 'content': content_parts},
@@ -254,9 +251,10 @@ async def send_to_agent(
             for _iteration in range(max_approval_iterations):
                 handler = AgentStreamHandler(message)
 
-                response_stream = await client.agents.messages.stream(
+                response_stream = await client.agents.messages.create(
                     agent_id=agent_id,
-                    messages=messages_to_send,  # type: ignore[arg-type]
+                    streaming=True,
+                    messages=cast(list[SdkMessage], messages_to_send),
                     include_pings=True,
                     client_tools=client_tools,
                 )
@@ -364,8 +362,7 @@ class DetachConfirmCallback(CallbackData, prefix='detach_c'):
 @agent_commands_router.message(Command('switch'), flags={'require_identity': True})
 async def switch(message: Message, identity: GetIdentityResult) -> None:
     """List user's assistants and allow switching between them."""
-    if not message.from_user:
-        return
+    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
     # List all agents for this user (via identity tags)
     try:
@@ -414,8 +411,7 @@ async def handle_switch_assistant(
     gel_client: AsyncIOExecutor,
 ) -> None:
     """Handle assistant selection callback."""
-    if not callback.from_user:
-        return
+    assert callback.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
 
     # Check if already selected - avoid unnecessary update and Telegram API error
     if identity.selected_agent == callback_data.agent_id:
@@ -467,9 +463,6 @@ async def handle_switch_assistant(
 )
 async def assistant_info_handler(message: Message, agent_id: str) -> None:
     """Show assistant info with memory blocks."""
-    if not message.from_user:
-        return
-
     # Send loading indicator
     status_msg = await message.answer(**Text('⏳ Fetching assistant info...').as_kwargs())
 
@@ -538,9 +531,6 @@ async def assistant_info_handler(message: Message, agent_id: str) -> None:
 )
 async def context_handler(message: Message, agent_id: str) -> None:
     """Show assistant context window breakdown."""
-    if not message.from_user:
-        return
-
     # Send loading indicator
     status_msg = await message.answer(**Text('⏳ Fetching context info...').as_kwargs())
 
@@ -595,9 +585,6 @@ async def context_handler(message: Message, agent_id: str) -> None:
 )
 async def clear_messages(message: Message, agent_id: str) -> None:
     """Show confirmation prompt for clearing message history."""
-    if not message.from_user:
-        return
-
     try:
         agent = await client.agents.retrieve(agent_id)
 
@@ -637,9 +624,6 @@ async def handle_clear_messages(
     agent_id: str,
 ) -> None:
     """Handle message history clearing confirmation."""
-    if not callback.from_user or not callback.message:
-        return
-
     if not callback_data.confirm:
         if isinstance(callback.message, Message):
             await callback.message.delete()
@@ -908,68 +892,26 @@ async def handle_detach_confirm(
 
 @agent_router.message(F.document, flags={'require_identity': True, 'require_agent': True})
 async def handle_document(message: Message, bot: Bot, agent_id: str) -> None:
-    """Handle document uploads with per-user concurrency control."""
-    assert message.from_user, 'from_user required (guaranteed by IdentityMiddleware)'
-    assert message.document, 'document required (guaranteed by F.document filter)'
+    """Decline the document and pass the request on without it.
 
-    user_id = message.from_user.id
+    Letta retired the folders API this used to upload into, so there is
+    nowhere to put the file. The caption still reaches the agent, and the
+    agent is told the file did not arrive so it can answer without it.
+    """
+    await message.answer(
+        **Text('📄 Documents are not supported. Send the text itself.').as_kwargs()
+    )
+
     ctx = init_message_context(message)
+    ctx.add_text(
+        '<system>User sent a file; it was rejected and never reached you.</system>'
+    )
 
-    # Add caption if present (before document processing)
     caption = build_caption(message)
     if caption:
         ctx.add_text(caption)
 
-    async with file_processing_tracker.acquire(user_id) as acquired:
-        if not acquired:
-            await message.answer(
-                **Text('📄 Wait for the previous file to finish processing.').as_kwargs()
-            )
-            return
-
-        try:
-            file_name = message.document.file_name or 'document'
-            status_msg = await message.answer(
-                **Text(f'📄 Uploading "{file_name}"...').as_kwargs()
-            )
-
-            result = await process_telegram_document(
-                bot, message.document, agent_id, user_id
-            )
-            # Wait for Letta to process the file
-            await wait_for_file_processing(result['folder_id'], result['file_id'])
-
-            file_name = result['file_name']
-            file_id = result['file_id']
-
-            # Update status message to show upload complete
-            await status_msg.edit_text(**Text(f'✅ Uploaded "{file_name}"').as_kwargs())
-
-            ctx.add_text(f'<system>File "{file_name}" ready (id: {file_id})</system>')
-
-        except FileTooLargeError as e:
-            await message.answer(**Text(f'📄 {e}').as_kwargs())
-            return
-
-        except (DocumentProcessingError, LettaProcessingError) as e:
-            LOGGER.warning('Document processing failed: %s, telegram_id=%s', e, user_id)
-            ctx.add_text(f'<system>File error: {e}</system>')
-
-        except APIError as e:
-            status = getattr(e, 'status_code', 'unknown')
-            body = getattr(e, 'body', 'no body')
-            LOGGER.warning(
-                'Document processing failed: status=%s, body=%s, telegram_id=%s',
-                status,
-                body,
-                user_id,
-            )
-            ctx.add_text(f'<system>File error: status={status}, body={body}</system>')
-
-    # Send to agent if we have content
-    content_parts = ctx.build_content_parts()
-    if content_parts:
-        await send_to_agent(message, bot, agent_id, content_parts)
+    await send_to_agent(message, bot, agent_id, ctx.build_content_parts())
 
 
 @agent_router.message(F.photo, flags={'require_identity': True, 'require_agent': True})

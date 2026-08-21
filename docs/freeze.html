@@ -1,0 +1,220 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Что осталось закрыть</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@400;900&family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+ --bg:#0c0c0c; --ink:#f2f2ef; --dim:#8a8a86; --faint:#5c5c58;
+ --line:#262624; --line2:#1a1a18;
+ --accent:#ff6a00;
+ --mono:'IBM Plex Mono',monospace; --sans:'Golos Text',sans-serif; --black:'Geologica',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;font-size:20px}
+.wrap{max-width:1500px;margin:0 auto;padding:0 40px;background:var(--bg);box-shadow:0 0 0 1px var(--line)}
+header{padding:76px 0 0}
+.kick{font-family:var(--mono);font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 22px}
+.kick::before{content:"// ";color:var(--faint)}
+h1{font-family:var(--black);font-weight:900;font-size:58px;line-height:.98;margin:0;letter-spacing:-.02em;text-transform:uppercase}
+
+.layers{display:grid;grid-template-columns:1fr 1fr 1fr;margin:38px 0 0;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink)}
+.ly{padding:22px 26px 24px 0}
+.ly+.ly{padding-left:26px;border-left:1px solid var(--line)}
+.ly.mid{background:var(--line2)}
+.lk{font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+.ln{font-family:var(--black);font-weight:900;font-size:26px;margin:0 0 12px;line-height:1.05}
+.lp{color:var(--dim);font-size:16px;margin:0 0 10px;line-height:1.45}
+.lgo{font-family:var(--mono);font-size:13px;color:var(--ink);margin:14px 0 0;letter-spacing:.06em;text-transform:uppercase}
+
+.how{font-family:var(--mono);font-size:14px;color:var(--dim);line-height:1.9;margin:0;padding:20px 0 0}
+.how b{color:var(--ink);font-weight:600}
+.how .lg{display:inline-block;padding:2px 9px;margin-right:6px}
+.lg.hi{border:1px solid var(--accent);color:var(--accent);font-weight:600}
+.lg.md{border:1px solid var(--line);color:var(--ink)}
+.lg.lo{border:1px solid var(--line2);color:var(--faint)}
+
+.intro{padding:52px 0 4px}
+.intro .num{font-family:var(--mono);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 12px}
+.intro h2{font-family:var(--black);font-weight:900;font-size:34px;text-transform:uppercase;letter-spacing:-.01em;margin:0 0 18px;line-height:1.05}
+.intro p{color:var(--dim);font-size:18px;margin:0 0 16px;max-width:1050px}
+.intro p b{color:var(--ink);font-weight:600}
+.intro code,td code{font-family:var(--mono);font-size:.88em;color:var(--ink)}
+
+table{width:100%;border-collapse:collapse;margin:0}
+th{font-family:var(--mono);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
+   text-align:left;padding:18px 16px 12px;border-bottom:1px solid var(--ink);position:sticky;top:0;background:var(--bg)}
+td{padding:13px 16px;border-bottom:1px solid var(--line2);vertical-align:top;font-size:17px}
+tr.grp td{border-bottom:1px solid var(--line);border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);
+  padding:22px 16px 10px;background:var(--line2)}
+tr.grp td b{color:var(--accent);font-weight:600;margin-right:10px}
+td.id{font-family:var(--mono);font-size:14px;color:var(--faint);width:52px;white-space:nowrap}
+td.name{font-weight:600;color:var(--ink);width:300px}
+td.where{font-family:var(--mono);font-size:13px;color:var(--faint);width:230px;word-break:break-word}
+td.need{color:var(--dim)}
+td.act{width:140px;white-space:nowrap}
+.t{font-family:var(--mono);font-size:13px;letter-spacing:.04em;text-transform:uppercase;display:inline-block;padding:3px 10px}
+.t.now{border:1px solid var(--accent);color:var(--accent);font-weight:600}
+.t.sig{color:var(--ink);border:1px solid var(--line)}
+.t.keep{color:var(--faint)}
+.t.never{color:var(--faint);text-decoration:line-through}
+
+.tw{overflow-x:auto}
+footer{padding:44px 0 60px;margin-top:44px;border-top:2px solid var(--ink);color:var(--dim);font-family:var(--mono);font-size:14px;line-height:1.8}
+footer .s{color:var(--ink)}
+@media(max-width:900px){h1{font-size:36px}td.name,td.where{width:auto}.layers{grid-template-columns:1fr}.ly+.ly{border-left:none;border-top:1px solid var(--line);padding-left:0}}
+</style></head><body><div class="wrap">
+<header>
+ <p class="kick">letta-client-bot · рабочий список на закрытие проекта</p>
+ <h1>Что осталось<br>закрыть</h1>
+
+ <div class="layers">
+  <div class="ly">
+   <p class="lk">условие</p>
+   <p class="ln">БОТ ЖИВЁТ</p>
+   <p class="lp">Разработка останавливается, но задеплоенный бот обслуживает пользователей, а у агентов Letta накоплена память. Закрытие не должно ничего из этого сломать.</p>
+  </div>
+  <div class="ly mid">
+   <p class="lk">что это за документ</p>
+   <p class="ln">СПИСОК РАБОТ</p>
+   <p class="lp">Всё, что специфично для этого проекта: закрытое в этом заходе, мелочи на правку и операции на живых агентах.</p>
+   <p class="lgo">↓ сделал / поправить / оставить</p>
+  </div>
+  <div class="ly">
+   <p class="lk">чего здесь нет</p>
+   <p class="ln">ОБЩИХ МЕСТ</p>
+   <p class="lp">Ни «покрыть тестами», ни «отрефакторить». Только то, что имеет смысл трогать в проекте, который после этого не трогают.</p>
+  </div>
+ </div>
+
+ <p class="how">
+  <b>ЧЕТЫРЕ ТАБЛИЦЫ, ПО ПОРЯДКУ РАБОТ.</b> Первая — что уже сделано в этом заходе, чтобы не искать заново.<br>
+  Вторая — во что разошлись ветки и PR.<br>
+  Третья — мелочи в коде, которые ещё стоит поправить. Четвёртая — операции на платформе, не в репозитории.<br>
+  В конце — короткий хвост: что осознанно остаётся как есть.
+ </p>
+</header>
+
+<div class="intro">
+ <p class="num">таблица 1</p>
+ <h2>Уже сделано</h2>
+ <p>Всё это лежит в PR #40 и в живых агентах. Список нужен, чтобы <b>не начинать эти же вопросы заново</b> и чтобы было видно, чего в оставшихся таблицах намеренно нет.</p>
+</div>
+
+<div class="tw"><table>
+ <thead><tr><th>#</th><th>Что сделано</th><th>Где</th><th>Что это дало</th><th></th></tr></thead>
+ <tbody>
+  <tr class="grp"><td colspan="5"><b>0</b> Закрыто в этом заходе</td></tr>
+  <tr><td class="id">0.1</td><td class="name">Обработка документов снята</td><td class="where">letta_bot/agent.py; documents.py удалён</td><td class="need">Все маршруты <code>client.folders.*</code>, <code>agents.folders.*</code>, <code>agents.files.*</code> отвечают <code>400 · This API route is deprecated</code>. Хендлер до этого вешал «Uploading…» навсегда и отправлял агенту сырое тело ошибки. Теперь файл отклоняется одним сообщением, подпись доходит вместе с пометкой, что файла не было.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.2</td><td class="name">Файловая фича снята с живых агентов</td><td class="where">devscripts/detach_file_feature.py</td><td class="need">31 инструмент и 8 блоков памяти с 11 агентов. Тулы к тому моменту были заглушками: <code>grep_files</code> с паттерном <code>a</code> возвращал пустую строку даже на базах знаний. Проверено отдельным агентом по всем 53 агентам — остатков нет.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.3</td><td class="name">Переезд с deprecated messages.stream</td><td class="where">letta_bot/agent.py:254</td><td class="need">Вызов, на котором едет каждое сообщение, был помечен <code>@deprecated</code> в запиненном SDK. Заменён на <code>messages.create(streaming=True)</code>; на живом агенте проверено, что поток событий тот же.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.4</td><td class="name">Три пути перестали кончаться тишиной</td><td class="where">letta_bot/response_handler.py</td><td class="need"><code>stop_reason</code> лежал среди «молчаливых» событий вместе с <code>insufficient_credits</code>; у <code>error_message</code> ветки не было вовсе; <code>assistant_message</code> был единственным из четырёх без <code>try/except</code>. Во всех трёх случаях ход возвращался как успешный, а пользователь не получал ничего.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.5</td><td class="name">Тексты, которые бот отдаёт пользователям</td><td class="where">notes/</td><td class="need">Политика приватности не называла ElevenLabs/Whisper (куда уходит голос) и OpenAI/Gemini/BFL (куда уходят промпт и фото). <code>/contact</code> звал присылать feature requests. <code>/about</code> перечислял «оба шаблона», показывая один.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.6</td><td class="name">Вычищено то, чем никто не пользуется</td><td class="where">_archived/, config.py, Makefile, compose</td><td class="need">Роутер снятой команды <code>/notify</code> на 26 КБ, мёртвый конфиг планировщика, закомментированный импорт «ВРЕМЕННО не используется», <code>make test</code> и <code>make clean</code> в <code>.PHONY</code> без целей, том <code>bot-storage</code>, смонтированный никуда, mypy-исключение для несуществующего каталога. Плюс четыре переменные окружения, молча отключающие голос и уведомления админам, наконец описаны в <code>.env.example</code>.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.7</td><td class="name">deny_tool_call салважен из research</td><td class="where">devscripts/deny_tool_call.py</td><td class="need">Агент, зависший на неотвеченном одобрении, держит run и отказывает каждому следующему сообщению с 409. Ничем другим в репозитории это не разблокировать. Добавлен <code>approval_request_id</code>, без которого запрос остаётся открытым.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.8</td><td class="name">Ветки прибраны, роли инструментов записаны</td><td class="where">origin/*; CONTRIBUTION.md</td><td class="need">Из девяти веток осталось три: master, эта и <code>nix-infra</code>. Пустой скилл <code>use-railway</code> убран, а Railway описан на месте как второй рабочий пример деплоя. Записано, что X-тулы опциональные: они читают <code>X_API_KEY</code> из секретов агента и подключаются только тем, кто его завёл, — поэтому <code>sync_custom_tools</code> и покрывает только четыре клиентских тула, а не все десять.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.9</td><td class="name">/revoke упрощён до отвязки</td><td class="where">letta_bot/client.py; auth.py</td><td class="need">Раньше команда меняла только статус в Gel: входящий доступ закрывался, а <code>identity-tg-{id}</code> оставался на агентах, и отозванный продолжал получать проактивные уведомления. Теперь она снимает связь со всех агентов, кроме созданных самим пользователем — те остаются его. Владение передаётся оставшемуся пользователю, а агент, оставшийся вообще без людей, называется админу отдельной строкой. Проверено на четырёх подставных агентах: созданный, общий с передачей владения, единственный и чужой.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.10</td><td class="name">Проверка отправителя сведена в одно место</td><td class="where">letta_bot/agent.py; auth.py; main.py; CONTRIBUTION.md</td><td class="need">Одно и то же условие — событие без <code>from_user</code> — было написано четырьмя способами: молчаливый <code>return</code>, <code>assert</code>, <code>raise ValueError</code> и ответ «Can't identify user» в чат. Шесть проверок в хендлерах были при этом недостижимы: они стоят за флагами <code>require_identity</code>, а мидлварь уже отсекает такие события раньше. Проверки убраны, у <code>/start</code> и <code>/access</code> остался молчаливый выход — отвечать некому и регистрировать нечего. Политика ошибок больше не приводит <code>from_user</code> как пример бизнес-ошибки: у него теперь свой раздел про то, где решение принимается.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">0.11</td><td class="name">Нарезан релиз 1.2.0</td><td class="where">pyproject.toml:3; letta_bot/__init__.py; notes/changelog.md</td><td class="need">Обе строки версии стояли на 1.1.0 от 09.12.2025, пока в <code>[Latest additions]</code> копился целый релиз. Теперь это <b>1.2.0 от 21.08.2026</b>: <code>/detach</code>, <code>/export</code>, <code>/clear</code>, генерация картинок, альбомы, стикеры, ElevenLabs, нативные расписания, переезд на md_tg, отказ от загрузки документов и отвязка при <code>/revoke</code>. Добавлена строка, которой в списке не было: упавший ход теперь называет причину. <code>/changelog</code> в боте отдаёт ровно этот раздел — проверено вызовом самой функции.</td><td class="act"><span class="t keep">готово</span></td></tr>
+ </tbody>
+</table></div>
+
+<div class="intro">
+ <p class="num">таблица 2</p>
+ <h2>Ветки и PR</h2>
+ <p>Было девять веток помимо master; каждая прочитана диффом с проверкой конфликтов через <code>git merge-tree</code>, для двух — со сверкой против того, что реально стоит на платформе. <b>Осталось две: master и параллельная nix-infra.</b></p>
+</div>
+
+<div class="tw"><table>
+ <thead><tr><th>#</th><th>Ветка</th><th>Состояние</th><th>Почему так</th><th></th></tr></thead>
+ <tbody>
+
+  <tr class="grp"><td colspan="5"><b>B</b> Ветки</td></tr>
+  <tr><td class="id">B1</td><td class="name">tw-tools · PR #25</td><td class="where">влито · d7fdfba</td><td class="need">Была не предложением, а репозиторной копией того, что уже работает: шесть X-тулов зарегистрированы на платформе и подключены к пяти агентам, исходники сверены побайтово. <code>search_x_posts.py</code> на master отставал на 105 строк — не было вложения медиа и пагинации. Влито; репозиторий снова совпадает с тем, что исполняют агенты.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">B2</td><td class="name">nix-infra · PR #34</td><td class="where">~4000 строк, flake + NixOS-модули</td><td class="need">Остаётся параллельной веткой: рабочий NixOS-деплой сам по себе, а не третья цель для master. Подтянута к текущему master — была на пять месяцев позади, теперь PR идёт чисто. Конфликт был один, CLAUDE.md: ветка правила версию на ~900 строк, master заменил её на 62; разрешено в пользу master плюс короткий раздел про раскладку <code>deploy/nix/</code>. Заголовок «NixOS (primary)» переписан — docker-compose и Railway на master остаются как есть. Если ветку когда-нибудь вливать, помнить про <code>.github/workflows/deploy.yml</code>: на теге <code>v*</code> он пойдёт деплоить на конкретный хост.</td><td class="act"><span class="t sig">параллельная</span></td></tr>
+  <tr><td class="id">B3</td><td class="name">Шесть спорных веток</td><td class="where">удалены</td><td class="need"><code>fix-file-handling</code> (PR #39, закрыт) — половина про folders мертва вместе с API, половина решена иначе. <code>research</code> — генерация картинок переписана на master, а её <code>pyproject</code> пинил <code>letta-client==1.7.8</code>; единственное живое вынуто в 0.7. <code>scripting</code> и <code>feat-split-md-test</code> — тестируют и документируют то, чего на master больше нет. <code>deploy/railway-noeria</code> и <code>refactor/xml-tags-and-type-ignores</code> совпадали с master побайтово.</td><td class="act"><span class="t keep">готово</span></td></tr>
+
+
+ </tbody>
+</table></div>
+
+<div class="intro">
+ <p class="num">таблица 3</p>
+ <h2>Мелочи, которые ещё стоит поправить</h2>
+ <p>Всё, что специфично для проекта и стоит правки перед закрытием. Решать здесь больше нечего — осталась работа на минуты.</p>
+</div>
+
+<div class="tw"><table>
+ <thead><tr><th>#</th><th>Что поправить</th><th>Где</th><th>Почему это стоит трогать сейчас</th><th></th></tr></thead>
+ <tbody>
+
+
+  <tr class="grp"><td colspan="5"><b>D</b> Просто поправить</td></tr>
+  <tr><td class="id">D1</td><td class="name">CLAUDE.md переписан по коду</td><td class="where">CLAUDE.md</td><td class="need">Файл описывал не тот код: индикатор набора приписан <code>middlewares.py</code>, где нет ни строчки про chat action, rate limiter не упомянут вовсе, <code>custom_tools/</code> — код, который исполняется на живых агентах, — отсутствовал в списке модулей, а из четырёх исключений mypy назван один. Переписан с нуля и сверен с исходниками: реальная цепочка мидлварей по порядку регистрации, обе семьи тулов и чем они друг от друга отличаются, четыре обязательных поля конфига. Команды, дублировавшие CONTRIBUTION, убраны — он и так подтягивается через <code>@</code>.</td><td class="act"><span class="t keep">готово</span></td></tr>
+  <tr><td class="id">D2</td><td class="name">Railway сдаётся после трёх падений</td><td class="where">deploy/railway.toml:8</td><td class="need"><code>restartPolicyMaxRetries = 3</code>, healthcheck в файле нет и health-эндпоинта в приложении тоже. Три подряд неудачных старта — недоступный Telegram, не поднявшаяся БД — оставляют сервис в Crashed навсегда. На проекте, за которым следят, это заметят; на замороженном узнают по тому, что бот молчит неделю.</td><td class="act"><span class="t now">поправить</span></td></tr>
+  <tr><td class="id">D3</td><td class="name">Образ gel без тега при закреплённой версии</td><td class="where">deploy/docker-compose.yaml:4; deploy/gel.Dockerfile:1</td><td class="need">Оба места тянут <code>geldata/gel</code> без тега, то есть latest, при <code>server-version = "6.11"</code> в <code>gel.toml</code>. На хосте с кешем незаметно; выстреливает на первом деплое, после <code>docker image prune</code> и на сборке Railway, где билдер всегда чистый. Одна строка.</td><td class="act"><span class="t now">поправить</span></td></tr>
+  <tr><td class="id">D4</td><td class="name">Нет процедуры бэкапа базы</td><td class="where">deploy/</td><td class="need">Все <code>User</code>, <code>Identity</code> и <code>AuthorizationRequest</code> — вся матрица доступа — в локальном томе docker. Слова «backup», «restore» и «dump» не встречаются в репозитории ни разу. Достаточно абзаца с командой дампа.</td><td class="act"><span class="t now">поправить</span></td></tr>
+  <tr><td class="id">D5</td><td class="name">Админка Gel опубликована наружу</td><td class="where">deploy/docker-compose.yaml</td><td class="need">Gel вывешен через Traefik на публичном имени с включённым UI, а security и на HTTP, и на бинарном протоколе — <code>optional</code>, то есть открытые соединения принимаются.</td><td class="act"><span class="t now">поправить</span></td></tr>
+
+ </tbody>
+</table></div>
+
+<div class="intro">
+ <p class="num">таблица 4</p>
+ <h2>Операции на платформе</h2>
+ <p>Не в репозитории — в живых агентах. Ни одно из этого не чинится мержем, и <b>после закрытия делать это будет некому</b>, так что либо сейчас, либо никогда.</p>
+</div>
+
+<div class="tw"><table>
+ <thead><tr><th>#</th><th>Операция</th><th>Чем</th><th>Что не так сейчас</th><th></th></tr></thead>
+ <tbody>
+
+  <tr class="grp"><td colspan="5"><b>E</b> Живые агенты</td></tr>
+  <tr><td class="id">E1</td><td class="name">Опубликовать исходники тулов</td><td class="where">sync_custom_tools --execute</td><td class="need">Расходятся все четыре. У трёх — строка комментария, у <code>schedule_message</code> — <b>+9/−14 строк кода</b>: зарегистрированная версия пишет <code>Scheduled at: &lt;время вызова&gt;</code> вместо вычисленного времени доставки. Запрос к API идентичен, поэтому сообщения приходят вовремя, но агент называет пользователю неверное время.</td><td class="act"><span class="t now">сейчас</span></td></tr>
+  <tr><td class="id">E2</td><td class="name">Разобраться с окном у семи агентов</td><td class="where">context_headroom</td><td class="need">У 7 из 53 <code>headroom = ctx − current − max_tokens</code> отрицателен, ещё у 6 меньше 15k. Худшие: <code>kb-radik-main</code> −88354, <code>general-rose-ape</code> −69787, <code>image-gen</code> −65303. <code>raise_context_window</code> их не берёт: он поднимает окно только у <code>claude-sonnet-5</code> ниже 200k, а эти уже на потолке модели — там снижать <code>max_tokens</code>, и такого скрипта нет.</td><td class="act"><span class="t now">сейчас</span></td></tr>
+  <tr><td class="id">E3</td><td class="name">Проверить, жив ли хост из nix-infra</td><td class="where">origin/nix-infra · deploy/nix/hosts/dev/secrets.yaml</td><td class="need">В ветке закоммичены sops-шифрованные боевые секреты: токен бота, ключ Letta, ключ OpenAI, пароль Gel, htpasswd Traefik. Получателей два — ключ контрибьютора и ключ того хоста. <b>Владелец репозитория не в списке и расшифровать их не может</b>, а значит и не может убедиться, что они больше нигде не лежат. Если VPS ещё поднят, эти токены на нём. Ротация решает вопрос независимо от ответа.</td><td class="act"><span class="t now">сейчас</span></td></tr>
+  <tr><td class="id">E4</td><td class="name">Определения ассистентов вынуть неоткуда</td><td class="where">—</td><td class="need">Ни одного файла в репозитории, описывающего ассистента: системный промпт, набор тулов, блоки памяти, модель. <code>/new</code> показывает то, что вернёт платформа. Исчезнет шаблон — восстановить его будет неоткуда. Выгрузить сейчас через <code>/export</code> или <code>agents.export_file</code> — единственный способ это застраховать.</td><td class="act"><span class="t now">сейчас</span></td></tr>
+
+ </tbody>
+</table></div>
+
+<div class="intro">
+ <p class="num">хвост</p>
+ <h2>Осознанно остаётся как есть</h2>
+ <p>Найдено, проверено и <b>решено не трогать</b>: либо не мешает работе, либо чинится только переездом с платформы. Строка здесь означает «известно», а не «забыто» — чтобы через полгода это не открывали заново.</p>
+</div>
+
+<div class="tw"><table>
+ <thead><tr><th>#</th><th>Что</th><th>Где</th><th>Почему оставлено</th><th></th></tr></thead>
+ <tbody>
+
+  <tr class="grp"><td colspan="5"><b>X</b> Привязка к платформе — опознавательные признаки, а не работа</td></tr>
+  <tr><td class="id">X1</td><td class="name">Восемь маршрутов, на которых всё держится</td><td class="where">agents.retrieve · update · list · messages.reset · export_file · templates · /schedule · /context</td><td class="need">Доступ читается через <code>retrieve(include=['agent.tags'])</code>, пишется единственным <code>agents.update</code>, который заменяет набор целиком; <code>/context</code> и <code>/new</code> идут мимо публичного SDK через <code>letta_client._base_client</code>; расписания — через <code>/v1/agents/{id}/schedule</code> с ручным фолбэком, ловящим только <code>AttributeError</code>. Чинить нечего, пока работает. Когда отвалится — отвалится как <code>400 · This API route is deprecated</code>, ровно как folders, и первым признаком будет «у всех агентов нет тегов», а не ошибка.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">X2</td><td class="name">Запасной путь для потока сообщений</td><td class="where">letta_bot/agent.py:254</td><td class="need">Если семья <code>agents.messages</code> повторит судьбу folders — замена проверена на живом агенте и даёт тот же поток: <code>conversations.messages.create(conversation_id='default', extra_body={'agent_id': …})</code>. В семье <code>conversations</code> ничего не помечено deprecated.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">X3</td><td class="name">Состояние доступа живёт тегами на чужой стороне</td><td class="where">letta_bot/client.py; dbschema/default.gel</td><td class="need">Кто с каким агентом говорит, кто владелец и кто создал — свободный текст в тегах агента. В Gel только пользователи и запросы. Два одновременных гранта теряют друг друга. Лечится не правкой, а переездом.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">X4</td><td class="name">Ключ проекта и токен бота в секретах каждого агента</td><td class="where">letta_bot/middlewares.py:168</td><td class="need">Оттуда их читают кастомные тулы. Ротация любого из двух — обход всего флота, и процедуры для этого нет.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+
+  <tr class="grp"><td colspan="5"><b>Y</b> Рантайм — известные дыры, которые не мешают</td></tr>
+  <tr><td class="id">Y1</td><td class="name">Второе сообщение во время хода теряется</td><td class="where">letta_bot/middlewares.py</td><td class="need">Ходы на агента ничем не сериализуются, а ход идёт десятками секунд. Написавший второй раз получает две ошибки, и его сообщение не попадает в журнал. Платформа даёт <code>otid</code>, <code>run_id</code> и <code>messages.cancel</code> — бот не использует ни одного. Записано в планах как «Fix rapid message handling»; требует очереди ходов.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">Y2</td><td class="name">Результаты инструментов не показываются</td><td class="where">letta_bot/response_handler.py</td><td class="need">Ветки на <code>tool_return_message</code> нет: карточка вызова уходит, ответ на неё — нет. Пользователь видит, что агент что-то сделал, но не чем это кончилось. Туда же: исчерпание десяти кругов одобрения проходит молча.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">Y3</td><td class="name">Нет таймаутов и дедлайнов</td><td class="where">agent.py:262; transcription.py:81,114</td><td class="need">Цикл по событиям не ограничен по времени, а пинги не дают сработать 120-секундному таймауту клиента. Клиенты OpenAI и ElevenLabs созданы без таймаута вовсе.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">Y4</td><td class="name">Состояние в памяти растёт вечно</td><td class="where">middlewares.py:322,372; utils.py:34</td><td class="need">Словарь rate limiter, словарь блокировок и <code>async_cache</code> без maxsize и вытеснения. Для бота на десятки пользователей это никогда не станет проблемой; оба пробела записаны в TODO.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">Y5</td><td class="name">Свой рендерер Telegram в проактивном туле</td><td class="where">custom_tools/notify_via_telegram.py:124</td><td class="need">Экранирование собственной регуляркой MarkdownV2 с правилами, отличными от <code>md_tg</code>: разметка от агента приходит дословными знаками препинания. Сообщение длиннее 4096 возвращается агенту ошибкой вместо разбиения.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">Y6</td><td class="name">Ошибки пачки фото не доходят до глобального обработчика</td><td class="where">middlewares.py:242-257</td><td class="need">Буферизованные фото обрабатываются из колбэка таймера, вне цепочки апдейтов aiogram: ни уведомления админам, ни ответа пользователю.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+
+  <tr class="grp"><td colspan="5"><b>Z</b> Тесты и код — долг, который переживёт проект</td></tr>
+  <tr><td class="id">Z1</td><td class="name">Тестируется только слой Markdown</td><td class="where">tests/</td><td class="need">91 тест, все синхронные, все про форматирование. Плагина для async нет вовсе, так что ни один хендлер, мидлварь и путь авторизации не выполняется в тестах никогда. Из 25 форматтеров вызовов инструментов проверены два.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">Z2</td><td class="name">custom_tools вне ruff и mypy</td><td class="where">pyproject.toml:35,88</td><td class="need">Пять исходников, которые исполняются на живых агентах, исключены из обеих проверок — <code>make check</code> на них не смотрит. Ошибка в них видна только по строке ответа тула, притом что тул с ошибкой всё равно рапортует <code>status: "success"</code>.</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">Z3</td><td class="name">Девять TODO и пять пустых except</td><td class="where">auth.py, utils.py, info.py, generate_image.py, broadcast.py; devscripts/</td><td class="need">Среди TODO: <code>/new</code> не проверяет незакрытый запрос пользователя, редактирование референсных картинок Gemini помечено непроверенным прямо над вызовом, две точки входа broadcast объявлены в докстринге и не написаны. В девскриптах пять обработчиков с телом <code>pass</code>: кривой тег молча становится «нет владельца».</td><td class="act"><span class="t keep">оставлено</span></td></tr>
+  <tr><td class="id">Z4</td><td class="name">Запланированные фичи</td><td class="where">CONTRIBUTION.md</td><td class="need">Документы (упираются в снятое хранилище), настройка подробности вывода, LaTeX, редактирование блоков памяти, переименование агента, аналитика, правка сообщений, мультипользовательский агент из личного, gel single-file codegen. Ни у одной нет частичного следа в коде.</td><td class="act"><span class="t never">не будет</span></td></tr>
+
+ </tbody>
+</table></div>
+
+<footer>
+ <p><span class="s">Что осталось закрыть</span> · letta-client-bot · 20.08.2026, на состоянии ветки <span class="s">fix/tool-client-and-release</span>.</p>
+ <p>Таблицы 2–4 — работа, которую имеет смысл сделать до закрытия. Хвост — то, что найдено и оставлено намеренно, чтобы не искали заново.</p>
+ <p><span class="s">Свойства харнеса и фичи бота — в <code>harness-spec.html</code>; почему уходим с Letta — в <code>harness-spec-long.html</code>.</span></p>
+</footer>
+
+</div></body></html>
