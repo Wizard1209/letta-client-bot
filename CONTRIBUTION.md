@@ -267,7 +267,11 @@ GEL_INSTANCE, GEL_SECRET_KEY (if using Gel Cloud)
 
 **Prerequisites**: Traefik with `lets-encrypt-ssl` resolver, `monitoring_monitoring` network exists, DNS configured for `WEBHOOK_HOST`.
 
-### NixOS (primary)
+### NixOS
+
+A third deployment target, kept on this branch rather than on `master`: the
+docker-compose and Railway paths there stay as they are, and this one is
+maintained alongside them.
 
 Infrastructure is defined declaratively in `deploy/nix/`. Bot and Gel run as Podman containers via NixOS `virtualisation.oci-containers`, Traefik runs as a native NixOS service.
 
