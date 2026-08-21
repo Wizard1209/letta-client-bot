@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 • `/clear` command to clear messages from agent's context window
 
 **Changed:**
+• Revoking access now also unlinks the user from the assistants they were given access to — assistants they created themselves stay theirs
 • Renamed `/botaccess` → `/access` with clearer description emphasizing this grants general bot access only (identity), not assistant capabilities
 • Reasoning messages now display in collapsible blockquote (tap to expand full reasoning)
 • Message formatting migrated to native Telegram entities via custom md_tg module (replaces telegramify-markdown library)

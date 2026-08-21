@@ -194,6 +194,63 @@ class DetachResult:
     new_owner_telegram_id: int | None
 
 
+@dataclass
+class RevokeResult:
+    """What revoking a user did to their agent links."""
+
+    kept: list[str]
+    detached: list[str]
+    orphaned: list[str]
+
+
+async def revoke_user_agent_links(telegram_id: int) -> RevokeResult:
+    """Unlink a user from every agent except the ones they created.
+
+    Revoking used to touch only the authorization record. That closes the
+    inbound side - handlers check Gel - but leaves `identity-tg-{id}` on the
+    agents, and a proactive notification is addressed from the tags, so the
+    revoked user kept receiving pushes. Removing the tag is what stops them.
+
+    The agent the user created is the exception: that link is theirs, and
+    revoking bot access is not the same as taking their agent away.
+    """
+    identity_tag = f'identity-tg-{telegram_id}'
+    creator_tag = f'creator-tg-{telegram_id}'
+    owner_tag = f'owner-tg-{telegram_id}'
+
+    # Collected before updating: the listing is filtered by the very tag
+    # the updates remove, so paging through it while writing would skip agents.
+    agents = [
+        agent
+        async for agent in client.agents.list(tags=[identity_tag], include=['agent.tags'])
+    ]
+
+    result = RevokeResult(kept=[], detached=[], orphaned=[])
+
+    for agent in agents:
+        tags = list(agent.tags or [])
+        if creator_tag in tags:
+            result.kept.append(agent.name)
+            continue
+
+        tags.remove(identity_tag)
+        others = [t for t in tags if t.startswith('identity-tg-')]
+
+        if owner_tag in tags:
+            tags.remove(owner_tag)
+            if others:
+                heir = random.choice(others).removeprefix('identity-tg-')
+                tags.append(f'owner-tg-{heir}')
+
+        await client.agents.update(agent_id=agent.id, tags=tags)
+
+        result.detached.append(agent.name)
+        if not others:
+            result.orphaned.append(agent.name)
+
+    return result
+
+
 async def detach_user_from_agent(agent_id: str, telegram_id: int) -> DetachResult:
     """Remove user's identity tag from agent, handle owner transfer.
 
