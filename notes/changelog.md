@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 **[Latest additions]**
 
+**[1.2.0] - 2026-08-21**
+
 **Added:**
 • `/detach` command to remove your access from a shared assistant (with ownership transfer if you're the owner)
 • Image generation: your assistant can now create images from text descriptions and edit photos you send (OpenAI, Google Gemini or Black Forest Labs, chosen by model name)
@@ -14,6 +16,7 @@ All notable changes to this project will be documented in this file.
 • ElevenLabs Scribe transcription engine: alternative to OpenAI Whisper with 100MB file size limit and automatic language detection (prioritized when API key configured)
 • Native scheduling tools: schedule with delay, timestamp, or cron expressions; list and delete scheduled messages via Letta's built-in API
 • `/clear` command to clear messages from agent's context window
+• Failed turns now say why they failed instead of ending in silence (model provider error, cancelled run, output limit, exhausted Letta credits, context window overflow)
 
 **Changed:**
 • Revoking access now also unlinks the user from the assistants they were given access to — assistants they created themselves stay theirs
