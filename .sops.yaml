@@ -1,0 +1,11 @@
+keys:
+  # users
+  - &vizqq age1s9mzrygmeknj349442glp4hngrfag80kc40fcvj55ulkce9659cqygpj27
+  # hosts
+  - &dev age1v806dtrmz5glgsywmu8zcdrkdqw4na4js3q2xct9wvczxh88gq9sxpx4rs
+creation_rules:
+  - path_regex: deploy/nix/hosts/dev/secrets.yaml$
+    key_groups:
+      - age:
+          - *vizqq
+          - *dev

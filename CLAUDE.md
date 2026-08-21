@@ -60,3 +60,22 @@ Telegram → Middleware (user upsert, agent load, photo buffering)
 - **Ruff**: Line length 92, Python 3.13 target.
 - **Devscripts excluded** from mypy (see pyproject.toml overrides).
 - **Async everywhere** in bot code; devscripts are sync-only.
+
+## NixOS deployment (this branch)
+
+This branch carries a declarative NixOS deployment alongside the docker-compose
+and Railway paths on `master`; it is a parallel target, not a replacement.
+
+```
+deploy/nix/
+  services/     traefik.nix, letta-bot.nix (bot + Gel via Podman), openssh.nix
+  hosts/        base profiles and one host definition (disko layout, facter)
+  modules/      tcp-tweaks.nix
+  users/        admin and CI accounts
+  dev/          devshell, treefmt, git hooks, deploy-rs nodes
+flake.nix       outputs; .sops.yaml holds the secret recipients
+```
+
+Build and deploy with `nix develop` then `deploy .#<host>`. The host definition,
+its `facter.json` and the sops-encrypted secrets are specific to one machine —
+a different host needs its own, and its own age recipients.
