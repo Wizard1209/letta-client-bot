@@ -147,6 +147,7 @@ Fleet operations. The writing ones are dry-run by default — `--execute` applie
 | `raise_context_window` | Widen context windows kept from an older model | `--execute` |
 | `migrate_sonnet5` | Move agents to a newer model and notify them | `--execute` |
 | `detach_file_feature` | Strip the retired file tools and `file_handling` block off agents | `--execute` |
+| `deny_tool_call` | Deny the approval an agent is blocked on, so it accepts messages again | `--execute` |
 
 ### Writing New Scripts
 
