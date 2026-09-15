@@ -81,6 +81,29 @@ class ContextWindowOverview(BaseModel):
     messages: list[Message]
 
 
+class AgentSecret(BaseModel):
+    """One entry of an agent's tool-execution environment."""
+
+    key: str
+    value: str
+
+
+async def list_agent_secrets(client: 'AsyncLetta', agent_id: str) -> dict[str, str]:
+    """Read the agent's secrets from their own endpoint.
+
+    `GET /v1/agents/{id}` no longer carries `secrets`, even with
+    `include=['agent.secrets']` — the field comes back null. Only this route
+    returns them, and only `PATCH /v1/agents/{id}` writes them, replacing the
+    whole set.
+    """
+    secrets = await client.get(
+        f'/v1/agents/{agent_id}/secrets',
+        cast_to=list[AgentSecret],
+        options=make_request_options(),
+    )
+    return {s.key: s.value for s in secrets}
+
+
 async def context_window_overview(
     client: 'AsyncLetta',
     agent_id: str,

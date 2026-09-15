@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 **[Latest additions]**
 
+**Fixed:**
+• Assistant secrets set by hand (such as an X/Twitter API key) are no longer wiped on the next message — the bot now reads the current set from the platform before adding its own keys
+
 **[1.2.0] - 2026-08-21**
 
 **Added:**

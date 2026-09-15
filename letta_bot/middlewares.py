@@ -18,6 +18,7 @@ from letta_client.types.agent_state import AgentState
 
 from letta_bot.client import client, get_oldest_agent_by_user
 from letta_bot.config import CONFIG
+from letta_bot.letta_sdk_extensions import list_agent_secrets
 from letta_bot.queries.get_allowed_identity_async_edgeql import (
     get_allowed_identity as get_allowed_identity_query,
 )
@@ -127,7 +128,7 @@ _AgentInclude = Literal[
     'agent.tags',
     'agent.tools',
 ]
-AGENT_INCLUDE: list[_AgentInclude] = ['agent.tags', 'agent.secrets']
+AGENT_INCLUDE: list[_AgentInclude] = ['agent.tags']
 
 
 async def _validate_selected_agent(
@@ -165,7 +166,10 @@ async def _set_secrets(agent: AgentState) -> None:
         'TELEGRAM_BOT_TOKEN': CONFIG.telegram_bot_token,
         'LETTA_API_KEY': CONFIG.letta_api_key,
     }
-    current = {s.key: s.value for s in (agent.secrets or [])}
+    # Read from the secrets endpoint, never from `agent.secrets`: that field is
+    # null on every retrieve now, and an update built on an empty read wipes
+    # every key the owner set by hand (X_API_KEY, ...).
+    current = await list_agent_secrets(client, agent.id)
     missing = [key for key in required if key not in current]
     if not missing:
         return

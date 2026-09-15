@@ -147,6 +147,7 @@ Fleet operations. The writing ones are dry-run by default — `--execute` applie
 | `migrate_sonnet5` | Move agents to a newer model and notify them | `--execute` |
 | `detach_file_feature` | Strip the retired file tools and `file_handling` block off agents | `--execute` |
 | `deny_tool_call` | Deny the approval an agent is blocked on, so it accepts messages again | `--execute` |
+| `set_agent_secret` | Add one secret to an agent (by value, or copied from another agent) without dropping the rest | `--execute` |
 
 ### Writing New Scripts
 
@@ -217,6 +218,11 @@ uv run python -m devscripts.run_tool search_x_posts "TzKT" 24 20
   `LETTA_API_KEY` and `TELEGRAM_BOT_TOKEN` on every agent, plus `X_API_KEY` on
   the agents that opted into the X tools
 - `LETTA_PROJECT_ID` - project ID (local runs only, from .env)
+
+Secrets are read from `GET /v1/agents/{id}/secrets` only — the agent object
+returns `secrets: null` whatever you `include` — and written with
+`agents.update(secrets=...)`, which replaces the whole set. Read, merge, then
+write, or every key the owner set by hand is gone; `set_agent_secret` does that.
 
 The sandbox does define a `client` global, but it is built from
 `LETTA_API_KEY` — and Letta Cloud never sets that variable, so on an agent

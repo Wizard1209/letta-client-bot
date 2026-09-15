@@ -31,6 +31,12 @@ CLIENT_DEPENDENT = (
 )
 
 
+def agent_secrets(agent_id: str) -> dict[str, str]:
+    """Read an agent's secrets from their own endpoint (the SDK has no method)."""
+    entries = letta.get(f'/v1/agents/{agent_id}/secrets', cast_to=list[dict[str, str]])
+    return {e['key']: e['value'] for e in entries}
+
+
 def push_tools(execute: bool) -> None:
     """Write each tool's repo source onto its existing platform object.
 
@@ -64,28 +70,26 @@ def backfill_secrets(execute: bool) -> None:
     needed = 0
 
     for listed in letta.agents.list(limit=200):
-        agent = letta.agents.retrieve(agent_id=listed.id)
+        agent = letta.agents.retrieve(agent_id=listed.id, include=['agent.tools'])
         tools = {t.name for t in (agent.tools or [])}
         if not tools & set(CLIENT_DEPENDENT):
             continue
 
-        # `secrets` supersedes the deprecated tool_exec_environment_variables,
-        # but reads still come back on both — check whichever is populated.
-        current = agent.secrets or agent.tool_exec_environment_variables or []
-        if any(e.key == 'LETTA_API_KEY' for e in current):
+        # The agent object carries no secrets any more (the field is null on
+        # every retrieve); only the secrets endpoint returns them.
+        current = agent_secrets(agent.id)
+        if 'LETTA_API_KEY' in current:
             continue
 
         needed += 1
-        kept = sorted(e.key for e in current)
-        print(f'  {agent.name} ({agent.id}): missing LETTA_API_KEY, keeping {kept}')
+        print(f'  {agent.name} ({agent.id}): missing LETTA_API_KEY, keeping {sorted(current)}')
         if execute:
             # `secrets` REPLACES the whole set, so resend the existing keys
             # alongside the new one or they are dropped.
-            merged = {e.key: e.value for e in current}
-            merged['LETTA_API_KEY'] = CONFIG.letta_api_key
+            merged = {**current, 'LETTA_API_KEY': CONFIG.letta_api_key}
             letta.agents.update(agent_id=agent.id, secrets=merged)
 
-            after = {e.key for e in (letta.agents.retrieve(agent_id=agent.id).secrets or [])}
+            after = set(agent_secrets(agent.id))
             missing = set(merged) - after
             print(f'    set, {len(after)} secrets' + (f' — LOST {missing}' if missing else ''))
 

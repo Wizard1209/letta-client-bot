@@ -9,7 +9,6 @@ Usage:
 """
 
 import sys
-from collections import Counter
 
 from devscripts.bootstrap import letta, print_config
 
@@ -24,7 +23,8 @@ def main() -> None:
     for a in letta.agents.list(limit=200):
         try:
             page = letta.agents.messages.list(a.id, limit=limit, order='desc')
-            msgs = list(page.data) if hasattr(page, 'data') else list(page)
+            # First page only: iterating the page object walks the whole history.
+            msgs = list(page.items)
         except Exception as e:  # noqa: BLE001
             print(f'  !! {a.name}: {type(e).__name__}')
             continue
