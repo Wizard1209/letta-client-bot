@@ -26,6 +26,9 @@ class Config(BaseSettings):
 
     admin_ids: list[int] | None = None
 
+    # Sunset mode: set, and every message gets this text instead of an agent (see sunset.py)
+    sunset_message: str | None = None
+
     letta_project_id: str
     letta_api_key: str
 

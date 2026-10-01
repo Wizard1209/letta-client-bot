@@ -18,6 +18,7 @@ from letta_bot.errors import setup_error_handler
 from letta_bot.info import info_router, load_info_command_content
 from letta_bot.middlewares import setup_middlewares
 from letta_bot.response_handler import send_markdown_message
+from letta_bot.sunset import sunset_router
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +36,10 @@ def start_command(dp: Dispatcher) -> None:
 
 def setup_bot_handlers(dp: Dispatcher) -> None:
     """Register all common bot handlers (commands, routers, etc.)."""
+    if CONFIG.sunset_message:
+        dp.include_router(sunset_router(CONFIG.sunset_message))
+        LOGGER.warning('Sunset mode: every message is answered with the fixed text')
+        return
     # Register /start command
     start_command(dp)
     # Privacy, help, about, contact commands
@@ -61,7 +66,8 @@ def run_webhook(bot: Bot, args: argparse.Namespace) -> None:
     gel_client = create_async_client()
     dp = Dispatcher(gel_client=gel_client)
 
-    setup_middlewares(dp)
+    if not CONFIG.sunset_message:
+        setup_middlewares(dp)
     setup_error_handler(dp)
 
     # Register all common bot handlers
@@ -82,7 +88,8 @@ async def run_polling(bot: Bot, args: argparse.Namespace) -> None:
     gel_client = create_async_client()
     dp = Dispatcher(gel_client=gel_client)
 
-    setup_middlewares(dp)
+    if not CONFIG.sunset_message:
+        setup_middlewares(dp)
     setup_error_handler(dp)
 
     # Register all common bot handlers
